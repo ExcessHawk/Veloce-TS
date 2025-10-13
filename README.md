@@ -12,9 +12,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
-[![Documentation](https://img.shields.io/badge/docs-online-brightgreen.svg)](https://veloce-ts.com)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen.svg)](https://docs.veloce-ts.com)
 
-[Documentation](https://veloce-ts.com) • [Examples](./examples) • [API Reference](https://veloce-ts.com/reference/api-reference)
+[Documentation](https://docs.veloce-ts.com) • [Examples](./examples) • [API Reference](https://docs.veloce-ts.com/reference/api-reference)
 
 ---
 
@@ -393,9 +393,9 @@ app.listen(3000);
 
 | Resource | Description |
 |----------|-------------|
-| [📚 Full Documentation](https://veloce-ts.com) | Complete guides and API reference |
+| [📚 Full Documentation](https://docs.veloce-ts.com) | Complete guides and API reference |
 | [💡 Examples](./examples) | Sample projects and code examples |
-| [🔧 API Reference](https://veloce-ts.com/reference/api-reference) | Detailed API documentation |
+| [🔧 API Reference](https://docs.veloce-ts.com/reference/api-reference) | Detailed API documentation |
 
 ## ⚙️ Requirements
 
@@ -436,7 +436,7 @@ Built with ❤️ using:
 
 <div align="center">
 
-**[⭐ Star us on GitHub](https://github.com/AlfredoMejia3001/veloce-ts)** • **[📖 Read the Docs](https://veloce-ts.com)** • **[💬 Join Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions)**
+**[⭐ Star us on GitHub](https://github.com/AlfredoMejia3001/veloce-ts)** • **[📖 Read the Docs](https://docs.veloce-ts.com)** • **[💬 Join Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions)**
 
 Made with ⚡ by the Veloce team
 
