@@ -1,6 +1,6 @@
 // GraphQL Plugin - Enables GraphQL support for FastAPI-TS
 import type { Plugin } from '../core/plugin';
-import type { FastAPITS } from '../core/application';
+import type { VeloceTS } from '../core/application';
 import { GraphQLSchemaBuilder } from './schema-builder';
 import type { GraphQLContext } from './schema-builder';
 
@@ -26,7 +26,7 @@ export interface GraphQLPluginOptions {
  * 
  * @example
  * ```typescript
- * const app = new FastAPITS();
+ * const app = new VeloceTS();
  * app.usePlugin(new GraphQLPlugin({
  *   path: '/graphql',
  *   playground: true
@@ -49,7 +49,7 @@ export class GraphQLPlugin implements Plugin {
     };
   }
 
-  async install(app: FastAPITS): Promise<void> {
+  async install(app: VeloceTS): Promise<void> {
     // Build GraphQL schema from metadata
     const metadata = app.getMetadata();
     const container = app.getContainer();

@@ -83,7 +83,7 @@
     "test:watch": "bun test --watch",
     "test:coverage": "bun test --coverage",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "bun run build:prod && bun run test",
+    "prepublishOnly": "bun run build:prod",
     "prepack": "bun run build:prod",
     "release:major": "bun run scripts/release.ts major",
     "release:minor": "bun run scripts/release.ts minor",

@@ -1,13 +1,13 @@
-import { FastAPITS } from '../core/application';
+import { VeloceTS } from '../core/application';
 import { TestClient } from './test-client';
-import type { FastAPIConfig, Provider, ProviderConfig } from '../types';
+import type { VeloceTSConfig, Provider, ProviderConfig } from '../types';
 
 /**
- * Create a test instance of FastAPITS application
+ * Create a test instance of VeloceTS application
  * This is useful for creating isolated test instances with specific configurations
  * 
  * @param config - Optional configuration for the test app
- * @returns A new FastAPITS instance configured for testing
+ * @returns A new VeloceTS instance configured for testing
  * 
  * @example
  * ```typescript
@@ -19,22 +19,22 @@ import type { FastAPIConfig, Provider, ProviderConfig } from '../types';
  * const response = await client.get('/test');
  * ```
  */
-export function createTestApp(config?: FastAPIConfig): FastAPITS {
+export function createTestApp(config?: VeloceTSConfig): VeloceTS {
   // Default test configuration
-  const testConfig: FastAPIConfig = {
+  const testConfig: VeloceTSConfig = {
     docs: false, // Disable docs by default in tests
     cors: false, // Disable CORS by default in tests
     ...config,
   };
 
-  return new FastAPITS(testConfig);
+  return new VeloceTS(testConfig);
 }
 
 /**
  * Mock a dependency in the DI container
  * This allows you to replace real dependencies with mocks for testing
  * 
- * @param app - The FastAPITS application instance
+ * @param app - The VeloceTS application instance
  * @param provider - The provider to mock
  * @param mockValue - The mock value or factory function
  * @param config - Optional provider configuration
@@ -52,7 +52,7 @@ export function createTestApp(config?: FastAPIConfig): FastAPITS {
  * ```
  */
 export function mockDependency<T>(
-  app: FastAPITS,
+  app: VeloceTS,
   provider: Provider<T>,
   mockValue: T | (() => T | Promise<T>),
   config?: ProviderConfig
@@ -75,7 +75,7 @@ export function mockDependency<T>(
  * Create a test client for an application
  * This is a convenience function that creates a TestClient instance
  * 
- * @param app - The FastAPITS application instance
+ * @param app - The VeloceTS application instance
  * @returns A TestClient instance for making test requests
  * 
  * @example
@@ -88,7 +88,7 @@ export function mockDependency<T>(
  * const response = await client.get('/hello');
  * ```
  */
-export function createTestClient(app: FastAPITS): TestClient {
+export function createTestClient(app: VeloceTS): TestClient {
   return new TestClient(app);
 }
 
@@ -111,9 +111,9 @@ export function createTestClient(app: FastAPITS): TestClient {
  * ```
  */
 export async function setupTestApp(
-  setup: (app: FastAPITS) => void | Promise<void>,
-  config?: FastAPIConfig
-): Promise<{ app: FastAPITS; client: TestClient }> {
+  setup: (app: VeloceTS) => void | Promise<void>,
+  config?: VeloceTSConfig
+): Promise<{ app: VeloceTS; client: TestClient }> {
   const app = createTestApp(config);
   
   await setup(app);
@@ -128,7 +128,7 @@ export async function setupTestApp(
  * Clear all mocked dependencies from an application
  * This is useful for cleaning up between tests
  * 
- * @param app - The FastAPITS application instance
+ * @param app - The VeloceTS application instance
  * 
  * @example
  * ```typescript
@@ -137,7 +137,7 @@ export async function setupTestApp(
  * });
  * ```
  */
-export function clearMocks(app: FastAPITS): void {
+export function clearMocks(app: VeloceTS): void {
   const container = app.getContainer();
   container.clear();
 }

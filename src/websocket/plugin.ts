@@ -1,6 +1,6 @@
 // WebSocket Plugin
 import type { Plugin } from '../core/plugin';
-import type { FastAPITS } from '../core/application';
+import type { VeloceTS } from '../core/application';
 import { WebSocketManager } from './manager';
 
 /**
@@ -17,7 +17,7 @@ export class WebSocketPlugin implements Plugin {
     this.manager = new WebSocketManager();
   }
 
-  async install(app: FastAPITS): Promise<void> {
+  async install(app: VeloceTS): Promise<void> {
     const metadata = app.getMetadata();
     const websockets = metadata.getWebSockets();
 
@@ -30,7 +30,7 @@ export class WebSocketPlugin implements Plugin {
   /**
    * Register a WebSocket route with the application
    */
-  private registerWebSocket(app: FastAPITS, metadata: any): void {
+  private registerWebSocket(app: VeloceTS, metadata: any): void {
     const hono = app.getHono();
 
     // Register WebSocket upgrade endpoint

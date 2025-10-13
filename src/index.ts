@@ -1,10 +1,12 @@
-// Veloce - Main entry point
+// VeloceTS - Main entry point
 import 'reflect-metadata';
 
 // Core exports
-export { FastAPITS } from './core/application';
-// Export Veloce as an alias for FastAPITS
-export { FastAPITS as Veloce } from './core/application';
+export { VeloceTS } from './core/application';
+// Export Veloce as a shorter alias
+export { VeloceTS as Veloce } from './core/application';
+// Keep FastAPITS as an alias for compatibility
+export { VeloceTS as FastAPITS } from './core/application';
 export { MetadataRegistry } from './core/metadata';
 export { RouterCompiler } from './core/router-compiler';
 export { MetadataCompiler, type CompiledRouteMetadata } from './core/compiled-metadata';

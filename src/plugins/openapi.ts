@@ -1,6 +1,6 @@
 // OpenAPI Plugin - Generates OpenAPI 3.0 specification and serves Swagger UI
 import type { Plugin } from '../core/plugin';
-import type { FastAPITS } from '../core/application';
+import type { VeloceTS } from '../core/application';
 import type { OpenAPIOptions } from '../types';
 import { OpenAPIGenerator } from '../docs';
 
@@ -25,7 +25,7 @@ export class OpenAPIPlugin implements Plugin {
     };
   }
 
-  async install(app: FastAPITS): Promise<void> {
+  async install(app: VeloceTS): Promise<void> {
     // Get app config to merge with plugin options
     const appConfig = app.getConfig();
     if (appConfig.title) this.options.title = appConfig.title;
@@ -63,7 +63,7 @@ export class OpenAPIPlugin implements Plugin {
   /**
    * Generate OpenAPI 3.0 specification from application metadata
    */
-  private generateSpec(app: FastAPITS) {
+  private generateSpec(app: VeloceTS) {
     const metadata = app.getMetadata();
     const generator = new OpenAPIGenerator(metadata, this.options);
     return generator.generate();

@@ -1,4 +1,4 @@
-import type { FastAPITS } from '../core/application';
+import type { VeloceTS } from '../core/application';
 import type { Hono } from 'hono';
 
 /**
@@ -24,13 +24,13 @@ export interface TestResponse {
 }
 
 /**
- * TestClient provides a convenient interface for testing FastAPITS applications
+ * TestClient provides a convenient interface for testing VeloceTS applications
  * Wraps the Hono app.request method with helper methods for common HTTP verbs
  */
 export class TestClient {
   private hono: Hono;
 
-  constructor(app: FastAPITS) {
+  constructor(app: VeloceTS) {
     this.hono = app.getHono();
   }
 

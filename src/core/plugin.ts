@@ -1,5 +1,5 @@
 // Plugin system
-import type { FastAPITS } from './application';
+import type { VeloceTS } from './application';
 
 /**
  * Plugin interface that all plugins must implement
@@ -17,9 +17,9 @@ export interface Plugin {
   
   /** 
    * Install method called when the plugin is registered
-   * @param app - The FastAPITS application instance
+   * @param app - The VeloceTS application instance
    */
-  install(app: FastAPITS): void | Promise<void>;
+  install(app: VeloceTS): void | Promise<void>;
 }
 
 /**
@@ -44,10 +44,10 @@ export class PluginManager {
 
   /**
    * Install all registered plugins in dependency order
-   * @param app - The FastAPITS application instance
+   * @param app - The VeloceTS application instance
    * @throws Error if plugin dependencies cannot be resolved
    */
-  async install(app: FastAPITS): Promise<void> {
+  async install(app: VeloceTS): Promise<void> {
     // Resolve installation order using topological sort
     const order = this.resolveInstallOrder();
 

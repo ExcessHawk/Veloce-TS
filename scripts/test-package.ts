@@ -115,7 +115,7 @@ async function testPackage() {
     console.log('\n📝 To test installation manually:');
     console.log(`   1. Create a test project`);
     console.log(`   2. Run: bun add ${tarballPath}`);
-    console.log(`   3. Import: import { FastAPITS } from 'veloce-ts'`);
+    console.log(`   3. Import: import { Veloce-TS } from 'veloce-ts'`);
     
     // Clean up tarball
     console.log(`\n🧹 Cleaning up: ${tarballName}`);

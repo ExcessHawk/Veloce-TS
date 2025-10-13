@@ -73,7 +73,7 @@ export interface RouteDocumentation {
 }
 
 // Configuration types
-export interface FastAPIConfig {
+export interface VeloceTSConfig {
   adapter?: 'hono' | 'express' | 'native';
   title?: string;
   version?: string;

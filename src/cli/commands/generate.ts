@@ -47,7 +47,7 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
     const app = appModule.default || appModule.app;
 
     if (!app || typeof app.getMetadata !== 'function') {
-      console.error('Error: Could not find Veloce-TS app instance');
+      console.error('Error: Could not find VeloceTS app instance');
       console.error('Make sure your src/index.ts exports the app or sets it as default');
       process.exit(1);
     }

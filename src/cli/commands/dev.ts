@@ -25,7 +25,7 @@ async function startDevServer(options: DevOptions): Promise<void> {
   // Check if entry point exists
   if (!existsSync(entryPoint)) {
     console.error('Error: src/index.ts not found');
-    console.error('Make sure you are in a Veloce-TS project directory');
+    console.error('Make sure you are in a VeloceTS project directory');
     process.exit(1);
   }
 

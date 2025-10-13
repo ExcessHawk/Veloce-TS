@@ -10,7 +10,7 @@ import { createCorsMiddleware } from '../middleware/cors';
 import { createRateLimitMiddleware } from '../middleware/rate-limit';
 import { createCompressionMiddleware } from '../middleware/compression';
 import type {
-  FastAPIConfig,
+  VeloceTSConfig,
   Class,
   RouteConfig,
   Middleware,
@@ -22,7 +22,7 @@ import type {
 } from '../types';
 
 /**
- * Main FastAPITS application class
+ * Main VeloceTS application class
  * 
  * Provides both decorator-based and functional API for defining routes.
  * Built on top of Hono.js for maximum performance with support for multiple runtimes.
@@ -30,7 +30,7 @@ import type {
  * @example
  * ```typescript
  * // Create a new application
- * const app = new FastAPITS({
+ * const app = new VeloceTS({
  *   title: 'My API',
  *   version: '1.0.0',
  *   docs: true
@@ -60,7 +60,7 @@ import type {
  * });
  * ```
  */
-export class FastAPITS {
+export class VeloceTS {
   private hono: Hono;
   private metadata: MetadataRegistry;
   private container: DIContainer;
@@ -68,12 +68,12 @@ export class FastAPITS {
   private errorHandler: ErrorHandler;
   private compiler: RouterCompiler;
   private pluginManager: PluginManager;
-  private config: FastAPIConfig;
+  private config: VeloceTSConfig;
   private compiled: boolean = false;
   private globalMiddleware: Middleware[] = [];
   private groupPrefix: string = '';
 
-  constructor(config?: FastAPIConfig) {
+  constructor(config?: VeloceTSConfig) {
     this.config = {
       adapter: 'hono',
       title: 'FastAPI-TS API',
@@ -495,7 +495,7 @@ export class FastAPITS {
   /**
    * Get the application configuration
    */
-  getConfig(): FastAPIConfig {
+  getConfig(): VeloceTSConfig {
     return this.config;
   }
 
@@ -596,7 +596,7 @@ class FunctionalRoute {}
  */
 class RouteBuilder {
   constructor(
-    private app: FastAPITS,
+    private app: VeloceTS,
     private path: string
   ) {}
 

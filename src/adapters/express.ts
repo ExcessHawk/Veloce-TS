@@ -4,7 +4,7 @@
  * Allows integration with existing Express applications
  */
 import type { Adapter } from './base';
-import type { FastAPITS } from '../core/application';
+import type { VeloceTS } from '../core/application';
 
 // Type declarations for Express (peer dependency)
 declare const require: any;
@@ -17,7 +17,7 @@ export class ExpressAdapter implements Adapter {
   name = 'express';
   private express: any;
 
-  constructor(private app: FastAPITS) {
+  constructor(private app: VeloceTS) {
     try {
       // Express is a peer dependency
       const expressModule = require('express');
