@@ -1,0 +1,72 @@
+{
+  "name": "veloce",
+  "version": "0.1.0",
+  "description": "A modern, fast web framework for TypeScript inspired by FastAPI",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "bin": {
+    "veloce": "./bin/veloce.ts"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "build:types": "tsc --project tsconfig.build.json",
+    "dev": "bun --watch src/index.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "veloce",
+    "fastapi",
+    "typescript",
+    "web-framework",
+    "hono",
+    "zod",
+    "decorators",
+    "validation",
+    "openapi",
+    "fast",
+    "modern"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/veloce.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/veloce/issues"
+  },
+  "homepage": "https://github.com/yourusername/veloce#readme",
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "commander": "^14.0.1",
+    "hono": "^4.0.0",
+    "reflect-metadata": "^0.2.0",
+    "zod": "^3.22.0",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  }
+}
