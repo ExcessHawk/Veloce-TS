@@ -1,2 +1,2 @@
 #!/usr/bin/env bun
-import '../src/cli/index';
+import '../dist/cjs/src/cli/index.js';

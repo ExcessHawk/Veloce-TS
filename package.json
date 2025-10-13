@@ -1,10 +1,10 @@
 {
   "name": "veloce-ts",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "A modern, fast web framework for TypeScript inspired by FastAPI",
   "type": "module",
-  "main": "./dist/cjs/index.js",
-  "module": "./dist/esm/index.js",
+  "main": "./dist/cjs/src/index.js",
+  "module": "./dist/esm/src/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
     "veloce-ts": "./bin/veloce.ts",
@@ -13,59 +13,59 @@
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
-      "default": "./dist/esm/index.js"
+      "import": "./dist/esm/src/index.js",
+      "require": "./dist/cjs/src/index.js",
+      "default": "./dist/esm/src/index.js"
     },
     "./validation": {
       "types": "./dist/types/validation/index.d.ts",
-      "import": "./dist/esm/validation/index.js",
-      "require": "./dist/cjs/validation/index.js"
+      "import": "./dist/esm/src/validation/index.js",
+      "require": "./dist/cjs/src/validation/index.js"
     },
     "./middleware": {
       "types": "./dist/types/middleware/index.d.ts",
-      "import": "./dist/esm/middleware/index.js",
-      "require": "./dist/cjs/middleware/index.js"
+      "import": "./dist/esm/src/middleware/index.js",
+      "require": "./dist/cjs/src/middleware/index.js"
     },
     "./testing": {
       "types": "./dist/types/testing/index.d.ts",
-      "import": "./dist/esm/testing/index.js",
-      "require": "./dist/cjs/testing/index.js"
+      "import": "./dist/esm/src/testing/index.js",
+      "require": "./dist/cjs/src/testing/index.js"
     },
     "./errors": {
       "types": "./dist/types/errors/index.d.ts",
-      "import": "./dist/esm/errors/index.js",
-      "require": "./dist/cjs/errors/index.js"
+      "import": "./dist/esm/src/errors/index.js",
+      "require": "./dist/cjs/src/errors/index.js"
     },
     "./types": {
       "types": "./dist/types/types/index.d.ts",
-      "import": "./dist/esm/types/index.js",
-      "require": "./dist/cjs/types/index.js"
+      "import": "./dist/esm/src/types/index.js",
+      "require": "./dist/cjs/src/types/index.js"
     },
     "./docs": {
       "types": "./dist/types/docs/index.d.ts",
-      "import": "./dist/esm/docs/index.js",
-      "require": "./dist/cjs/docs/index.js"
+      "import": "./dist/esm/src/docs/index.js",
+      "require": "./dist/cjs/src/docs/index.js"
     },
     "./graphql": {
       "types": "./dist/types/graphql/index.d.ts",
-      "import": "./dist/esm/graphql/index.js",
-      "require": "./dist/cjs/graphql/index.js"
+      "import": "./dist/esm/src/graphql/index.js",
+      "require": "./dist/cjs/src/graphql/index.js"
     },
     "./websocket": {
       "types": "./dist/types/websocket/index.d.ts",
-      "import": "./dist/esm/websocket/index.js",
-      "require": "./dist/cjs/websocket/index.js"
+      "import": "./dist/esm/src/websocket/index.js",
+      "require": "./dist/cjs/src/websocket/index.js"
     },
     "./plugins": {
       "types": "./dist/types/plugins/index.d.ts",
-      "import": "./dist/esm/plugins/index.js",
-      "require": "./dist/cjs/plugins/index.js"
+      "import": "./dist/esm/src/plugins/index.js",
+      "require": "./dist/cjs/src/plugins/index.js"
     },
     "./cli": {
       "types": "./dist/types/cli/index.d.ts",
-      "import": "./dist/esm/cli/index.js",
-      "require": "./dist/cjs/cli/index.js"
+      "import": "./dist/esm/src/cli/index.js",
+      "require": "./dist/cjs/src/cli/index.js"
     },
     "./adapters/*": {
       "types": "./dist/types/adapters/*.d.ts",
