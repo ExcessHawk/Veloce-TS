@@ -10,8 +10,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen.svg)](https://docs-veloce.netlify.app)
 
-[Documentation](https://veloce-docs.vercel.app) • [Examples](./examples) • [API Reference](./Documentacion/starlight)
+[Documentation](https://docs-veloce.netlify.app) • [Examples](./examples) • [API Reference](https://docs-veloce.netlify.app/reference/api-reference)
 
 ---
 
@@ -390,9 +391,9 @@ app.listen(3000);
 
 | Resource | Description |
 |----------|-------------|
-| [📚 Full Documentation](./Documentacion/starlight) | Complete guides and API reference |
+| [📚 Full Documentation](https://docs-veloce.netlify.app) | Complete guides and API reference |
 | [💡 Examples](./examples) | Sample projects and code examples |
-| [🔧 API Reference](./Documentacion/starlight/src/content/docs/reference/api-reference.md) | Detailed API documentation |
+| [🔧 API Reference](https://docs-veloce.netlify.app/reference/api-reference) | Detailed API documentation |
 
 ## ⚙️ Requirements
 
@@ -433,7 +434,7 @@ Built with ❤️ using:
 
 <div align="center">
 
-**[⭐ Star us on GitHub](https://github.com/yourusername/veloce)** • **[📖 Read the Docs](./Documentacion/starlight)** • **[💬 Join Discussions](https://github.com/yourusername/veloce/discussions)**
+**[⭐ Star us on GitHub](https://github.com/AlfredoMejia3001/veloce)** • **[📖 Read the Docs](https://docs-veloce.netlify.app)** • **[💬 Join Discussions](https://github.com/AlfredoMejia3001/veloce/discussions)**
 
 Made with ⚡ by the Veloce team
 
