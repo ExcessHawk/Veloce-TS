@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="veloce-ts-v2.png" alt="Veloce-TS Logo" width="300" />
+
 # ⚡ Veloce-TS
 
 ### Modern, Fast Web Framework for TypeScript
