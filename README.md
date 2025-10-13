@@ -1,12 +1,12 @@
 <div align="center">
 
-# ⚡ Veloce
+# ⚡ Veloce-TS
 
 ### Modern, Fast Web Framework for TypeScript
 
 *Inspired by FastAPI, Built on Hono.js*
 
-[![npm version](https://img.shields.io/npm/v/veloce.svg)](https://www.npmjs.com/package/veloce)
+[![npm version](https://img.shields.io/npm/v/veloce-ts.svg)](https://www.npmjs.com/package/veloce-ts)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
@@ -75,18 +75,18 @@ Plugin ecosystem
 
 ```bash
 # Using Bun (recommended)
-bun add veloce zod
+bun add veloce-ts zod
 
 # Using npm
-npm install veloce zod
+npm install veloce-ts zod
 
 # Using pnpm
-pnpm add veloce zod
+pnpm add veloce-ts zod
 ```
 
 **CLI Tool (optional)**
 ```bash
-npm install -g veloce
+npm install -g veloce-ts
 ```
 
 ## 🚀 Quick Start
@@ -94,7 +94,7 @@ npm install -g veloce
 Create your first API in under 2 minutes:
 
 ```typescript
-import { Veloce, Controller, Get, Post, Body, Param, Query } from 'veloce';
+import { Veloce, Controller, Get, Post, Body, Param, Query } from 'veloce-ts';
 import { z } from 'zod';
 
 // Define validation schemas
@@ -159,7 +159,7 @@ app.listen(3000, () => {
 <summary><b>Functional API (No Decorators)</b></summary>
 
 ```typescript
-import { Veloce } from 'veloce';
+import { Veloce } from 'veloce-ts';
 import { z } from 'zod';
 
 const app = new Veloce();
@@ -192,7 +192,7 @@ app.listen(3000);
 <summary><b>With Dependency Injection</b></summary>
 
 ```typescript
-import { Veloce, Controller, Get, Depends } from 'veloce';
+import { Veloce, Controller, Get, Depends } from 'veloce-ts';
 
 class DatabaseService {
   async getUsers() {
@@ -220,7 +220,7 @@ app.listen(3000);
 <summary><b>WebSocket Support</b></summary>
 
 ```typescript
-import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce';
+import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce-ts';
 import { z } from 'zod';
 
 const MessageSchema = z.object({
@@ -254,7 +254,7 @@ class ChatHandler {
 <summary><b>GraphQL API</b></summary>
 
 ```typescript
-import { Resolver, Query, Mutation, Arg } from 'veloce';
+import { Resolver, Query, Mutation, Arg } from 'veloce-ts';
 import { z } from 'zod';
 
 const CreateUserInput = z.object({
@@ -284,19 +284,19 @@ class UserResolver {
 
 ```bash
 # Create a new project
-veloce new my-api --template rest
+veloce-ts new my-api --template rest
 
 # Start development server
-veloce dev
+veloce-ts dev
 
 # Build for production
-veloce build
+veloce-ts build
 
 # Generate OpenAPI spec
-veloce generate openapi
+veloce-ts generate openapi
 
 # Generate TypeScript client
-veloce generate client
+veloce-ts generate client
 ```
 
 **Available Templates:**
@@ -339,7 +339,7 @@ app.useCompression();
 ### Error Handling
 
 ```typescript
-import { HTTPException } from 'veloce';
+import { HTTPException } from 'veloce-ts';
 
 @Get('/:id')
 async getUser(@Param('id') id: string) {
@@ -354,7 +354,7 @@ async getUser(@Param('id') id: string) {
 ## 🔌 Plugin System
 
 ```typescript
-import { Veloce, OpenAPIPlugin, GraphQLPlugin } from 'veloce';
+import { Veloce, OpenAPIPlugin, GraphQLPlugin } from 'veloce-ts';
 
 const app = new Veloce();
 
@@ -382,7 +382,7 @@ app.usePlugin(new GraphQLPlugin({
 
 ```typescript
 // Same code works everywhere!
-import { Veloce } from 'veloce';
+import { Veloce } from 'veloce-ts';
 const app = new Veloce();
 app.listen(3000);
 ```
@@ -439,3 +439,4 @@ Built with ❤️ using:
 Made with ⚡ by the Veloce team
 
 </div>
+

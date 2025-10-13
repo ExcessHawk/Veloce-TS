@@ -35,7 +35,7 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
   try {
     // Import the application to extract metadata
     const appPath = join(process.cwd(), 'src', 'index.ts');
-    
+
     if (!existsSync(appPath)) {
       console.error('Error: src/index.ts not found');
       console.error('Make sure you are in a FastAPI-TS project directory');
@@ -47,7 +47,7 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
     const app = appModule.default || appModule.app;
 
     if (!app || typeof app.getMetadata !== 'function') {
-      console.error('Error: Could not find Veloce app instance');
+      console.error('Error: Could not find Veloce-TS app instance');
       console.error('Make sure your src/index.ts exports the app or sets it as default');
       process.exit(1);
     }
@@ -69,7 +69,7 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
 
 function generateOpenAPISpec(metadata: any, app: any): any {
   const routes = metadata.getRoutes();
-  
+
   const spec = {
     openapi: '3.0.0',
     info: {

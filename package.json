@@ -1,5 +1,5 @@
 {
-  "name": "veloce",
+  "name": "veloce-ts",
   "version": "0.1.0",
   "description": "A modern, fast web framework for TypeScript inspired by FastAPI",
   "type": "module",
@@ -7,6 +7,7 @@
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
+    "veloce-ts": "./bin/veloce.ts",
     "veloce": "./bin/veloce.ts"
   },
   "exports": {
@@ -27,6 +28,7 @@
     "prepublishOnly": "bun run build"
   },
   "keywords": [
+    "veloce-ts",
     "veloce",
     "fastapi",
     "typescript",
@@ -37,18 +39,19 @@
     "validation",
     "openapi",
     "fast",
-    "modern"
+    "modern",
+    "fastapi-typescript"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Alfredo Mejia <mejia_alfredo@outlook.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/veloce.git"
+    "url": "https://github.com/AlfredoMejia3001/veloce-ts.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/veloce/issues"
+    "url": "https://github.com/AlfredoMejia3001/veloce-ts/issues"
   },
-  "homepage": "https://github.com/yourusername/veloce#readme",
+  "homepage": "https://github.com/AlfredoMejia3001/veloce-ts#readme",
   "files": [
     "dist",
     "bin",

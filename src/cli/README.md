@@ -1,6 +1,6 @@
-# Veloce CLI
+# Veloce-TS CLI
 
-Command-line interface for Veloce framework.
+Command-line interface for Veloce-TS framework.
 
 ## Installation
 
@@ -12,7 +12,7 @@ bun add -g veloce
 
 ### `veloce new <name>`
 
-Create a new Veloce project.
+Create a new Veloce-TS project.
 
 **Options:**
 - `-t, --template <template>` - Project template (rest, graphql, websocket, fullstack) [default: rest]

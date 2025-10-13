@@ -12,7 +12,7 @@ interface ProjectOptions {
 export function registerNewCommand(program: Command): void {
   program
     .command('new')
-    .description('Create a new Veloce project')
+    .description('Create a new Veloce-TS project')
     .argument('<name>', 'Project name')
     .option('-t, --template <template>', 'Project template (rest, graphql, websocket, fullstack)', 'rest')
     .action(async (name: string, options: ProjectOptions) => {
@@ -29,7 +29,7 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
     process.exit(1);
   }
 
-  console.log(`Creating new Veloce project: ${name}`);
+  console.log(`Creating new Veloce-TS project: ${name}`);
   console.log(`Template: ${options.template}`);
 
   try {
@@ -76,18 +76,18 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
   const packageJson = {
     name,
     version: '0.1.0',
-    description: 'A Veloce application',
+    description: 'A Veloce-TS application',
     type: 'module',
     main: './dist/index.js',
     scripts: {
       dev: 'bun --watch src/index.ts',
       build: 'bun build src/index.ts --outdir dist --target bun',
       start: 'bun run dist/index.js',
-      'generate:openapi': 'bun run node_modules/veloce/bin/veloce.ts generate openapi',
-      'generate:client': 'bun run node_modules/veloce/bin/veloce.ts generate client',
+      'generate:openapi': 'bun run node_modules/veloce-ts/bin/veloce.ts generate openapi',
+      'generate:client': 'bun run node_modules/veloce-ts/bin/veloce.ts generate client',
     },
     dependencies: {
-      veloce: '^0.1.0',
+      'veloce-ts': '^0.1.0',
       hono: '^4.0.0',
       'reflect-metadata': '^0.2.0',
       zod: '^3.22.0',
@@ -145,7 +145,7 @@ dist/
 async function generateReadme(projectPath: string, name: string, template: Template): Promise<void> {
   const readme = `# ${name}
 
-A Veloce application using the ${template} template.
+A Veloce-TS application using the ${template} template.
 
 ## Getting Started
 
@@ -178,7 +178,7 @@ Visit http://localhost:3000/docs to see the API documentation.
 async function generateRestTemplate(projectPath: string): Promise<void> {
   // Create main entry point
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce';
+import { Veloce } from 'veloce-ts';
 import { UserController } from './controllers/user.controller';
 
 const app = new Veloce({
@@ -200,7 +200,7 @@ app.listen(3000, () => {
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
 
   // Create example controller
-  const controllerFile = `import { Controller, Get, Post, Body, Param } from 'veloce';
+  const controllerFile = `import { Controller, Get, Post, Body, Param } from 'veloce-ts';
 import { z } from 'zod';
 
 const UserSchema = z.object({
@@ -244,8 +244,8 @@ async function generateGraphQLTemplate(projectPath: string): Promise<void> {
   await mkdir(join(projectPath, 'src', 'resolvers'), { recursive: true });
 
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce';
-import { GraphQLPlugin } from 'veloce/plugins';
+import { Veloce } from 'veloce-ts';
+import { GraphQLPlugin } from 'veloce-ts/plugins';
 import { UserResolver } from './resolvers/user.resolver';
 
 const app = new Veloce({
@@ -266,7 +266,7 @@ app.listen(3000, () => {
 
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
 
-  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce/graphql';
+  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce-ts/graphql';
 import { z } from 'zod';
 
 const UserSchema = z.object({
@@ -310,8 +310,8 @@ async function generateWebSocketTemplate(projectPath: string): Promise<void> {
   await mkdir(join(projectPath, 'src', 'websockets'), { recursive: true });
 
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce';
-import { WebSocketPlugin } from 'veloce/plugins';
+import { Veloce } from 'veloce-ts';
+import { WebSocketPlugin } from 'veloce-ts/plugins';
 import { ChatWebSocket } from './websockets/chat.websocket';
 
 const app = new Veloce({
@@ -332,9 +332,9 @@ app.listen(3000, () => {
 
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
 
-  const websocketFile = `import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce/websocket';
+  const websocketFile = `import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce-ts/websocket';
 import { z } from 'zod';
-import type { WebSocketConnection } from 'veloce/websocket';
+import type { WebSocketConnection } from 'veloce-ts/websocket';
 
 const MessageSchema = z.object({
   type: z.enum(['message', 'join', 'leave']),
@@ -380,8 +380,8 @@ async function generateFullstackTemplate(projectPath: string): Promise<void> {
 
   // Generate main file
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce';
-import { GraphQLPlugin, WebSocketPlugin } from 'veloce/plugins';
+import { Veloce } from 'veloce-ts';
+import { GraphQLPlugin, WebSocketPlugin } from 'veloce-ts/plugins';
 import { UserController } from './controllers/user.controller';
 import { UserResolver } from './resolvers/user.resolver';
 import { ChatWebSocket } from './websockets/chat.websocket';
@@ -416,7 +416,7 @@ app.listen(3000, () => {
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
 
   // Generate REST controller
-  const controllerFile = `import { Controller, Get, Post, Body, Param } from 'veloce';
+  const controllerFile = `import { Controller, Get, Post, Body, Param } from 'veloce-ts';
 import { z } from 'zod';
 
 const UserSchema = z.object({
@@ -456,7 +456,7 @@ export class UserController {
   await writeFile(join(projectPath, 'src', 'controllers', 'user.controller.ts'), controllerFile);
 
   // Generate GraphQL resolver
-  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce/graphql';
+  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce-ts/graphql';
 import { z } from 'zod';
 
 const UserSchema = z.object({
@@ -496,9 +496,9 @@ export class UserResolver {
   await writeFile(join(projectPath, 'src', 'resolvers', 'user.resolver.ts'), resolverFile);
 
   // Generate WebSocket handler
-  const websocketFile = `import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce/websocket';
+  const websocketFile = `import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce-ts/websocket';
 import { z } from 'zod';
-import type { WebSocketConnection } from 'veloce/websocket';
+import type { WebSocketConnection } from 'veloce-ts/websocket';
 
 const MessageSchema = z.object({
   type: z.enum(['message', 'join', 'leave']),
