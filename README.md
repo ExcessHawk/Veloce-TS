@@ -14,7 +14,7 @@
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
 [![Documentation](https://img.shields.io/badge/docs-online-brightgreen.svg)](https://docs.veloce-ts.com)
 
-[Documentation](https://docs.veloce-ts.com) • [Examples](./examples) • [API Reference](https://docs.veloce-ts.com/reference/api-reference)
+[Documentation](https://docs.veloce-ts.com) • [Examples](https://docs.veloce-ts.com/guides/getting-started) • [API Reference](https://docs.veloce-ts.com/reference/api-reference)
 
 ---
 
@@ -394,7 +394,7 @@ app.listen(3000);
 | Resource | Description |
 |----------|-------------|
 | [📚 Full Documentation](https://docs.veloce-ts.com) | Complete guides and API reference |
-| [💡 Examples](./examples) | Sample projects and code examples |
+| [💡 Examples & Guides](https://docs.veloce-ts.com/guides/getting-started) | Tutorials and code examples |
 | [🔧 API Reference](https://docs.veloce-ts.com/reference/api-reference) | Detailed API documentation |
 
 ## ⚙️ Requirements
