@@ -16,9 +16,9 @@ export class OpenAPIPlugin implements Plugin {
 
   constructor(options?: OpenAPIOptions) {
     this.options = {
-      title: options?.title || 'FastAPI-TS API',
+      title: options?.title || 'Veloce-TS API',
       version: options?.version || '1.0.0',
-      description: options?.description || 'API built with FastAPI-TS',
+      description: options?.description || 'API built with Veloce-TS',
       path: options?.path || '/openapi.json',
       docsPath: options?.docsPath || '/docs',
       docs: options?.docs !== false
@@ -45,19 +45,9 @@ export class OpenAPIPlugin implements Plugin {
       }
     });
 
-    // Register Swagger UI endpoint if docs are enabled
-    if (this.options.docs) {
-      app.get(this.options.docsPath, {
-        handler: async (c) => {
-          return c.html(this.renderSwaggerUI());
-        },
-        docs: {
-          summary: 'API Documentation',
-          description: 'Interactive API documentation using Swagger UI',
-          tags: ['Documentation']
-        }
-      });
-    }
+    // Note: Swagger UI HTML is served via static files (public/docs.html)
+    // This is more reliable than serving HTML from the plugin
+    // The OpenAPI JSON spec is available at the configured path
   }
 
   /**
@@ -73,14 +63,13 @@ export class OpenAPIPlugin implements Plugin {
    * Render Swagger UI HTML
    */
   private renderSwaggerUI(): string {
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${this.options.title} - API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
   <style>
     body {
       margin: 0;
@@ -90,8 +79,8 @@ export class OpenAPIPlugin implements Plugin {
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js" crossorigin></script>
   <script>
     window.onload = function() {
       window.ui = SwaggerUIBundle({
@@ -110,7 +99,6 @@ export class OpenAPIPlugin implements Plugin {
     };
   </script>
 </body>
-</html>
-    `.trim();
+</html>`;
   }
 }

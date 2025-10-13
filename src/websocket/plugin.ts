@@ -4,7 +4,7 @@ import type { VeloceTS } from '../core/application';
 import { WebSocketManager } from './manager';
 
 /**
- * WebSocketPlugin adds WebSocket support to FastAPI-TS
+ * WebSocketPlugin adds WebSocket support to Veloce-TS
  * Registers WebSocket routes and handles connection upgrades
  */
 export class WebSocketPlugin implements Plugin {

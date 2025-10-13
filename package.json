@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "A modern, fast web framework for TypeScript inspired by FastAPI",
   "type": "module",
   "main": "./dist/cjs/src/index.js",

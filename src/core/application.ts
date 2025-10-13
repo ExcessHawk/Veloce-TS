@@ -76,7 +76,7 @@ export class VeloceTS {
   constructor(config?: VeloceTSConfig) {
     this.config = {
       adapter: 'hono',
-      title: 'FastAPI-TS API',
+      title: 'Veloce-TS API',
       version: '1.0.0',
       docs: true,
       ...config

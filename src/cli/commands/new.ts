@@ -3,6 +3,42 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 
+async function generateSwaggerUI(projectPath: string): Promise<void> {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+  <style>
+    body { margin: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: 'http://localhost:3000/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        layout: "StandaloneLayout"
+      });
+    };
+  </script>
+</body>
+</html>`;
+  
+  await writeFile(join(projectPath, 'public', 'docs.html'), html);
+}
+
 type Template = 'rest' | 'graphql' | 'websocket' | 'fullstack';
 
 interface ProjectOptions {
@@ -60,6 +96,10 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
         await generateFullstackTemplate(projectPath);
         break;
     }
+
+    // Generate public directory with Swagger UI HTML
+    await mkdir(join(projectPath, 'public'), { recursive: true });
+    await generateSwaggerUI(projectPath);
 
     console.log('\n✓ Project created successfully!');
     console.log('\nNext steps:');
@@ -145,31 +185,60 @@ dist/
 async function generateReadme(projectPath: string, name: string, template: Template): Promise<void> {
   const readme = `# ${name}
 
-A VeloceTS application using the ${template} template.
+A modern TypeScript API built with [Veloce-TS](https://github.com/AlfredoMejia3001/veloce-ts) using the **${template}** template.
 
 ## Getting Started
 
-Install dependencies:
+### Install Dependencies
 
 \`\`\`bash
 bun install
 \`\`\`
 
-Run the development server:
+### Development
+
+Run the development server with hot reload:
 
 \`\`\`bash
 bun run dev
 \`\`\`
 
-Build for production:
+Your API will be available at http://localhost:3000
+
+### Production
+
+Build and start the production server:
 
 \`\`\`bash
 bun run build
+bun run start
 \`\`\`
 
 ## Documentation
 
-Visit http://localhost:3000/docs to see the API documentation.
+- **API Documentation**: Visit http://localhost:3000/docs.html for interactive Swagger UI
+- **Veloce-TS Docs**: Check out the [official documentation](https://docs.veloce-ts.com)
+
+## Project Structure
+
+\`\`\`
+${name}/
+├── src/
+│   └── index.ts       # Application entry point
+├── package.json
+├── tsconfig.json
+└── README.md
+\`\`\`
+
+## Learn More
+
+- [Veloce-TS GitHub](https://github.com/AlfredoMejia3001/veloce-ts)
+- [TypeScript Documentation](https://www.typescriptlang.org/docs/)
+- [Bun Documentation](https://bun.sh/docs)
+
+---
+
+Built with Veloce-TS
 `;
 
   await writeFile(join(projectPath, 'README.md'), readme);
@@ -181,6 +250,8 @@ async function generateRestTemplate(projectPath: string): Promise<void> {
 import { Veloce } from 'veloce-ts';
 import { OpenAPIPlugin } from 'veloce-ts/plugins';
 import { UserController } from './controllers/user.controller';
+import { cors } from 'hono/cors';
+import { serveStatic } from 'hono/bun';
 
 const app = new Veloce({
   title: 'My REST API',
@@ -188,9 +259,16 @@ const app = new Veloce({
   docs: true,
 });
 
+// Enable CORS
+app.use(cors());
+
+// Serve static files (for Swagger UI)
+app.use(serveStatic({ root: './public' }));
+
 // Enable OpenAPI documentation
 app.usePlugin(new OpenAPIPlugin({
-  path: '/docs',
+  path: '/openapi.json',
+  docsPath: '/docs',
 }));
 
 // Register controllers
@@ -202,7 +280,8 @@ await app.compile();
 // Start server
 app.listen(3000, () => {
   console.log('Server running on http://localhost:3000');
-  console.log('Docs available at http://localhost:3000/docs');
+  console.log('API Docs available at http://localhost:3000/docs.html');
+  console.log('OpenAPI Spec at http://localhost:3000/openapi.json');
 });
 `;
 

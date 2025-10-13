@@ -1,4 +1,4 @@
-// GraphQL decorators for FastAPI-TS
+// GraphQL decorators for Veloce-TS
 import 'reflect-metadata';
 import type { ZodSchema } from 'zod';
 import type {

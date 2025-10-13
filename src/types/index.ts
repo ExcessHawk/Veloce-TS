@@ -1,4 +1,4 @@
-// Type definitions for FastAPI-TS
+// Type definitions for Veloce-TS
 import type { Context as HonoContext, Hono, MiddlewareHandler } from 'hono';
 import type { ZodSchema, z } from 'zod';
 

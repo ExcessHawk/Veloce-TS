@@ -1,4 +1,4 @@
-// GraphQL Plugin - Enables GraphQL support for FastAPI-TS
+// GraphQL Plugin - Enables GraphQL support for Veloce-TS
 import type { Plugin } from '../core/plugin';
 import type { VeloceTS } from '../core/application';
 import { GraphQLSchemaBuilder } from './schema-builder';

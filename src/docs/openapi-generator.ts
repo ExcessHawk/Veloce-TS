@@ -22,9 +22,9 @@ export class OpenAPIGenerator {
     options?: OpenAPIOptions
   ) {
     this.options = {
-      title: options?.title || 'FastAPI-TS API',
+      title: options?.title || 'Veloce-TS API',
       version: options?.version || '1.0.0',
-      description: options?.description || 'API built with FastAPI-TS',
+      description: options?.description || 'API built with Veloce-TS',
       path: options?.path || '/openapi.json',
       docsPath: options?.docsPath || '/docs',
       docs: options?.docs !== false

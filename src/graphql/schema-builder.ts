@@ -1,4 +1,4 @@
-// GraphQL Schema Builder for FastAPI-TS
+// GraphQL Schema Builder for Veloce-TS
 import type { MetadataRegistry } from '../core/metadata';
 import type { DIContainer } from '../dependencies/container';
 import type { GraphQLFieldMetadata, GraphQLArgumentMetadata, Context } from '../types';
