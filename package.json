@@ -114,7 +114,7 @@
   "bugs": {
     "url": "https://github.com/AlfredoMejia3001/veloce-ts/issues"
   },
-  "homepage": "https://github.com/AlfredoMejia3001/veloce-ts#readme",
+  "homepage": "https://veloce-ts.com",
   "files": [
     "dist/esm",
     "dist/cjs",
