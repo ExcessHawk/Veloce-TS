@@ -1,7 +1,7 @@
 {
   "name": "veloce-ts",
-  "version": "0.1.7",
-  "description": "A modern, fast web framework for TypeScript inspired by FastAPI",
+  "version": "0.3.0",
+  "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -67,6 +67,11 @@
       "import": "./dist/esm/src/cli/index.js",
       "require": "./dist/cjs/src/cli/index.js"
     },
+    "./auth": {
+      "types": "./dist/types/auth/index.d.ts",
+      "import": "./dist/esm/src/auth/index.js",
+      "require": "./dist/cjs/src/auth/index.js"
+    },
     "./adapters/*": {
       "types": "./dist/types/adapters/*.d.ts",
       "import": "./dist/esm/adapters/*.js",
@@ -103,9 +108,36 @@
     "openapi",
     "fast",
     "modern",
-    "fastapi-typescript"
+    "fastapi-typescript",
+    "jwt",
+    "authentication",
+    "rbac",
+    "graphql",
+    "websocket",
+    "sqlite",
+    "dependency-injection",
+    "middleware",
+    "swagger",
+    "api-documentation",
+    "bun",
+    "nodejs",
+    "deno"
   ],
   "author": "Alfredo Mejia <mejia_alfredo@outlook.com>",
+  "contributors": [
+    {
+      "name": "ExcessHawk",
+      "email": "excesshawk@veloce-ts.com",
+      "url": "https://github.com/ExcessHawk",
+      "role": "Lead Developer & Framework Architect"
+    },
+    {
+      "name": "Alfredo Mejia",
+      "email": "mejia_alfredo@outlook.com",
+      "url": "https://github.com/AlfredoMejia3001",
+      "role": "Project Founder"
+    }
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -135,12 +167,20 @@
   "dependencies": {
     "commander": "^14.0.1",
     "hono": "^4.0.0",
+    "ioredis": "^5.8.2",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.1.2",
     "reflect-metadata": "^0.2.0",
+    "winston": "^3.18.3",
     "zod": "^3.22.0",
     "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/ioredis": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/pino": "^7.0.5",
     "typescript": "^5.3.0"
   },
   "peerDependencies": {

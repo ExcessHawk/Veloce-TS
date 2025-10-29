@@ -3,6 +3,16 @@
  * Adapters allow FastAPI-TS to run on different runtimes (Bun, Node.js, Deno, Workers)
  * and integrate with different frameworks (Hono, Express)
  */
+
+/**
+ * Server instance interface for graceful shutdown
+ */
+export interface ServerInstance {
+  port: number;
+  close(): Promise<void> | void;
+  [key: string]: any;
+}
+
 export interface Adapter {
   /**
    * Name of the adapter (e.g., 'hono', 'express', 'native')
@@ -13,9 +23,9 @@ export interface Adapter {
    * Start the server and listen on the specified port
    * @param port - Port number to listen on
    * @param callback - Optional callback to execute when server starts
-   * @returns Server instance (type varies by runtime)
+   * @returns Server instance with close() method for graceful shutdown
    */
-  listen(port: number, callback?: () => void): any;
+  listen(port: number, callback?: () => void): ServerInstance;
 
   /**
    * Get the native handler for the underlying framework/runtime

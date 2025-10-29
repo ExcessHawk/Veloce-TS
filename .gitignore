@@ -42,6 +42,6 @@ benchmarks/
 
 examples
 tests
-starlight
+#starlight
 website
 app-ejemplo

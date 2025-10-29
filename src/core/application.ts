@@ -9,6 +9,7 @@ import { PluginManager, type Plugin } from './plugin';
 import { createCorsMiddleware } from '../middleware/cors';
 import { createRateLimitMiddleware } from '../middleware/rate-limit';
 import { createCompressionMiddleware } from '../middleware/compression';
+import { getLogger } from '../logging';
 import type {
   VeloceTSConfig,
   Class,
@@ -493,6 +494,13 @@ export class VeloceTS {
   }
 
   /**
+   * Get the router compiler
+   */
+  getCompiler(): RouterCompiler {
+    return this.compiler;
+  }
+
+  /**
    * Get the application configuration
    */
   getConfig(): VeloceTSConfig {
@@ -534,10 +542,14 @@ export class VeloceTS {
     this.compiled = true;
   }
 
+  private serverInstance: any = null;
+
   /**
    * Start the server and listen on the specified port
    * Automatically compiles routes if not already compiled
    * Delegates to the configured adapter for runtime-specific server implementation
+   * 
+   * @returns Server instance with close() method for graceful shutdown
    */
   async listen(port: number, callback?: () => void): Promise<any> {
     // Compile routes if not already done
@@ -548,7 +560,48 @@ export class VeloceTS {
     // Create and use the appropriate adapter based on configuration
     const adapter = this.createAdapter();
     
-    return adapter.listen(port, callback);
+    this.serverInstance = adapter.listen(port, callback);
+    
+    // Setup graceful shutdown handlers
+    this.setupGracefulShutdown();
+    
+    return this.serverInstance;
+  }
+
+  /**
+   * Setup graceful shutdown handlers
+   */
+  private setupGracefulShutdown(): void {
+    if (typeof process === 'undefined') return;
+
+    const shutdown = async (signal: string) => {
+      const logger = getLogger().child({ component: 'app' });
+      logger.info(`Received ${signal}, starting graceful shutdown...`);
+
+      if (this.serverInstance && typeof this.serverInstance.close === 'function') {
+        try {
+          await Promise.resolve(this.serverInstance.close());
+          logger.info('Server closed gracefully');
+        } catch (error) {
+          logger.error('Error during shutdown', error as Error);
+        }
+      }
+
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  }
+
+  /**
+   * Gracefully shutdown the server
+   */
+  async shutdown(): Promise<void> {
+    if (this.serverInstance && typeof this.serverInstance.close === 'function') {
+      await Promise.resolve(this.serverInstance.close());
+      this.serverInstance = null;
+    }
   }
 
   /**

@@ -13,7 +13,7 @@ export type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 
 export type Class<T = any> = new (...args: any[]) => T;
 
 // Provider types
-export type Provider<T = any> = Class<T> | (() => T | Promise<T>);
+export type Provider<T = any> = Class<T> | (() => T | Promise<T>) | string | symbol;
 export type Scope = 'singleton' | 'request' | 'transient';
 
 // Context type (re-export from Hono)
@@ -33,15 +33,37 @@ export interface RouteMetadata {
   dependencies: DependencyMetadata[];
   responses: ResponseMetadata[];
   docs?: RouteDocumentation;
+  auth?: AuthMetadata;
+  oauth?: OAuthMetadata;
+  roles?: RoleMetadata;
+  permissions?: PermissionMetadata;
+  minimumRole?: MinimumRoleMetadata;
+  resourcePermission?: ResourcePermissionMetadata;
+  session?: SessionMetadata;
+  csrf?: CSRFMetadata;
+  cache?: CacheMetadata;
+  cacheInvalidate?: string[];
+}
+
+// Cache metadata
+export interface CacheMetadata {
+  ttl: number | string;
+  key?: string;
+  prefix?: string;
+  includeQuery?: boolean;
+  varyByHeaders?: string[];
+  condition?: (result: any) => boolean;
+  store?: any;
 }
 
 // Parameter metadata
 export interface ParameterMetadata {
   index: number;
-  type: 'body' | 'query' | 'param' | 'header' | 'cookie' | 'request' | 'response' | 'context';
+  type: 'body' | 'query' | 'param' | 'header' | 'cookie' | 'request' | 'response' | 'context' | 'current-user' | 'token' | 'oauth-user' | 'oauth-token' | 'filtered-resource' | 'filtered-attributes' | 'current-session' | 'session-data' | 'csrf-token' | 'request-id' | 'abort-signal';
   schema?: ZodSchema;
   name?: string;
   required: boolean;
+  metadata?: any;
 }
 
 // Dependency metadata
@@ -115,6 +137,8 @@ export interface RouteConfig {
   middleware?: Middleware[];
   docs?: RouteDocumentation;
   responses?: ResponseMetadata[];
+  cache?: CacheMetadata;
+  timeout?: number;
 }
 
 // Provider config
@@ -193,6 +217,86 @@ export interface GraphQLArgumentMetadata {
 
 export interface GraphQLContextMetadata {
   index: number;
+}
+
+// Authentication types
+export interface AuthMetadata {
+  required: boolean;
+  config?: AuthConfig;
+}
+
+export interface AuthConfig {
+  optional?: boolean;
+  roles?: string[];
+  permissions?: string[];
+  scopes?: string[];
+}
+
+// OAuth types
+export interface OAuthMetadata {
+  provider: string;
+  config?: OAuthConfig;
+}
+
+export interface OAuthConfig {
+  provider: string;
+  scopes?: string[];
+  optional?: boolean;
+}
+
+// RBAC types
+export interface RoleMetadata {
+  config: RolesConfig;
+}
+
+export interface PermissionMetadata {
+  config: PermissionsConfig;
+}
+
+export interface MinimumRoleMetadata {
+  roleName: string;
+}
+
+export interface RolesConfig {
+  roles: string[];
+  requireAll?: boolean;
+  allowInherited?: boolean;
+}
+
+export interface PermissionsConfig {
+  permissions: string[];
+  requireAll?: boolean;
+}
+
+// Resource permission types
+export interface ResourcePermissionMetadata {
+  config: ResourcePermissionConfig;
+}
+
+export interface ResourcePermissionConfig {
+  action: string;
+  resource?: string;
+  attributes?: string[];
+  conditions?: Array<{
+    field: string;
+    operator: string;
+    value: any;
+  }>;
+}
+
+// Session types
+export interface SessionMetadata {
+  config: SessionConfig;
+}
+
+export interface CSRFMetadata {
+  required: boolean;
+}
+
+export interface SessionConfig {
+  required?: boolean;
+  regenerate?: boolean;
+  csrf?: boolean;
 }
 
 // ============================================================================

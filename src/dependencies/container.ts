@@ -24,7 +24,8 @@ export class DIContainer {
   private resolutionStack: Set<Provider> = new Set();
   
   // Cache provider names for error messages (avoid repeated string operations)
-  private providerNameCache: WeakMap<Provider, string> = new WeakMap();
+  // Note: Only caches for object providers (Class/Function), not string/symbol
+  private providerNameCache: WeakMap<object, string> = new WeakMap();
   
   // Statistics for monitoring performance (optional, for debugging)
   private stats = {
@@ -201,14 +202,21 @@ export class DIContainer {
 
   /**
    * Get a human-readable name for a provider (for error messages)
-   * Uses cache to avoid repeated string operations
+   * Uses cache to avoid repeated string operations (only for object providers)
    * 
    * @param provider - The provider to get the name for
    * @returns A string representation of the provider
    */
   private getProviderName(provider: Provider): string {
-    // Check cache first
-    const cached = this.providerNameCache.get(provider);
+    // For string/symbol providers, return directly
+    if (typeof provider === 'string') {
+      return provider;
+    } else if (typeof provider === 'symbol') {
+      return provider.toString();
+    }
+    
+    // For function/class providers, check cache first
+    const cached = this.providerNameCache.get(provider as object);
     if (cached) {
       return cached;
     }
@@ -225,8 +233,11 @@ export class DIContainer {
       name = String(provider);
     }
     
-    // Cache for future use
-    this.providerNameCache.set(provider, name);
+    // Cache for future use (only for object providers)
+    if (typeof provider === 'object' || typeof provider === 'function') {
+      this.providerNameCache.set(provider as object, name);
+    }
+    
     return name;
   }
 

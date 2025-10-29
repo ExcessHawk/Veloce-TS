@@ -23,6 +23,9 @@ export interface CompiledRouteMetadata extends RouteMetadata {
   hasHeaders: boolean;
   hasCookies: boolean;
   hasDependencies: boolean;
+  
+  // Handler for functional routes
+  handler?: (c: any, ...args: any[]) => any;
 }
 
 /**

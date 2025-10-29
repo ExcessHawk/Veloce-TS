@@ -37,6 +37,8 @@ export class ErrorHandler {
    * @returns HTTP response with error details
    */
   async handle(error: Error, c: Context): Promise<Response> {
+    console.log('ErrorHandler.handle called with:', error.constructor.name, error.message);
+    
     // If custom handler is provided, use it first
     if (this.customHandler) {
       try {
@@ -49,15 +51,18 @@ export class ErrorHandler {
 
     // Handle ValidationException (422)
     if (error instanceof ValidationException) {
+      console.log('Handling as ValidationException');
       return this.handleValidationException(error, c);
     }
 
     // Handle HTTPException and its subclasses
     if (error instanceof HTTPException) {
+      console.log('Handling as HTTPException');
       return this.handleHTTPException(error, c);
     }
 
     // Handle generic errors (500)
+    console.log('Handling as generic error');
     return this.handleGenericError(error, c);
   }
 

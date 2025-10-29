@@ -1,7 +1,18 @@
 import { Command } from 'commander';
 import { mkdir, writeFile } from 'fs/promises';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { existsSync } from 'fs';
+
+// Get current package version
+const getVersion = (): string => {
+  try {
+    const packagePath = join(process.cwd(), 'package.json');
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
+    return packageJson.version || '0.3.0';
+  } catch {
+    return '0.3.0';
+  }
+};
 
 async function generateSwaggerUI(projectPath: string): Promise<void> {
   const html = `<!DOCTYPE html>
@@ -10,15 +21,15 @@ async function generateSwaggerUI(projectPath: string): Promise<void> {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@latest/swagger-ui.css" />
   <style>
     body { margin: 0; padding: 0; }
   </style>
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js" crossorigin></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@latest/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@latest/swagger-ui-standalone-preset.js" crossorigin></script>
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
@@ -127,14 +138,14 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
       'generate:client': 'bun run node_modules/veloce-ts/bin/veloce.ts generate client',
     },
     dependencies: {
-      'veloce-ts': '^0.1.0',
-      hono: '^4.0.0',
-      'reflect-metadata': '^0.2.0',
-      zod: '^3.22.0',
+      'veloce-ts': `^${getVersion()}`,
+      hono: 'latest',
+      'reflect-metadata': 'latest',
+      zod: 'latest',
     },
     devDependencies: {
       '@types/bun': 'latest',
-      typescript: '^5.3.0',
+      typescript: 'latest',
     },
   };
 

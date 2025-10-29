@@ -8,6 +8,7 @@ import { ResponseSerializer } from '../responses/response';
 import { ErrorHandler } from '../errors/handler';
 import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata';
 import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
+import { BadRequestException } from '../errors/exceptions';
 
 /**
  * RouterCompiler converts metadata from decorators and functional API
@@ -45,6 +46,7 @@ export class RouterCompiler {
       const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete' | 'patch';
 
       // Register route with Hono, including any middleware
+      // Note: Controller middleware is already included in route.middleware by application.ts
       if (route.middleware && route.middleware.length > 0) {
         this.app[method](path, ...route.middleware, handler);
       } else {
@@ -76,11 +78,46 @@ export class RouterCompiler {
 
   /**
    * Create a Hono handler function for a route
-   * Integrates parameter extraction, validation, dependency injection, and error handling
+   * Integrates parameter extraction, validation, dependency injection, error handling, and caching
    */
-  private createHandler(route: CompiledRouteMetadata): (c: Context) => Promise<any> {
+  public createHandler(route: CompiledRouteMetadata): (c: Context) => Promise<any> {
     return async (c: Context) => {
       try {
+        // Store route metadata in context for auth checks
+        c.set('routeMetadata', route);
+        
+        // Check if route has caching enabled
+        const cacheConfig = (route as any).cache;
+        let cacheKey: string | null = null;
+        let cacheManager: any = null;
+
+        if (cacheConfig) {
+          const { CacheManager } = await import('../cache/manager.js');
+          const { parseTTL } = await import('../cache/types.js');
+          cacheManager = CacheManager;
+
+          // Generate cache key
+          const params = c.req.param();
+          const query = cacheConfig.includeQuery ? c.req.query() : undefined;
+          
+          cacheKey = CacheManager.generateKey(
+            route.method,
+            route.path,
+            params,
+            query,
+            cacheConfig
+          );
+
+          // Try to get from cache
+          const cached = await CacheManager.get(cacheKey, cacheConfig.store);
+          if (cached !== null) {
+            c.header('X-Cache', 'HIT');
+            return this.serializeResponse(c, cached);
+          }
+
+          c.header('X-Cache', 'MISS');
+        }
+        
         // 1. Extract and validate parameters from the request
         const args = await this.extractParameters(c, route.parameters);
 
@@ -103,7 +140,43 @@ export class RouterCompiler {
             scope: 'transient',
             context: c
           });
+          
+          if (typeof instance[route.propertyKey] !== 'function') {
+            throw new Error(`Method ${route.propertyKey} not found on controller ${route.target.name}`);
+          }
+          
           result = await instance[route.propertyKey](...allArgs);
+        }
+
+        // Cache the result if caching is enabled
+        if (cacheConfig && cacheKey && cacheManager) {
+          // Check custom condition
+          if (!cacheConfig.condition || cacheConfig.condition(result)) {
+            const { parseTTL } = await import('../cache/types.js');
+            const ttl = parseTTL(cacheConfig.ttl);
+            await cacheManager.set(cacheKey, result, ttl, cacheConfig.store);
+          }
+        }
+
+        // Handle cache invalidation if configured
+        const invalidatePatterns = (route as any).cacheInvalidate;
+        if (invalidatePatterns && Array.isArray(invalidatePatterns)) {
+          if (!cacheManager) {
+            const { CacheManager } = await import('../cache/manager.js');
+            cacheManager = CacheManager;
+          }
+
+          const params = c.req.param();
+          for (const pattern of invalidatePatterns) {
+            // Replace placeholders with actual values
+            let resolvedPattern = pattern;
+            if (params) {
+              for (const [key, value] of Object.entries(params)) {
+                resolvedPattern = resolvedPattern.replace(`{${key}}`, String(value));
+              }
+            }
+            await cacheManager.invalidate(resolvedPattern);
+          }
         }
 
         // 5. Serialize and return the response
@@ -121,6 +194,29 @@ export class RouterCompiler {
    */
   private serializeResponse(c: Context, result: any): any {
     return ResponseSerializer.serialize(c, result);
+  }
+
+  /**
+   * Get route metadata for the current request context
+   */
+  private getRouteMetadataForContext(c: Context): CompiledRouteMetadata | null {
+    // This is a simplified approach - in a real implementation we'd need to
+    // match the current route path and method to find the metadata
+    // For now, we'll store it in the context during route compilation
+    return c.get('routeMetadata') || null;
+  }
+
+  /**
+   * Check if authentication is required for a route
+   */
+  private isAuthRequired(routeMetadata: CompiledRouteMetadata): boolean {
+    // Check if the route has @Auth() decorator metadata
+    if (routeMetadata.auth?.required) {
+      return true;
+    }
+
+    // Check if any parameter requires authentication (has current-user type)
+    return routeMetadata.parameters.some(param => param.type === 'current-user');
   }
 
   /**
@@ -143,6 +239,9 @@ export class RouterCompiler {
     const extracted: any[] = [];
 
     for (const param of params) {
+      // Skip undefined entries (sparse array handling)
+      if (!param) continue;
+      
       let value: any;
 
       switch (param.type) {
@@ -163,6 +262,15 @@ export class RouterCompiler {
           } else {
             // Extract all query parameters
             value = c.req.query();
+          }
+          
+          // Validate with schema if provided
+          if (param.schema && value !== undefined) {
+            try {
+              value = param.schema.parse(value);
+            } catch (error) {
+              throw new BadRequestException(`Invalid query parameter: ${error}`);
+            }
           }
           break;
 
@@ -224,6 +332,81 @@ export class RouterCompiler {
           value = c;
           break;
 
+        case 'current-user':
+          // Extract current user from context (set by auth middleware)
+          value = c.get('auth.user') || null;
+          
+          // Check if this route requires authentication by looking for @Auth() decorator
+          // We need to check the route metadata to see if auth is required
+          const routeMetadata = this.getRouteMetadataForContext(c);
+          if (routeMetadata && this.isAuthRequired(routeMetadata)) {
+            if (!value) {
+              const authError = c.get('auth.error') || 'Authentication required';
+              const { AuthenticationException } = await import('../auth/exceptions.js');
+              throw new AuthenticationException(authError);
+            }
+          }
+          break;
+
+        case 'token':
+          // Extract JWT token from context (set by auth middleware)
+          value = c.get('auth.token') || null;
+          break;
+
+        case 'oauth-user':
+          // Extract OAuth user from context (set by OAuth middleware)
+          value = c.get('oauth.user') || null;
+          break;
+
+        case 'oauth-token':
+          // Extract OAuth token from context (set by OAuth middleware)
+          value = c.get('oauth.token') || null;
+          break;
+
+        case 'current-session':
+          // Extract current session from context (set by session middleware)
+          value = c.get('session') || null;
+          break;
+
+        case 'session-data':
+          // Extract session data from context
+          const session = c.get('session');
+          if (session && param.metadata?.key) {
+            value = session.data[param.metadata.key];
+          } else if (session) {
+            value = session.data;
+          } else {
+            value = null;
+          }
+          break;
+
+        case 'csrf-token':
+          // Extract CSRF token from context
+          value = c.get('csrf.token') || null;
+          break;
+
+        case 'filtered-resource':
+          // This would be handled by permission middleware
+          value = c.get('filtered.resource') || null;
+          break;
+
+        case 'filtered-attributes':
+          // This would be handled by permission middleware
+          value = c.get('filtered.attributes') || [];
+          break;
+
+        case 'request-id':
+          // Extract request ID from context
+          const { getRequestId } = await import('../context/request-context.js');
+          value = getRequestId(c);
+          break;
+
+        case 'abort-signal':
+          // Extract AbortSignal from context
+          const { getAbortSignal } = await import('../context/request-context.js');
+          value = getAbortSignal(c);
+          break;
+
         default:
           value = undefined;
       }
@@ -257,14 +440,27 @@ export class RouterCompiler {
     paramMetadata: ParameterMetadata[],
     maxArgumentIndex?: number
   ): any[] {
+    // Filter out undefined entries first
+    const validParamMetadata = paramMetadata.filter(p => p !== undefined && p.index !== undefined);
+    
+    // Calculate indices safely
+    const paramIndices = validParamMetadata.map(p => p.index);
+    const maxParamIndex = paramIndices.length > 0 ? Math.max(...paramIndices) : -1;
+    
     // Use pre-computed max index if available, otherwise calculate
-    const maxIndex = maxArgumentIndex !== undefined
+    let maxIndex = maxArgumentIndex !== undefined && maxArgumentIndex >= 0
       ? maxArgumentIndex
       : Math.max(
-          paramMetadata.length > 0 ? Math.max(...paramMetadata.map(p => p.index)) : -1,
+          maxParamIndex,
           parameters.length - 1,
-          dependencies.length - 1
+          dependencies.length - 1,
+          0
         );
+    
+    // Ensure maxIndex is valid
+    if (!Number.isFinite(maxIndex) || maxIndex < 0) {
+      maxIndex = 0;
+    }
     
     // Pre-allocate array with exact size needed
     const merged: any[] = new Array(maxIndex + 1);
@@ -292,6 +488,9 @@ export class RouterCompiler {
     const resolved: any[] = [];
 
     for (const dep of deps) {
+      // Skip undefined entries (sparse array handling)
+      if (!dep) continue;
+      
       try {
         // Resolve the dependency with the DI container
         // Pass the context for request-scoped dependencies

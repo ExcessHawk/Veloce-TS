@@ -1,10 +1,15 @@
 // HTTP method decorators
 import { MetadataRegistry } from '../core/metadata';
-import type { HTTPMethod } from '../types';
+import type { HTTPMethod, Middleware } from '../types';
+
+export interface ControllerOptions {
+  middleware?: Middleware[];
+}
 
 /**
  * Controller decorator - marks a class as a controller and sets a route prefix
  * @param prefix - The route prefix for all routes in this controller (e.g., '/users')
+ * @param options - Optional configuration including middleware
  * @example
  * ```ts
  * @Controller('/api/users')
@@ -12,9 +17,16 @@ import type { HTTPMethod } from '../types';
  *   @Get('/:id')
  *   getUser() {}
  * }
+ * 
+ * // With middleware
+ * @Controller('/api/users', { middleware: [authMiddleware] })
+ * class UserController {
+ *   @Get('/:id')
+ *   getUser() {}
+ * }
  * ```
  */
-export function Controller(prefix: string = ''): ClassDecorator {
+export function Controller(prefix: string = '', options?: ControllerOptions): ClassDecorator {
   return (target: any) => {
     // Normalize prefix: ensure it starts with / if not empty, and doesn't end with /
     let normalizedPrefix = prefix.trim();
@@ -27,7 +39,7 @@ export function Controller(prefix: string = ''): ClassDecorator {
 
     MetadataRegistry.defineController(target, {
       prefix: normalizedPrefix,
-      middleware: []
+      middleware: options?.middleware || []
     });
   };
 }
@@ -44,10 +56,13 @@ function createMethodDecorator(method: HTTPMethod) {
         normalizedPath = '/' + normalizedPath;
       }
 
+      // Check if there's middleware from @UseMiddleware decorator
+      const methodMiddleware = Reflect.getMetadata('route:middleware', target, propertyKey) || [];
+
       MetadataRegistry.defineRoute(target, propertyKey as string, {
         method,
         path: normalizedPath,
-        middleware: [],
+        middleware: methodMiddleware,
         parameters: [],
         dependencies: [],
         responses: []

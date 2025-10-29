@@ -29,23 +29,38 @@ export function Body<T extends ZodSchema>(schema?: T): ParameterDecorator {
 
 /**
  * Query decorator - extracts and validates query parameters
- * @param schema - Optional Zod schema for validation
+ * @param nameOrSchema - Optional specific parameter name or Zod schema for validation
  * @example
  * ```ts
+ * @Get('/users')
+ * listUsers(@Query() query: any) {}
+ * 
+ * @Get('/users')
+ * listUsers(@Query('page') page: string) {}
+ * 
  * @Get('/users')
  * listUsers(@Query(QuerySchema) query: { page: number, limit: number }) {}
  * ```
  */
-export function Query<T extends ZodSchema>(schema?: T): ParameterDecorator {
+export function Query<T extends ZodSchema>(nameOrSchema?: string | T): ParameterDecorator {
   return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
     if (!propertyKey) return;
 
     const metadata: ParameterMetadata = {
       index: parameterIndex,
       type: 'query',
-      schema,
       required: false
     };
+
+    // Handle different parameter types
+    if (typeof nameOrSchema === 'string') {
+      // Specific parameter name
+      metadata.name = nameOrSchema;
+    } else if (nameOrSchema) {
+      // Zod schema
+      metadata.schema = nameOrSchema;
+    }
+    // If no parameter, extract all query parameters
 
     MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);
   };
@@ -173,6 +188,56 @@ export function Ctx(): ParameterDecorator {
       index: parameterIndex,
       type: 'context',
       required: true
+    };
+
+    MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);
+  };
+}
+
+/**
+ * RequestId decorator - injects the current request ID
+ * @example
+ * ```ts
+ * @Get('/users/:id')
+ * async getUser(@Param('id') id: string, @RequestId() reqId: string) {
+ *   logger.info({ requestId: reqId }, 'Fetching user');
+ *   return { id, name: 'John' };
+ * }
+ * ```
+ */
+export function RequestId(): ParameterDecorator {
+  return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
+    if (!propertyKey) return;
+
+    const metadata: ParameterMetadata = {
+      index: parameterIndex,
+      type: 'request-id',
+      required: false
+    };
+
+    MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);
+  };
+}
+
+/**
+ * AbortSignal decorator - injects the AbortSignal for the current request
+ * Useful for cancelling long-running operations
+ * @example
+ * ```ts
+ * @Get('/slow-operation')
+ * async slowOperation(@AbortSignal() signal: AbortSignal) {
+ *   return await longRunningTask({ signal });
+ * }
+ * ```
+ */
+export function AbortSignal(): ParameterDecorator {
+  return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
+    if (!propertyKey) return;
+
+    const metadata: ParameterMetadata = {
+      index: parameterIndex,
+      type: 'abort-signal',
+      required: false
     };
 
     MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);

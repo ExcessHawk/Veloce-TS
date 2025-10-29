@@ -81,6 +81,7 @@ export function GQLMutation(name?: string, options?: {
 
 // Alias for convenience
 export { GQLMutation as GraphQLMutation };
+export { GQLMutation as Mutation };
 
 /**
  * @GQLSubscription decorator - Marks a method as a GraphQL subscription
@@ -103,6 +104,7 @@ export function GQLSubscription(name?: string, options?: {
 
 // Alias for convenience
 export { GQLSubscription as GraphQLSubscription };
+export { GQLSubscription as Subscription };
 
 /**
  * Helper function to create field decorators

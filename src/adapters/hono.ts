@@ -3,7 +3,7 @@
  * Supports Bun, Node.js, Deno, and Cloudflare Workers
  */
 import type { Hono } from 'hono';
-import type { Adapter } from './base';
+import type { Adapter, ServerInstance } from './base';
 
 // Type declarations for runtime globals
 declare const Deno: any;
@@ -52,7 +52,7 @@ export class HonoAdapter implements Adapter {
    * Start the server on the specified port
    * Automatically uses the appropriate server for the detected runtime
    */
-  listen(port: number, callback?: () => void): any {
+  listen(port: number, callback?: () => void): ServerInstance {
     switch (this.runtime) {
       case 'bun':
         return this.listenBun(port, callback);
@@ -93,7 +93,7 @@ export class HonoAdapter implements Adapter {
   /**
    * Start server using Bun's native server
    */
-  private listenBun(port: number, callback?: () => void): any {
+  private listenBun(port: number, callback?: () => void): ServerInstance {
     const server = Bun.serve({
       port,
       fetch: this.hono.fetch,
@@ -103,13 +103,19 @@ export class HonoAdapter implements Adapter {
       callback();
     }
 
-    return server;
+    return {
+      port,
+      close: async () => {
+        server.stop();
+      },
+      ...server
+    };
   }
 
   /**
    * Start server using Deno's native server
    */
-  private listenDeno(port: number, callback?: () => void): any {
+  private listenDeno(port: number, callback?: () => void): ServerInstance {
     // Deno.serve returns a promise, so we handle it appropriately
     const ac = new AbortController();
     
@@ -125,7 +131,9 @@ export class HonoAdapter implements Adapter {
     // Return an object with a close method for consistency
     return {
       port,
-      close: () => ac.abort(),
+      close: async () => {
+        ac.abort();
+      },
     };
   }
 
@@ -133,19 +141,29 @@ export class HonoAdapter implements Adapter {
    * Start server using Node.js adapter
    * Requires @hono/node-server package
    */
-  private listenNode(port: number, callback?: () => void): any {
+  private listenNode(port: number, callback?: () => void): ServerInstance {
     try {
       // Dynamically import @hono/node-server
       // This is a peer dependency that users need to install for Node.js support
       const { serve } = require('@hono/node-server');
       
-      return serve(
+      const server = serve(
         {
           fetch: this.hono.fetch,
           port,
         },
         callback
       );
+
+      return {
+        port,
+        close: async () => {
+          return new Promise<void>((resolve) => {
+            server.close(() => resolve());
+          });
+        },
+        ...server
+      };
     } catch (error) {
       throw new Error(
         'Node.js adapter requires @hono/node-server package. Install it with: npm install @hono/node-server'

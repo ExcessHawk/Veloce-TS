@@ -2,3 +2,6 @@
 export { WebSocketConnection } from './connection';
 export { WebSocketManager } from './manager';
 export { WebSocketPlugin } from './plugin';
+
+// WebSocket decorators exports
+export * from '../decorators/websocket';

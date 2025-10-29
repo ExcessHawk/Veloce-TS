@@ -13,12 +13,13 @@ export { MetadataCompiler, type CompiledRouteMetadata } from './core/compiled-me
 
 // Decorator exports
 export * from './decorators/http';
-export * from './decorators/params';
+export { Body, Param, Header, Cookie, Ctx, Query, RequestId, AbortSignal } from './decorators/params';
 export * from './decorators/dependencies';
 export * from './decorators/middleware';
 export * from './decorators/docs';
 export * from './decorators/websocket';
 export * from './decorators/graphql';
+export { Cache, CacheInvalidate } from './decorators/cache';
 
 // Validation exports
 export { ValidationEngine } from './validation/validator';
@@ -62,3 +63,38 @@ export * from './types';
 
 // Testing utilities exports
 export * from './testing';
+
+// Authentication exports
+export * from './auth/exceptions';
+export * from './auth/jwt-provider';
+export * from './auth/auth-service';
+export * from './auth/rbac';
+export * from './auth/rbac-plugin';
+export * from './auth/auth-plugin';
+export * from './auth/decorators';
+export * from './auth/rbac-decorators';
+// OAuth exports (specific exports to avoid conflicts)
+export type { OAuthProvider } from './auth/oauth-provider';
+export { OAuthUserSchema } from './auth/oauth-provider';
+export { OAuth, OAuthUser, OAuthToken, getOAuthUser, getOAuthToken, isOAuthAuthenticated, getOAuthProvider } from './auth/oauth-decorators';
+
+// Session exports (specific exports to avoid conflicts)  
+export { SessionManager, SessionDataSchema } from './auth/session';
+export type { SessionStore } from './auth/session';
+export { Session, CurrentSession, CSRFToken, RequireCSRF, createSessionMiddleware, SessionGuard, getCurrentSession, getSessionManager, getCSRFProtection, getSessionData, isSessionAuthenticated, getSessionUserId, setSessionData, removeSessionData } from './auth/session-decorators';
+export type { SessionData } from './auth/session-decorators';
+
+// ORM and Transaction exports
+export * from './orm';
+
+// Logging exports
+export * from './logging';
+
+// Request Context exports
+export * from './context/request-context';
+
+// Cache exports
+export * from './cache';
+
+// Health check plugin
+export * from './plugins/health';

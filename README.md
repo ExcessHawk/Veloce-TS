@@ -69,6 +69,20 @@ Plugin ecosystem
 - WebSocket
 - Custom plugins
 
+### ⚡ **Performance** (v0.3.0)
+Response caching
+- In-memory & Redis stores
+- Pattern invalidation
+- TTL configuration
+- Auto cache headers
+
+### 🔍 **Observability** (v0.3.0)
+Request tracing
+- Auto UUID tracking
+- Request cancellation
+- Timeout management
+- Structured logging
+
 </td>
 </tr>
 </table>
@@ -280,6 +294,102 @@ class UserResolver {
 
 </details>
 
+<details>
+<summary><b>⚡ Response Caching (NEW in v0.3.0)</b></summary>
+
+```typescript
+import { Controller, Get, Post, Cache, CacheInvalidate, Param, Body } from 'veloce-ts';
+
+@Controller('/products')
+class ProductController {
+  // Cache responses for 5 minutes
+  @Get('/')
+  @Cache({ ttl: '5m', key: 'products:list' })
+  async listProducts() {
+    return await db.products.findMany();
+  }
+
+  // Cache with dynamic key based on ID
+  @Get('/:id')
+  @Cache({ ttl: '10m', key: 'product:{id}' })
+  async getProduct(@Param('id') id: string) {
+    return await db.products.findOne(id);
+  }
+
+  // Invalidate cache patterns on mutation
+  @Post('/')
+  @CacheInvalidate(['products:*'])
+  async createProduct(@Body(ProductSchema) data: any) {
+    return await db.products.create(data);
+  }
+}
+
+// Or use Redis for distributed caching
+import { RedisCacheStore } from 'veloce-ts/cache';
+
+const redisCache = new RedisCacheStore({
+  host: 'localhost',
+  port: 6379,
+});
+
+app.use(createCacheMiddleware({ store: redisCache }));
+```
+
+</details>
+
+<details>
+<summary><b>🔍 Request Context & Tracing (NEW in v0.3.0)</b></summary>
+
+```typescript
+import { Controller, Get, RequestId, AbortSignal } from 'veloce-ts';
+import { createRequestContextMiddleware } from 'veloce-ts';
+
+// Enable request context middleware
+app.use(createRequestContextMiddleware({
+  timeout: 30000,  // 30 second timeout
+  logging: true    // Auto-log all requests
+}));
+
+@Controller('/data')
+class DataController {
+  // Get unique request ID for tracing
+  @Get('/process')
+  async processData(@RequestId() requestId: string) {
+    logger.info({ requestId }, 'Processing started');
+    
+    // Request ID is automatically included in all logs
+    await performHeavyTask();
+    
+    logger.info({ requestId }, 'Processing completed');
+    return { requestId, status: 'done' };
+  }
+
+  // Use AbortSignal for cancellation
+  @Get('/long-running')
+  async longRunning(@AbortSignal() signal: AbortSignal) {
+    // Check if request was cancelled
+    if (signal.aborted) {
+      throw new Error('Request cancelled');
+    }
+    
+    // Listen for cancellation
+    signal.addEventListener('abort', () => {
+      console.log('Request cancelled by client');
+    });
+    
+    return await performLongTask();
+  }
+}
+
+// Request ID is automatically added to response headers as X-Request-ID
+// Example log output:
+// [2025-10-29 10:23:45] [req-id: abc-123-def-456] INFO: Request started GET /data/process
+// [2025-10-29 10:23:45] [req-id: abc-123-def-456] INFO: Processing started
+// [2025-10-29 10:23:46] [req-id: abc-123-def-456] INFO: Processing completed
+```
+
+</details>
+
 ---
 
 ## 🛠️ CLI Commands
@@ -336,6 +446,19 @@ app.use(async (c, next) => {
 app.useCors({ origin: '*' });
 app.useRateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.useCompression();
+
+// Request context with tracing (v0.3.0)
+import { createRequestContextMiddleware } from 'veloce-ts';
+app.use(createRequestContextMiddleware({
+  timeout: 30000,
+  logging: true
+}));
+
+// Response caching (v0.3.0)
+import { createCacheMiddleware, InMemoryCacheStore } from 'veloce-ts';
+app.use(createCacheMiddleware({
+  store: new InMemoryCacheStore({ maxSize: 1000 })
+}));
 ```
 
 ### Error Handling
@@ -417,9 +540,26 @@ app.listen(3000);
 }
 ```
 
+## 👥 Core Team
+
+### ExcessHawk - Lead Developer & Framework Architect
+<img src="https://i.imgur.com/oogie-boogie-profile.png" alt="ExcessHawk" width="60" height="60" style="border-radius: 50%;">
+
+**[@ExcessHawk](https://github.com/ExcessHawk)** - *"Building fast, type-safe web frameworks that developers love to use."*
+
+- 🏗️ Core framework architecture and design
+- ⚡ Performance optimizations and benchmarking  
+- 🛠️ Developer experience and tooling
+- 🔌 Plugin system and extensibility
+
+### Alfredo Mejia - Project Founder
+**[@AlfredoMejia3001](https://github.com/AlfredoMejia3001)** - Project founder and maintainer
+
+---
+
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request. See our [Contributors Guide](CONTRIBUTORS.md) for more details.
 
 ## 📄 License
 

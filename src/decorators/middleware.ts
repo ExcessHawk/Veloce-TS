@@ -1,5 +1,6 @@
 // Middleware decorators
 import type { Middleware } from '../types';
+import { MetadataRegistry } from '../core/metadata';
 
 /**
  * UseMiddleware decorator - applies middleware to a specific route
@@ -29,6 +30,10 @@ import type { Middleware } from '../types';
  * ```
  */
 export function UseMiddleware(...middleware: Middleware[]): MethodDecorator {
-  // Implementation in task 16
-  return (target: any, propertyKey: string | symbol) => {};
+  return (target: any, propertyKey: string | symbol) => {
+    // Store middleware in a temporary metadata that will be merged later
+    // We use Reflect metadata to store it temporarily
+    const existingMiddleware = Reflect.getMetadata('route:middleware', target, propertyKey) || [];
+    Reflect.defineMetadata('route:middleware', [...existingMiddleware, ...middleware], target, propertyKey);
+  };
 }
