@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-10-31
+
+## [0.3.1] - 2025-10-31
+
+### 🛠️ CLI Improvements
+
+#### Enhanced Project Generation
+- **Latest Version Fetching**: CLI now automatically fetches the latest VeloceTS version from npm registry
+- **Improved Error Handling**: Better error messages and cleanup on project creation failure
+- **Type Safety**: Fixed TypeScript errors in CLI with proper type definitions for npm registry API
+- **Better User Experience**: Enhanced progress messages and visual feedback during project creation
+- **Robust Fallbacks**: Multiple fallback strategies for version detection when npm is unavailable
+
+#### Fixed Issues
+- **npm Registry Integration**: Fixed CLI to use correct npm registry endpoint (`/veloce-ts` instead of `/veloce-ts/latest`)
+- **Type Definitions**: Added proper TypeScript interfaces for npm registry response structure
+- **Version Resolution**: Improved version parsing with proper type checking and validation
+- **Package.json Generation**: Now uses specific dependency versions instead of 'latest' for better stability
+- **Template Compilation**: All generated templates now include mandatory `await app.compile()` call
+
+#### Technical Improvements
+- **NpmRegistryResponse Interface**: Added proper typing for npm registry API responses
+- **Async Error Handling**: Better error handling in async CLI operations
+- **Dependency Versions**: Updated to use specific versions for better reproducibility:
+  - `hono: ^4.0.0` (instead of 'latest')
+  - `reflect-metadata: ^0.2.0` (instead of 'latest')
+  - `zod: ^3.22.0` (instead of 'latest')
+  - `typescript: ^5.3.0` (instead of 'latest')
+- **Engine Requirements**: Added Node.js and Bun version requirements to generated package.json
+
+#### Developer Experience
+- **Progress Indicators**: Added emoji-based progress indicators for better visual feedback
+- **Cleanup on Failure**: Automatic cleanup of partial projects when creation fails
+- **Validation**: Better project name validation and error messages
+- **Documentation**: Generated projects include comprehensive setup instructions
+
+### 🐛 Bug Fixes
+- **CLI TypeScript Errors**: Fixed 'data is of type unknown' error in npm registry API calls
+- **Template Generation**: Fixed missing `await app.compile()` in all CLI templates
+- **Dependency Management**: Improved dependency version resolution and fallback handling
+
+### 📦 Migration Guide
+
+#### For CLI Users
+No breaking changes. Existing projects will continue to work. New projects generated with `veloce-ts new` will:
+- Use the latest VeloceTS version automatically
+- Include proper `await app.compile()` calls
+- Have more stable dependency versions
+
+#### For Framework Users
+No changes required. This release only improves the CLI experience.
+
 ## [0.3.0] - 2025-10-29
 
 ### 🚀 Major Features Added
@@ -433,7 +485,9 @@ This release brings powerful performance optimization features to Veloce-TS:
 - CLI tooling
 - Testing utilities
 
-[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.2
+[0.3.1]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.0...v0.3.1
 [0.2.2]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.1.7...v0.2.0
