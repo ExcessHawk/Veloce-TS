@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-10-31
+
+### 🐛 Critical Bug Fixes
+- **JSON Response Serialization**: Fixed critical bug where JSON responses were not being serialized correctly
+- **CLI Version Resolution**: Confirmed CLI correctly fetches and uses latest npm version (0.3.2)
+- **Application Compilation**: Fixed missing `await app.compile()` call in generated templates
+
+### 🔧 CLI Improvements
+- **Version Fetching**: CLI now correctly fetches latest version from npm registry
+- **Template Generation**: All templates now include proper `await app.compile()` call
+- **Error Handling**: Improved error handling in CLI operations
+
 ## [0.3.2] - 2025-10-31
 
 ## [0.3.1] - 2025-10-31
@@ -485,7 +497,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - CLI tooling
 - Testing utilities
 
-[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.2
 [0.3.1]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.0...v0.3.1
 [0.2.2]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.2.1...v0.2.2
