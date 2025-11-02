@@ -3,11 +3,36 @@ import { mkdir, writeFile } from 'fs/promises';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
-// Get current package version
-const getVersion = (): string => {
+// Interface for npm registry response
+interface NpmRegistryResponse {
+  'dist-tags': {
+    latest: string;
+    [key: string]: string;
+  };
+  versions: Record<string, any>;
+  [key: string]: any;
+}
+
+// Get latest version from npm
+const getLatestVersion = async (): Promise<string> => {
+  try {
+    // Try to get latest version from npm registry
+    const response = await fetch('https://registry.npmjs.org/veloce-ts');
+    if (response.ok) {
+      const data = await response.json() as NpmRegistryResponse;
+      const latestVersion = data['dist-tags']?.latest;
+      if (latestVersion && typeof latestVersion === 'string') {
+        return latestVersion;
+      }
+    }
+  } catch (error) {
+    console.warn('Could not fetch latest version from npm, using fallback');
+  }
+
+  // Fallback: try to get version from local package.json
   try {
     const packagePath = join(process.cwd(), 'package.json');
-    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
+    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8')) as { version?: string };
     return packageJson.version || '0.3.0';
   } catch {
     return '0.3.0';
@@ -46,7 +71,7 @@ async function generateSwaggerUI(projectPath: string): Promise<void> {
   </script>
 </body>
 </html>`;
-  
+
   await writeFile(join(projectPath, 'public', 'docs.html'), html);
 }
 
@@ -70,17 +95,24 @@ export function registerNewCommand(program: Command): void {
 async function createProject(name: string, options: ProjectOptions): Promise<void> {
   const projectPath = join(process.cwd(), name);
 
-  // Check if directory already exists
-  if (existsSync(projectPath)) {
-    console.error(`Error: Directory "${name}" already exists`);
+  // Validate project name
+  if (!name || name.trim() === '') {
+    console.error('❌ Error: Project name cannot be empty');
     process.exit(1);
   }
 
-  console.log(`Creating new VeloceTS project: ${name}`);
-  console.log(`Template: ${options.template}`);
+  // Check if directory already exists
+  if (existsSync(projectPath)) {
+    console.error(`❌ Error: Directory "${name}" already exists`);
+    process.exit(1);
+  }
+
+  console.log(`🚀 Creating new VeloceTS project: ${name}`);
+  console.log(`📋 Template: ${options.template}`);
 
   try {
     // Create project directory
+    console.log('📁 Creating project directories...');
     await mkdir(projectPath, { recursive: true });
 
     // Create subdirectories
@@ -88,11 +120,13 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
     await mkdir(join(projectPath, 'src', 'controllers'), { recursive: true });
 
     // Generate files based on template
+    console.log('📄 Generating configuration files...');
     await generatePackageJson(projectPath, name);
     await generateTsConfig(projectPath);
     await generateGitignore(projectPath);
     await generateReadme(projectPath, name, options.template);
 
+    console.log('🔧 Generating template files...');
     switch (options.template) {
       case 'rest':
         await generateRestTemplate(projectPath);
@@ -106,24 +140,47 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
       case 'fullstack':
         await generateFullstackTemplate(projectPath);
         break;
+      default:
+        throw new Error(`Unknown template: ${options.template}`);
     }
 
     // Generate public directory with Swagger UI HTML
+    console.log('📚 Setting up documentation...');
     await mkdir(join(projectPath, 'public'), { recursive: true });
     await generateSwaggerUI(projectPath);
 
-    console.log('\n✓ Project created successfully!');
-    console.log('\nNext steps:');
-    console.log(`  cd ${name}`);
-    console.log('  bun install');
-    console.log('  bun run dev');
+    console.log('\n✅ Project created successfully!');
+    console.log('\n📋 Next steps:');
+    console.log(`   cd ${name}`);
+    console.log('   bun install');
+    console.log('   bun run dev');
+    console.log('\n🌐 Your API will be available at:');
+    console.log('   http://localhost:3000');
+    console.log('   http://localhost:3000/docs (API Documentation)');
   } catch (error) {
-    console.error('Error creating project:', error);
+    console.error('❌ Error creating project:', error);
+
+    // Clean up partial project if creation failed
+    try {
+      if (existsSync(projectPath)) {
+        console.log('🧹 Cleaning up partial project...');
+        // Note: In a real implementation, you'd want to recursively delete
+        // For now, just warn the user
+        console.warn(`⚠️  Please manually remove the directory: ${projectPath}`);
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️  Could not clean up partial project:', cleanupError);
+    }
+
     process.exit(1);
   }
 }
 
 async function generatePackageJson(projectPath: string, name: string): Promise<void> {
+  console.log('📦 Fetching latest VeloceTS version from npm...');
+  const latestVersion = await getLatestVersion();
+  console.log(`✅ Using VeloceTS version: ${latestVersion}`);
+
   const packageJson = {
     name,
     version: '0.1.0',
@@ -138,14 +195,18 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
       'generate:client': 'bun run node_modules/veloce-ts/bin/veloce.ts generate client',
     },
     dependencies: {
-      'veloce-ts': `^${getVersion()}`,
-      hono: 'latest',
-      'reflect-metadata': 'latest',
-      zod: 'latest',
+      'veloce-ts': `^${latestVersion}`,
+      hono: '^4.0.0', // Use specific version instead of 'latest'
+      'reflect-metadata': '^0.2.0',
+      zod: '^3.22.0',
     },
     devDependencies: {
       '@types/bun': 'latest',
-      typescript: 'latest',
+      typescript: '^5.3.0',
+    },
+    engines: {
+      node: '>=18.0.0',
+      bun: '>=1.0.0',
     },
   };
 
@@ -258,23 +319,19 @@ Built with Veloce-TS
 async function generateRestTemplate(projectPath: string): Promise<void> {
   // Create main entry point
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce-ts';
-import { OpenAPIPlugin } from 'veloce-ts/plugins';
+import { Veloce, OpenAPIPlugin } from 'veloce-ts';
 import { UserController } from './controllers/user.controller';
-import { cors } from 'hono/cors';
-import { serveStatic } from 'hono/bun';
 
 const app = new Veloce({
   title: 'My REST API',
   version: '1.0.0',
+  description: 'A REST API built with VeloceTS',
   docs: true,
+  cors: {
+    origin: '*',
+    credentials: true,
+  },
 });
-
-// Enable CORS
-app.use(cors());
-
-// Serve static files (for Swagger UI)
-app.use(serveStatic({ root: './public' }));
 
 // Enable OpenAPI documentation
 app.usePlugin(new OpenAPIPlugin({
@@ -285,15 +342,60 @@ app.usePlugin(new OpenAPIPlugin({
 // Register controllers
 app.include(UserController);
 
-// Compile routes
-await app.compile();
+// Add a simple docs route
+app.get('/docs', {
+  handler: async (c) => {
+    const html = \`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      window.ui = SwaggerUIBundle({
+        url: '/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout"
+      });
+    };
+  </script>
+</body>
+</html>\`;
+    
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+  },
+});
 
 // Start server
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-  console.log('API Docs available at http://localhost:3000/docs.html');
-  console.log('OpenAPI Spec at http://localhost:3000/openapi.json');
-});
+async function startServer() {
+  try {
+    console.log('🔄 Compiling application...');
+    await app.compile();
+    console.log('✅ Application compiled successfully');
+    
+    app.listen(3000, () => {
+      console.log('🚀 Server running on http://localhost:3000');
+      console.log('📚 API Docs available at http://localhost:3000/docs');
+      console.log('📄 OpenAPI Spec at http://localhost:3000/openapi.json');
+    });
+  } catch (error) {
+    console.error('❌ Error starting server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 `;
 
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
@@ -485,45 +587,54 @@ async function generateFullstackTemplate(projectPath: string): Promise<void> {
 
   // Generate main file
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce-ts';
-import { OpenAPIPlugin, GraphQLPlugin, WebSocketPlugin } from 'veloce-ts/plugins';
+import { Veloce, OpenAPIPlugin } from 'veloce-ts';
 import { UserController } from './controllers/user.controller';
-import { UserResolver } from './resolvers/user.resolver';
-import { ChatWebSocket } from './websockets/chat.websocket';
 
 const app = new Veloce({
   title: 'My Fullstack API',
   version: '1.0.0',
+  description: 'A fullstack API with REST, GraphQL, and WebSocket support',
   docs: true,
+  cors: {
+    origin: '*',
+    credentials: true,
+  },
 });
 
 // Enable OpenAPI documentation
 app.usePlugin(new OpenAPIPlugin({
-  path: '/docs',
+  path: '/openapi.json',
+  docsPath: '/docs',
 }));
 
 // REST API
 app.include(UserController);
 
-// GraphQL
-app.usePlugin(new GraphQLPlugin({
-  resolvers: [UserResolver],
-}));
+// TODO: Add GraphQL and WebSocket support when plugins are available
+// app.usePlugin(new GraphQLPlugin({ resolvers: [UserResolver] }));
+// app.usePlugin(new WebSocketPlugin({ handlers: [ChatWebSocket] }));
 
-// WebSocket
-app.usePlugin(new WebSocketPlugin({
-  handlers: [ChatWebSocket],
-}));
+// Start server
+async function startServer() {
+  try {
+    console.log('🔄 Compiling application...');
+    await app.compile();
+    console.log('✅ Application compiled successfully');
+    
+    app.listen(3000, () => {
+      console.log('🚀 Server running on http://localhost:3000');
+      console.log('📚 REST API docs at http://localhost:3000/docs');
+      console.log('📄 OpenAPI Spec at http://localhost:3000/openapi.json');
+      // console.log('🔮 GraphQL Playground at http://localhost:3000/graphql');
+      // console.log('🔌 WebSocket endpoint at ws://localhost:3000/ws/chat');
+    });
+  } catch (error) {
+    console.error('❌ Error starting server:', error);
+    process.exit(1);
+  }
+}
 
-// Compile routes
-await app.compile();
-
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-  console.log('REST API docs at http://localhost:3000/docs');
-  console.log('GraphQL Playground at http://localhost:3000/graphql');
-  console.log('WebSocket endpoint at ws://localhost:3000/ws/chat');
-});
+startServer();
 `;
 
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);

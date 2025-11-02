@@ -4,4 +4,9 @@ export { WebSocketManager } from './manager';
 export { WebSocketPlugin } from './plugin';
 
 // WebSocket decorators exports
-export * from '../decorators/websocket';
+export {
+  WebSocket,
+  OnConnect,
+  OnMessage,
+  OnDisconnect
+} from '../decorators/websocket';

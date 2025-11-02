@@ -45,7 +45,7 @@ async function build(options: BuildOptions = {}) {
     target: 'bun',
     minify: production || minify,
     sourcemap: production ? 'external' : 'inline',
-    splitting: true, // Enable code splitting for better tree-shaking
+    splitting: false, // Disable code splitting to avoid export conflicts
     naming: '[dir]/[name].js',
   });
 

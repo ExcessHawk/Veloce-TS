@@ -6,11 +6,19 @@ import { join } from 'path';
 // Get package.json version
 const getVersion = (): string => {
   try {
-    const packagePath = join(process.cwd(), 'package.json');
-    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
-    return packageJson.version || '0.1.0';
+    // Try to get version from the framework's package.json
+    const frameworkPackagePath = join(__dirname, '..', '..', 'package.json');
+    const frameworkPackageJson = JSON.parse(readFileSync(frameworkPackagePath, 'utf-8'));
+    return frameworkPackageJson.version || '0.3.0';
   } catch {
-    return '0.1.0';
+    // Fallback to current directory package.json
+    try {
+      const packagePath = join(process.cwd(), 'package.json');
+      const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
+      return packageJson.version || '0.3.0';
+    } catch {
+      return '0.3.0';
+    }
   }
 };
 
