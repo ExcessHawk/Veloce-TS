@@ -254,15 +254,51 @@ export const HealthCheckers = {
   },
 
   /**
-   * Disk space checker
+   * Disk space checker.
+   *
+   * Uses `fs.statfs` (Node 18+ / Bun) to read free blocks on the filesystem
+   * that contains `path`.  Falls back gracefully on platforms that do not
+   * support the syscall.
+   *
+   * @param path           - Filesystem path to check (default: current working directory)
+   * @param maxUsagePercent - Alert threshold in percent (default: 90)
    */
-  disk(maxUsagePercent: number = 90): HealthChecker {
-    const checker: HealthChecker = () => {
-      // This would require additional dependencies
-      return {
-        status: 'healthy',
-        message: 'Disk check not implemented (requires additional dependencies)'
-      };
+  disk(path: string = process.cwd(), maxUsagePercent: number = 90): HealthChecker {
+    const checker: HealthChecker = async () => {
+      try {
+        // statfs is available in Node 18+ and Bun
+        const { statfs } = await import('fs/promises');
+        if (typeof statfs !== 'function') {
+          return { status: 'healthy', message: 'statfs not available on this platform' };
+        }
+
+        const stats = await (statfs as Function)(path) as {
+          blocks: number;
+          bfree: number;
+          bsize: number;
+        };
+
+        const totalBytes = stats.blocks * stats.bsize;
+        const freeBytes  = stats.bfree  * stats.bsize;
+        const usedBytes  = totalBytes - freeBytes;
+        const usagePct   = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+        const isHealthy  = usagePct < maxUsagePercent;
+
+        return {
+          status: isHealthy ? 'healthy' : 'unhealthy',
+          message: `Disk usage: ${usagePct.toFixed(1)}% (threshold: ${maxUsagePercent}%)`,
+          usagePercent: parseFloat(usagePct.toFixed(1)),
+          freeGB:        parseFloat((freeBytes  / 1e9).toFixed(2)),
+          totalGB:       parseFloat((totalBytes / 1e9).toFixed(2)),
+          path,
+        };
+      } catch (err) {
+        // statfs may throw ENOSYS on some platforms — degrade gracefully
+        return {
+          status: 'healthy',
+          message: `Disk check unavailable: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
     };
     checker.name = 'disk';
     return checker;

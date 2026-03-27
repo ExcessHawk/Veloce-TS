@@ -1,153 +1,203 @@
 /**
- * Express adapter for FastAPI-TS
- * Bridges FastAPI-TS routes to Express.js framework
- * Allows integration with existing Express applications
+ * Express adapter for Veloce-TS
+ *
+ * Bridges Veloce-TS / Hono routes into an existing Express application.
+ * The adapter works by forwarding every request received by Express to
+ * Hono's `fetch()` handler and then writing the Web-standard `Response`
+ * back through Express's `res` object.
+ *
+ * Express is a **peer dependency** — install it separately:
+ *   npm install express
+ *   npm install --save-dev @types/express
+ *
+ * @example
+ * ```ts
+ * import express from 'express';
+ * import { VeloceTS } from 'veloce-ts';
+ * import { ExpressAdapter } from 'veloce-ts/adapters/express';
+ *
+ * const veloce = new VeloceTS({ docs: true });
+ * veloce.get('/hello', { handler: () => ({ message: 'Hello from Veloce!' }) });
+ * await veloce.compile();
+ *
+ * const adapter = new ExpressAdapter(veloce);
+ *
+ * // Mount Veloce-TS under a sub-path (or mount at root with '/')
+ * const expressApp = express();
+ * expressApp.use('/api', adapter.getHandler());
+ * expressApp.listen(3000);
+ * ```
  */
 import type { Adapter } from './base';
 import type { VeloceTS } from '../core/application';
 
-// Type declarations for Express (peer dependency)
-declare const require: any;
-
 /**
- * ExpressAdapter - Bridges FastAPI-TS to Express.js
- * Converts Express req/res to Hono Context format
+ * ExpressAdapter — bridges Veloce-TS to Express.js.
+ *
+ * The adapter is completely **standalone** (no `require` at module load time).
+ * Express is loaded lazily the first time the adapter is constructed, so
+ * apps that do not use it pay no startup cost.
  */
 export class ExpressAdapter implements Adapter {
   name = 'express';
-  private express: any;
+  private expressApp: any;
 
-  constructor(private app: VeloceTS) {
-    try {
-      // Express is a peer dependency
-      const expressModule = require('express');
-      this.express = expressModule();
-      this.setupBridge();
-    } catch (error) {
-      throw new Error(
-        'Express adapter requires express package. Install it with: npm install express'
-      );
-    }
+  /**
+   * @param veloceApp - A compiled (or not-yet-compiled) VeloceTS instance.
+   * @param expressInstance - Optional pre-created Express application.
+   *   Pass your own `express()` if you need to add middleware before the
+   *   Veloce-TS bridge is attached.
+   */
+  constructor(private veloceApp: VeloceTS, expressInstance?: any) {
+    this.expressApp = expressInstance ?? ExpressAdapter.createExpressApp();
+    this.setupBridge();
+  }
+
+  // -------------------------------------------------------------------------
+  // Public API
+  // -------------------------------------------------------------------------
+
+  /**
+   * Start listening on `port`.
+   * @returns The underlying `http.Server` instance.
+   */
+  listen(port: number, callback?: () => void): any {
+    return this.expressApp.listen(port, callback);
   }
 
   /**
-   * Set up the bridge between FastAPI-TS and Express
-   * Converts all FastAPI-TS routes to Express routes
+   * Return the Express application so you can attach additional middleware
+   * or mount it with `app.use('/prefix', adapter.getHandler())`.
+   */
+  getHandler(): any {
+    return this.expressApp;
+  }
+
+  /** Alias for `getHandler()`. */
+  getExpressApp(): any {
+    return this.expressApp;
+  }
+
+  // -------------------------------------------------------------------------
+  // Internal helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Lazily load Express (works in ESM and CJS, Bun and Node).
+   * Express is a peer dependency so we load it at runtime.
+   */
+  private static createExpressApp(): any {
+    // Use Function constructor to escape TypeScript's module-aware narrowing of
+    // `require`.  This also ensures the bundler does not try to inline express.
+    // eslint-disable-next-line no-new-func
+    const _require = (typeof require !== 'undefined'
+      ? require
+      : Function('return require')()) as (id: string) => any;
+
+    let expressFactory: (...args: any[]) => any;
+    try {
+      expressFactory = _require('express') as (...args: any[]) => any;
+    } catch {
+      throw new Error(
+        '[ExpressAdapter] Could not load the "express" package.\n' +
+        'Install it as a peer dependency:  npm install express'
+      );
+    }
+
+    return expressFactory();
+  }
+
+  /**
+   * Register a catch-all Express middleware that forwards every request to
+   * Hono and writes the result back.
    */
   private setupBridge(): void {
-    // Get the Hono instance from FastAPI-TS
-    const hono = this.app.getHono();
+    const honoApp = this.veloceApp.getHono();
 
-    // Use Express middleware to forward all requests to Hono
-    this.express.use(async (req: any, res: any) => {
+    this.expressApp.use(async (req: any, res: any, next: any) => {
       try {
-        // Convert Express request to Web Standard Request
-        const request = this.createWebRequest(req);
-
-        // Call Hono's fetch handler
-        const response = await hono.fetch(request);
-
-        // Convert Web Standard Response to Express response
-        await this.sendExpressResponse(res, response);
-      } catch (error) {
-        // Handle errors
-        res.status(500).json({
-          error: 'Internal Server Error',
-          message: error instanceof Error ? error.message : 'Unknown error'
-        });
+        const webRequest = this.toWebRequest(req);
+        const webResponse = await honoApp.fetch(webRequest);
+        await this.writeExpressResponse(res, webResponse);
+      } catch (err) {
+        // Let Express handle unexpected errors through its error middleware
+        next(err);
       }
     });
   }
 
   /**
-   * Convert Express request to Web Standard Request
+   * Convert an Express `req` to a Web-standard `Request`.
+   *
+   * Body handling:
+   * - If Express's `body-parser` (or similar) already parsed the body, it is
+   *   re-serialised as JSON.
+   * - If the body was streamed directly (raw middleware), the raw buffer is
+   *   forwarded as-is.
    */
-  private createWebRequest(req: any): Request {
-    // Build the full URL
-    const protocol = req.protocol || 'http';
-    const host = req.get('host') || 'localhost';
-    const url = `${protocol}://${host}${req.originalUrl || req.url}`;
+  private toWebRequest(req: any): Request {
+    const protocol = req.protocol ?? 'http';
+    const host     = req.get?.('host') ?? req.headers?.host ?? 'localhost';
+    const url      = `${protocol}://${host}${req.originalUrl ?? req.url}`;
 
-    // Build headers
     const headers = new Headers();
-    for (const [key, value] of Object.entries(req.headers)) {
+    for (const [key, value] of Object.entries<any>(req.headers ?? {})) {
       if (typeof value === 'string') {
         headers.set(key, value);
       } else if (Array.isArray(value)) {
-        value.forEach(v => headers.append(key, v));
+        value.forEach((v: string) => headers.append(key, v));
       }
     }
 
-    // Build request options
-    const options: RequestInit = {
-      method: req.method,
-      headers,
-    };
+    const init: RequestInit = { method: req.method, headers };
 
-    // Add body for methods that support it
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      // Express body-parser middleware should have already parsed the body
-      if (req.body) {
-        options.body = JSON.stringify(req.body);
-        headers.set('content-type', 'application/json');
+      if (Buffer.isBuffer(req.body)) {
+        // Raw body from express.raw() or multer
+        init.body = req.body;
+      } else if (req.body !== undefined && req.body !== null) {
+        // Parsed body from express.json() / express.urlencoded()
+        init.body = JSON.stringify(req.body);
+        if (!headers.has('content-type')) {
+          headers.set('content-type', 'application/json');
+        }
       }
     }
 
-    return new Request(url, options);
+    return new Request(url, init);
   }
 
   /**
-   * Convert Web Standard Response to Express response
+   * Write a Web-standard `Response` back through Express `res`.
    */
-  private async sendExpressResponse(res: any, response: Response): Promise<void> {
-    // Set status code
+  private async writeExpressResponse(res: any, response: Response): Promise<void> {
     res.status(response.status);
 
-    // Set headers
-    response.headers.forEach((value, key) => {
-      res.setHeader(key, value);
+    // Forward all headers from Hono to Express
+    response.headers.forEach((value: string, key: string) => {
+      // Skip hop-by-hop headers that Express manages itself
+      if (key.toLowerCase() !== 'transfer-encoding') {
+        res.setHeader(key, value);
+      }
     });
 
-    // Send body
-    if (response.body) {
-      // Check content type to determine how to send the response
-      const contentType = response.headers.get('content-type') || '';
-
-      if (contentType.includes('application/json')) {
-        const json = await response.json();
-        res.json(json);
-      } else if (contentType.includes('text/')) {
-        const text = await response.text();
-        res.send(text);
-      } else {
-        // For binary data, stream it
-        const buffer = await response.arrayBuffer();
-        res.send(Buffer.from(buffer));
-      }
-    } else {
+    if (!response.body) {
       res.end();
+      return;
     }
-  }
 
-  /**
-   * Start the Express server on the specified port
-   */
-  listen(port: number, callback?: () => void): any {
-    return this.express.listen(port, callback);
-  }
+    const contentType = response.headers.get('content-type') ?? '';
 
-  /**
-   * Get the Express app instance
-   * This allows users to add additional Express middleware or routes
-   */
-  getHandler(): any {
-    return this.express;
-  }
-
-  /**
-   * Get the underlying Express app for advanced customization
-   */
-  getExpressApp(): any {
-    return this.express;
+    if (contentType.includes('application/json')) {
+      const json = await response.json();
+      res.json(json);
+    } else if (contentType.startsWith('text/')) {
+      const text = await response.text();
+      res.send(text);
+    } else {
+      // Binary / streaming content — send as Buffer
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    }
   }
 }

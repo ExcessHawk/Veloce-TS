@@ -33,6 +33,10 @@ export interface RouteMetadata {
   dependencies: DependencyMetadata[];
   responses: ResponseMetadata[];
   docs?: RouteDocumentation;
+  /** Override the HTTP status code returned by this route (e.g. 201 for creation) */
+  statusCode?: number;
+  /** Zod schema used to validate / strip the handler's return value */
+  responseSchema?: ZodSchema;
   auth?: AuthMetadata;
   oauth?: OAuthMetadata;
   roles?: RoleMetadata;
@@ -169,6 +173,8 @@ export interface OpenAPISpec {
     schemas?: Record<string, any>;
     securitySchemes?: Record<string, any>;
   };
+  /** Top-level tag definitions (auto-populated from route path prefixes) */
+  tags?: Array<{ name: string; description?: string }>;
 }
 
 // WebSocket types

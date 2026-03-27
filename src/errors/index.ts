@@ -8,7 +8,13 @@ export {
   NotFoundException,
   UnauthorizedException,
   ForbiddenException,
-  BadRequestException
+  BadRequestException,
+  ConflictException,
+  GoneException,
+  PayloadTooLargeException,
+  UnprocessableEntityException,
+  TooManyRequestsException,
+  ServiceUnavailableException,
 } from './exceptions.js';
 
 export { ErrorHandler } from './handler.js';

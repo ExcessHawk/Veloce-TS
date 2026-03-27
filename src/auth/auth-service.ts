@@ -21,6 +21,12 @@ export interface UserProvider {
   findById(id: string): Promise<User | null>;
   hashPassword(password: string): Promise<string>;
   verifyPassword(password: string, hash: string): Promise<boolean>;
+  createUser?(userData: {
+    username: string;
+    password: string;
+    email?: string;
+    roles?: string[];
+  }): Promise<User>;
 }
 
 export class AuthService {
@@ -136,22 +142,18 @@ export class AuthService {
     email?: string;
     roles?: string[];
   }): Promise<AuthResult> {
-    const hashedPassword = await this.userProvider.hashPassword(userData.password);
-    
-    // This would typically create the user in the database
-    // For now, we'll assume the userProvider handles this
-    const user: User = {
-      id: crypto.randomUUID(),
-      username: userData.username,
-      email: userData.email,
-      roles: userData.roles || ['user'],
-    };
+    if (!this.userProvider.createUser) {
+      throw new Error('UserProvider does not support user creation');
+    }
+
+    const user = await this.userProvider.createUser(userData);
 
     const tokens = this.jwtProvider.generateTokens({
       sub: user.id,
       username: user.username,
       email: user.email,
-      roles: user.roles,
+      roles: user.roles || [],
+      permissions: user.permissions || [],
     });
 
     return { user, tokens };

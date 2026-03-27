@@ -14,6 +14,8 @@ export interface CursorPaginatedResult<T> {
   hasNext: boolean;
   hasPrev: boolean;
   limit: number;
+  /** Number of items actually returned (≤ limit) */
+  count: number;
 }
 
 export interface OffsetPaginationOptions extends PaginationOptions {
@@ -30,6 +32,10 @@ export interface PaginationMeta {
   hasPrev: boolean;
   firstPage: number;
   lastPage: number;
+  /** Index (1-based) of the first item on this page */
+  from: number;
+  /** Index (1-based) of the last item on this page */
+  to: number;
 }
 
 /**
@@ -44,8 +50,12 @@ export class PaginationHelper {
     page: number,
     limit: number
   ): PaginationMeta {
+    if (limit <= 0) {
+      throw new Error('Limit must be greater than 0');
+    }
     const totalPages = Math.ceil(total / limit);
     
+    const offset = PaginationHelper.calculateOffset(page, limit);
     return {
       total,
       page,
@@ -54,7 +64,9 @@ export class PaginationHelper {
       hasNext: page < totalPages,
       hasPrev: page > 1,
       firstPage: 1,
-      lastPage: totalPages
+      lastPage: totalPages,
+      from: total === 0 ? 0 : offset + 1,
+      to:   Math.min(offset + limit, total),
     };
   }
   
@@ -110,7 +122,34 @@ export class PaginationHelper {
       hasPrev: meta.hasPrev
     };
   }
-  
+
+  /**
+   * Parse pagination query params from a raw query object.
+   *
+   * Unlike `extractPaginationFromQuery`, this method accepts an explicit
+   * `defaultLimit` and `maxLimit` and **never throws** — invalid values fall
+   * back to the defaults so the endpoint stays resilient.
+   *
+   * @param query        - Raw query-param object (e.g. `c.req.query()`)
+   * @param defaultLimit - Default page size (default: 10)
+   * @param maxLimit     - Hard upper bound on `limit` (default: 100)
+   */
+  static parsePaginationQuery(
+    query: Record<string, any>,
+    defaultLimit = 10,
+    maxLimit = 100,
+  ): OffsetPaginationOptions {
+    const rawPage  = parseInt(query['page'],  10);
+    const rawLimit = parseInt(query['limit'], 10);
+
+    const page  = Number.isFinite(rawPage)  && rawPage  >= 1 ? rawPage  : 1;
+    const limit = Number.isFinite(rawLimit) && rawLimit >= 1
+      ? Math.min(rawLimit, maxLimit)
+      : defaultLimit;
+
+    return { page, limit };
+  }
+
   /**
    * Extract pagination options from query parameters
    */
@@ -167,40 +206,85 @@ export class CursorPaginationHelper {
   }
   
   /**
-   * Create cursor paginated result
+   * Create cursor paginated result.
+   *
+   * Pass `fetchedLimit + 1` items from the database; this helper will slice
+   * the extra item off and use its presence to determine `hasNext`.
+   *
+   * @param data          - Items fetched from the DB (up to `limit + 1`)
+   * @param limit         - Requested page size
+   * @param cursorField   - Field used as the cursor (default: `'id'`)
+   * @param hadPrevCursor - Whether the caller passed an incoming cursor,
+   *                        which implies there is a previous page
    */
   static createCursorPaginatedResult<T>(
     data: T[],
     limit: number,
-    cursorField: string = 'id'
+    cursorField: string = 'id',
+    hadPrevCursor = false,
   ): CursorPaginatedResult<T> {
-    const hasNext = data.length > limit;
-    const hasPrev = false; // This would need to be determined by the query
-    
-    // Remove extra item if we fetched limit + 1
+    const hasNext  = data.length > limit;
+    const hasPrev  = hadPrevCursor; // if we arrived here with a cursor, there is a prev page
+
+    // Slice off the look-ahead item
     const resultData = hasNext ? data.slice(0, limit) : data;
-    
+
     let nextCursor: string | undefined;
     let prevCursor: string | undefined;
-    
+
     if (resultData.length > 0) {
       if (hasNext) {
         nextCursor = this.createCursor(resultData[resultData.length - 1], cursorField);
       }
-      
       if (hasPrev) {
         prevCursor = this.createCursor(resultData[0], cursorField);
       }
     }
-    
+
     return {
       data: resultData,
       nextCursor,
       prevCursor,
       hasNext,
       hasPrev,
-      limit
+      limit,
+      count: resultData.length,
     };
+  }
+
+  /**
+   * Create a multi-field cursor (e.g. `{ createdAt, id }` for stable sorting).
+   *
+   * @param entity       - Entity to extract cursor values from
+   * @param cursorFields - Ordered list of fields to include in the cursor
+   *
+   * @example
+   * ```ts
+   * const cursor = CursorPaginationHelper.createMultiCursor(post, ['createdAt', 'id']);
+   * // → opaque base-64 string encoding { createdAt: '…', id: '…' }
+   * ```
+   */
+  static createMultiCursor(entity: any, cursorFields: string[]): string {
+    const cursorData: Record<string, any> = {};
+    for (const field of cursorFields) {
+      if (entity[field] === undefined || entity[field] === null) {
+        throw new Error(`Cursor field '${field}' is missing from entity`);
+      }
+      cursorData[field] = entity[field];
+    }
+    return this.encodeCursor(cursorData);
+  }
+
+  /**
+   * Decode a multi-field cursor and return the field map.
+   *
+   * @example
+   * ```ts
+   * const { createdAt, id } = CursorPaginationHelper.decodeMultiCursor(cursor);
+   * ```
+   */
+  static decodeMultiCursor(cursor: string): Record<string, any> {
+    return this.decodeCursor(cursor);
   }
 }
 
@@ -339,6 +423,56 @@ export function Paginated(defaultLimit: number = 10, maxLimit: number = 100) {
     
     return descriptor;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Standalone convenience helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Quick offset-pagination helper — build an enriched paginated response from
+ * a raw items array and a total count in one call.
+ *
+ * @example
+ * ```ts
+ * const rows  = await db.query('SELECT * FROM products LIMIT ? OFFSET ?', [limit, offset]);
+ * const total = (await db.query('SELECT COUNT(*) as n FROM products'))[0].n;
+ * return paginate(rows, total, page, limit);
+ * ```
+ */
+export function paginate<T>(
+  data: T[],
+  total: number,
+  page: number,
+  limit: number,
+): { data: T[]; meta: PaginationMeta } {
+  const meta = PaginationHelper.calculateMeta(total, page, limit);
+  return { data, meta };
+}
+
+/**
+ * Parse cursor-pagination query params (`cursor`, `limit`) from a raw query
+ * object.  Falls back gracefully on invalid values.
+ *
+ * @param query        - Raw query-param object (e.g. `c.req.query()`)
+ * @param defaultLimit - Default page size (default: 20)
+ * @param maxLimit     - Hard upper bound on `limit` (default: 100)
+ */
+export function parseCursorQuery(
+  query: Record<string, any>,
+  defaultLimit = 20,
+  maxLimit = 100,
+): { cursor?: string; limit: number } {
+  const rawLimit = parseInt(query['limit'], 10);
+  const limit    = Number.isFinite(rawLimit) && rawLimit >= 1
+    ? Math.min(rawLimit, maxLimit)
+    : defaultLimit;
+
+  const cursor = typeof query['cursor'] === 'string' && query['cursor'].length > 0
+    ? query['cursor']
+    : undefined;
+
+  return { cursor, limit };
 }
 
 /**

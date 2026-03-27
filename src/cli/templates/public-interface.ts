@@ -28,7 +28,7 @@ async function generateApiDocsHtml(projectPath: string): Promise<void> {
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
-        url: 'http://localhost:3000/openapi.json',
+        url: '/openapi.json',
         dom_id: '#swagger-ui',
         deepLinking: true,
         presets: [

@@ -26,28 +26,43 @@ export class OpenAPIPlugin implements Plugin {
   }
 
   async install(app: VeloceTS): Promise<void> {
-    // Get app config to merge with plugin options
+    // Merge app-level config into plugin options
     const appConfig = app.getConfig();
     if (appConfig.title) this.options.title = appConfig.title;
     if (appConfig.version) this.options.version = appConfig.version;
     if (appConfig.description) this.options.description = appConfig.description;
 
-    // Register OpenAPI spec endpoint
+    // Register OpenAPI JSON spec endpoint
     app.get(this.options.path, {
       handler: async () => {
-        const spec = this.generateSpec(app);
-        return spec;
+        return this.generateSpec(app);
       },
       docs: {
-        summary: 'Get OpenAPI specification',
+        summary: 'OpenAPI specification',
         description: 'Returns the OpenAPI 3.0 specification for this API',
         tags: ['Documentation']
       }
     });
 
-    // Note: Swagger UI HTML is served via static files (public/docs.html)
-    // This is more reliable than serving HTML from the plugin
-    // The OpenAPI JSON spec is available at the configured path
+    // Always register Swagger UI at docsPath — served entirely from the backend
+    // so it works in every environment without static files.
+    if (this.options.docs && this.options.docsPath) {
+      const specPath = this.options.path;
+      const html = this.renderSwaggerUI();
+
+      app.get(this.options.docsPath, {
+        handler: async (c: any) => {
+          return new globalThis.Response(html, {
+            headers: { 'Content-Type': 'text/html; charset=utf-8' }
+          });
+        },
+        docs: {
+          summary: 'Swagger UI',
+          description: 'Interactive API documentation',
+          tags: ['Documentation']
+        }
+      });
+    }
   }
 
   /**
@@ -60,7 +75,8 @@ export class OpenAPIPlugin implements Plugin {
   }
 
   /**
-   * Render Swagger UI HTML
+   * Render Swagger UI HTML.
+   * Uses a relative URL for the spec so it works on any host/port/proxy.
    */
   private renderSwaggerUI(): string {
     return `<!DOCTYPE html>
@@ -71,10 +87,8 @@ export class OpenAPIPlugin implements Plugin {
   <title>${this.options.title} - API Documentation</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-    }
+    body { margin: 0; padding: 0; }
+    .topbar { display: none; }
   </style>
 </head>
 <body>
@@ -87,6 +101,7 @@ export class OpenAPIPlugin implements Plugin {
         url: '${this.options.path}',
         dom_id: '#swagger-ui',
         deepLinking: true,
+        tryItOutEnabled: true,
         presets: [
           SwaggerUIBundle.presets.apis,
           SwaggerUIStandalonePreset

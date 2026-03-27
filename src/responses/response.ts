@@ -220,7 +220,12 @@ export class FileResponse {
 
       // Add Content-Disposition for downloads or custom filenames
       if (this.options?.download || this.options?.filename) {
-        const filename = this.options?.filename || this.path.split('/').pop() || 'download';
+        const rawName = this.options?.filename || this.path.split('/').pop() || 'download';
+        // Strip path separators and sanitize characters that could break the header value
+        const filename = rawName
+          .replace(/[/\\]/g, '')          // no path traversal
+          .replace(/["]/g, "'")           // no quote injection
+          .replace(/[\r\n]/g, '');        // no CRLF injection
         const disposition = this.options?.download ? 'attachment' : 'inline';
         headers['Content-Disposition'] = `${disposition}; filename="${filename}"`;
       }
@@ -309,7 +314,14 @@ export class ResponseSerializer {
       return c.body(null, 204);
     }
 
-    // If result is already a native Response object, return it directly
+    // If result is already a native Web API Response object, return it directly.
+    // NOTE: This file exports a custom class also named "Response", so we must
+    // explicitly check against the global Web API Response to avoid confusion.
+    if (typeof globalThis.Response !== 'undefined' && result instanceof globalThis.Response) {
+      return result;
+    }
+
+    // If result is the custom Veloce Response helper class (static factory only), skip
     if (result instanceof Response) {
       return result;
     }

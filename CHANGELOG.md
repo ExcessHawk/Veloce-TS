@@ -7,6 +7,164 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-27
+
+Esta versión representa la mayor actualización desde el lanzamiento inicial. Se añadieron más de 25 mejoras nuevas distribuidas en tres oleadas de trabajo (alta, media y baja prioridad), cubriendo la cadena completa desde la generación de rutas hasta la documentación OpenAPI, el testing, el ORM y la CLI.
+
+### 🚀 Nuevos Decoradores
+
+#### Documentación OpenAPI (shorthand)
+Cinco decoradores de una sola línea como alternativa concisa a `@ApiDoc({...})`:
+- **`@Summary(text)`** — descripción corta visible en la lista de Swagger UI
+- **`@Description(text)`** — texto largo en el panel de detalle de la operación
+- **`@Tag(name)`** — asigna un tag individual; apilable con múltiples `@Tag`
+- **`@Tags(...names)`** — asigna varios tags en un solo decorador
+- **`@Deprecated()`** — marca la ruta como obsoleta (tachado en Swagger UI)
+
+#### Control de respuesta
+- **`@HttpCode(statusCode)`** — sobreescribe el código HTTP de respuesta del handler (p.ej. `201` para creación). Usado también por el generador OpenAPI para el código de éxito documentado
+- **`@ResponseSchema(schema, statusCode?)`** — valida y sanitiza la respuesta del handler con un esquema Zod; informa el modelo de respuesta al spec de OpenAPI
+
+#### Middleware declarativo por ruta
+- **`@Timeout(ms, message?)`** — aborta la petición con **408 Request Timeout** si el handler supera el límite. Inyecta automáticamente el middleware al inicio del pipeline y emite el header `X-Timeout-Ms`
+- **`@RateLimit(options)`** — aplica rate-limiting a nivel de ruta individual usando la misma configuración de `createRateLimitMiddleware()`. Los headers estándar `X-RateLimit-*` se envían automáticamente
+
+### 🛠️ Mejoras al Framework Core
+
+#### OpenAPI Generator (`src/docs/openapi-generator.ts`)
+- **Auto-tagging**: deriva tags automáticamente del primer segmento del path (`/products/:id` → tag `"Products"`) sin necesidad de anotarlos manualmente
+- **Bearer security scheme**: añade `components.securitySchemes.bearerAuth` al spec y aplica `security: [{ bearerAuth: [] }]` en rutas protegidas de forma automática
+- **401 automático**: rutas protegidas reciben una respuesta `401 Unauthorized` documentada sin configuración adicional
+- **Soporte de `@HttpCode`**: usa el `statusCode` del decorador como clave del bloque de éxito en `responses`
+- **`@ResponseSchema` en el spec**: cuando está presente, el esquema Zod se convierte al formato JSON Schema para el bloque de contenido de la respuesta
+
+#### Sistema de Excepciones HTTP (`src/errors/exceptions.ts`)
+Seis nuevas clases de excepción para cubrir casos de error comunes:
+- `ConflictException` (409)
+- `GoneException` (410)
+- `PayloadTooLargeException` (413)
+- `UnprocessableEntityException` (422)
+- `TooManyRequestsException` (429)
+- `ServiceUnavailableException` (503)
+
+#### Logger estructurado en ErrorHandler (`src/errors/handler.ts`)
+- Errores 5xx se registran con `getLogger().error` incluyendo path, método, status y stack
+- Errores 4xx se registran como `warn` en entorno de desarrollo
+- Errores genéricos no capturados también pasan por Pino
+
+#### Arreglos de orden de decoradores
+- **`@UseMiddleware`** (`src/decorators/middleware.ts`): ahora siempre llama a `MetadataRegistry.defineRoute` para que el middleware no se pierda independientemente del orden de ejecución de los decoradores
+- **`@Cache` / `@CacheInvalidate`** (`src/decorators/cache.ts`): mismo patrón — los metadatos se fusionan correctamente sin importar el orden de apilamiento
+
+#### MetadataCompiler — caché lazy con snapshots (`src/core/compiled-metadata.ts`)
+- Compilación lazy: una ruta sólo se recompila si sus metadatos cambiaron (comparación por snapshot JSON)
+- IDs únicos para handlers funcionales vía `WeakMap<Function, number>` — evita colisiones de caché cuando distintas instancias de app registran el mismo path con handlers diferentes (bug crítico en tests paralelos)
+- Método `clearCache()` expuesto para limpiar el estado entre tests
+
+### 🧪 TestClient — API fluida y helpers de autenticación (`src/testing/test-client.ts`)
+
+Reescritura completa de `TestClient`:
+- **`TestResponse`** — nueva clase de respuesta con propiedades `status`, `headers`, `body`, `text`, `ok` y métodos de aserción encadenables:
+  - `expectStatus(code)`, `expectOk()`, `expectCreated()`, `expectNotFound()`, etc.
+  - `expectJson(partialObject)` — comprobación parcial del body
+  - `expectField(field, value?)` — verificar un campo específico
+  - `expectHeader(name, value?)` — verificar un header de respuesta
+  - `expectArrayLength(n)` — verificar longitud de array en respuesta
+- **`withToken(token)`** — crea una instancia inmutable del cliente con el header `Authorization: Bearer` ya configurado
+- **`withHeaders(headers)`** — crea una instancia inmutable con headers adicionales
+- **`loginAs(credentials, endpoint?)`** — hace login, extrae el JWT y lo inyecta en el cliente actual para las peticiones siguientes
+- **`registerAndLogin(user, endpoints?)`** — registra y hace login en una sola llamada
+- **`clearAuth()`** — limpia el token almacenado
+
+### 🔌 Plugins y Middleware
+
+#### HealthCheckers.disk (`src/plugins/health.ts`)
+- Usa `fs.statfs` (Node 18+ / Bun) para obtener métricas reales de disco: total, libre, usado y porcentaje
+- Degradación elegante a `"healthy"` en plataformas sin soporte
+
+#### CLI — Plantilla Fullstack corregida (`src/cli/commands/new.ts`)
+- La plantilla `fullstack` ahora genera `src/index.ts` con `GraphQLPlugin` y `WebSocketPlugin` correctamente importados e instanciados (antes quedaban comentados)
+
+#### Subpath exports en el build (`build.ts`)
+- Se añadieron `./src/auth/index.ts`, `./src/adapters/base.ts`, `./src/adapters/hono.ts`, `./src/adapters/express.ts` como entrypoints explícitos para que los imports `veloce-ts/auth` y `veloce-ts/adapters/*` funcionen correctamente
+
+### 🗄️ Drizzle ORM — Integración DI (`src/dependencies/drizzle.ts`)
+
+Nuevo módulo para conectar Drizzle (u otro ORM) al contenedor de inyección de dependencias:
+```typescript
+// Registrar la instancia de la DB
+registerDrizzle(app, db);
+
+// Inyectar en controladores
+@Get('/')
+async list(@InjectDB() db: DrizzleDB) { … }
+```
+- `DB_TOKEN` — símbolo por defecto para el token de inyección
+- `registerDrizzle(app, db, token?)` — registra como singleton en el `DIContainer`
+- `@InjectDB(token?)` — decorador de parámetro, alias de `@Depends(DB_TOKEN)`
+
+### 📊 Paginación mejorada (`src/orm/pagination.ts`)
+
+#### Enriquecimiento de metadatos
+- `PaginationMeta` incluye `from` y `to` (rango 1-based, p.ej. `from: 11, to: 20`)
+- `CursorPaginatedResult` incluye `count` (ítems reales devueltos en la página)
+
+#### Cursor pagination más precisa
+- `createCursorPaginatedResult(data, limit, cursorField, hadPrevCursor)` — el nuevo parámetro `hadPrevCursor` activa `hasPrev: true` correctamente cuando se navega hacia adelante con cursor
+- `createMultiCursor(entity, fields[])` — crea cursores compuestos por múltiples campos para ordenación estable (p.ej. `{ createdAt, id }`)
+- `decodeMultiCursor(cursor)` — decodifica un cursor multi-campo de vuelta a un objeto
+
+#### Helpers standalone
+- `paginate<T>(data, total, page, limit)` — construye `{ data, meta }` en una sola llamada, sin necesidad de instanciar `PaginationHelper`
+- `parseCursorQuery(query, defaultLimit?, maxLimit?)` — extrae `cursor` y `limit` de los query params sin lanzar excepciones
+- `PaginationHelper.parsePaginationQuery(query, defaultLimit?, maxLimit?)` — equivalente para paginación offset; aplica límite máximo y usa defaults cuando los valores son inválidos
+
+### 🔌 Express Adapter — Compatibilidad ESM (`src/adapters/express.ts`)
+
+Reescritura completa del adaptador:
+- Carga Express de forma lazy y segura usando `Function('return require')()` para compatibilidad ESM sin necesitar `declare const require: any`
+- Acepta una instancia de Express pre-creada como segundo argumento del constructor (para añadir middleware propio antes del bridge)
+- Manejo correcto de body raw (`Buffer`) vs body parseado (JSON/urlencoded)
+- Omite el header `transfer-encoding` al reenviar respuestas (era fuente de errores en Express)
+- Delega errores inesperados al pipeline de error de Express mediante `next(err)` en lugar de responder con 500 directamente
+
+### 🐛 Bug Fixes
+
+- **`ZodError` cross-module** (`src/errors/handler.ts`, `src/validation/validator.ts`): `instanceof ZodError` fallaba cuando la app consumidora tenía una instancia de Zod diferente a la del framework (caso frecuente con `bun link`). Añadido fallback `error.name === 'ZodError'` para garantizar respuestas 422 en todos los casos
+- **Rutas `GET` marcadas públicas retornaban 401** en `products-api`: `app.use()` aplicaba el middleware a todos los métodos; corregido usando `app.on(['POST', 'PUT', 'DELETE'], path, middleware)` para restringir sólo a métodos de escritura
+- **Cache collision en MetadataCompiler**: handlers funcionales distintos con el mismo path en diferentes instancias de app compartían el resultado compilado incorrecto; solucionado con IDs únicos por función
+- **`@Cache` / `@UseMiddleware` perdían metadatos**: cuando se apilaban en orden inverso al de ejecución de decoradores, los metadatos podían sobreescribirse; solucionado actualizando el registro explícitamente en cada decorador
+
+### 📋 Mensajes de validación mejorados (`src/validation/exceptions.ts`)
+
+La respuesta de error `422` ahora incluye información estructurada adicional:
+- `field` en formato convencional: `items[0].price` en lugar de `items.0.price`
+- `received` — tipo recibido (cuando Zod lo reporta)
+- `expected` — tipo esperado (cuando aplica)
+- `minimum` / `maximum` — límites numéricos en errores de rango
+
+```json
+{
+  "error": "Validation Error",
+  "statusCode": 422,
+  "details": [
+    { "field": "email",        "message": "Invalid email",        "code": "invalid_string" },
+    { "field": "age",          "message": "Number must be ≥ 18",  "code": "too_small", "minimum": 18 },
+    { "field": "tags[1]",      "message": "String must not be empty", "code": "too_small" }
+  ]
+}
+```
+
+### 💥 Breaking Changes
+
+Ninguno — todos los cambios son retrocompatibles. Las firmas de `createCursorPaginatedResult` tienen un nuevo parámetro opcional `hadPrevCursor` (cuarto argumento, `false` por defecto).
+
+### 📦 Dependencias
+
+Sin cambios en dependencias de runtime. Express sigue siendo peer dependency opcional.
+
+---
+
 ## [0.3.3] - 2025-10-31
 
 ### 🐛 Critical Bug Fixes
@@ -497,7 +655,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - CLI tooling
 - Testing utilities
 
-[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.2
 [0.3.1]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.0...v0.3.1

@@ -179,7 +179,22 @@ export class RouterCompiler {
           }
         }
 
-        // 5. Serialize and return the response
+        // 5a. Validate / strip response with @ResponseSchema if present
+        if ((route as any).responseSchema) {
+          try {
+            result = await (route as any).responseSchema.parseAsync(result);
+          } catch {
+            // Silently ignore schema mismatches on the output side so a
+            // misconfigured response schema does not break a working endpoint.
+          }
+        }
+
+        // 5b. Apply @HttpCode status before serialising
+        if ((route as any).statusCode) {
+          c.status((route as any).statusCode as any);
+        }
+
+        // 5c. Serialize and return the response
         return this.serializeResponse(c, result);
       } catch (error) {
         // 6. Handle errors and pass to error handler

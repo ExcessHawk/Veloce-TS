@@ -64,15 +64,29 @@ export class WebSocketPlugin implements Plugin {
 
   /**
    * Handle WebSocket upgrade for Bun runtime
+   *
+   * Bun's WebSocket API requires that event handlers (open/message/close/error)
+   * are provided as a `websocket` option to `Bun.serve()`. Because Veloce uses
+   * Hono on top of Bun, we pass the manager callbacks via the upgrade `data`
+   * object so they can be invoked from the Bun serve websocket handler.
    */
   private handleBunUpgrade(c: any, metadata: any): Response {
-    const success = (c.env as any)?.upgrade?.(c.req.raw);
-    
+    const bunEnv = c.env as any;
+
+    if (!bunEnv?.upgrade) {
+      return c.text('WebSocket upgrade not supported in this environment', 501);
+    }
+
+    const success = bunEnv.upgrade(c.req.raw, {
+      data: { manager: this.manager, metadata }
+    });
+
     if (!success) {
       return c.text('WebSocket upgrade failed', 500);
     }
 
-    return new Response(null, { status: 101 });
+    // Bun handles the actual response; returning undefined signals Hono to stop
+    return undefined as any;
   }
 
   /**

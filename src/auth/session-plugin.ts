@@ -38,6 +38,8 @@ export class SessionPlugin implements Plugin {
   private sessionManager: SessionManager;
   private csrfProtection?: CSRFProtection;
   private guard: SessionGuard;
+  private compileExtended = false;
+  private cleanupIntervalId?: ReturnType<typeof setInterval>;
 
   constructor(private config: SessionPluginConfig) {
     // Initialize session store
@@ -102,6 +104,9 @@ export class SessionPlugin implements Plugin {
   }
 
   private extendRouterCompiler(app: VeloceTS): void {
+    if (this.compileExtended) return;
+    this.compileExtended = true;
+
     const originalCompile = app.compile.bind(app);
     
     app.compile = async () => {
@@ -321,9 +326,14 @@ export class SessionPlugin implements Plugin {
       }
     });
 
-    // Session statistics (admin only)
+    // Session statistics (admin only — requires active session)
     app.get('/session/stats', {
       handler: async (c: Context) => {
+        const session = c.get('session');
+        if (!session) {
+          return c.json({ error: 'Authentication required' }, 401);
+        }
+
         const store = this.sessionManager.getStore();
         const totalSessions = await store.length();
         const allSessions = await store.all();
@@ -344,15 +354,22 @@ export class SessionPlugin implements Plugin {
   }
 
   private setupCleanup(): void {
-    // Clean up expired sessions every 15 minutes
+    if (this.cleanupIntervalId) return;
+
     const cleanupInterval = 15 * 60 * 1000;
     
-    setInterval(() => {
+    this.cleanupIntervalId = setInterval(() => {
       const store = this.sessionManager.getStore();
       if (store instanceof MemorySessionStore) {
         store.cleanup();
       }
     }, cleanupInterval);
+
+    if (typeof process !== 'undefined' && process.on) {
+      process.on('exit', () => {
+        if (this.cleanupIntervalId) clearInterval(this.cleanupIntervalId);
+      });
+    }
   }
 
   getSessionManager(): SessionManager {

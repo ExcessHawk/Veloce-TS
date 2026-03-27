@@ -62,8 +62,9 @@ export class ValidationEngine {
       // Use the cached schema for validation
       return await cached.schema.parseAsync(data);
     } catch (error) {
-      if (error instanceof ZodError) {
-        throw new ValidationException(error);
+      // Also catch by name to handle cross-module ZodError instances (e.g. bun link / file: protocol)
+      if (error instanceof ZodError || (error as any)?.name === 'ZodError') {
+        throw new ValidationException(error as any);
       }
       throw error;
     }

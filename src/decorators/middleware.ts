@@ -31,9 +31,20 @@ import { MetadataRegistry } from '../core/metadata';
  */
 export function UseMiddleware(...middleware: Middleware[]): MethodDecorator {
   return (target: any, propertyKey: string | symbol) => {
-    // Store middleware in a temporary metadata that will be merged later
-    // We use Reflect metadata to store it temporarily
+    // 1. Keep Reflect metadata so that @Get/@Post can pick it up when they run AFTER this decorator
     const existingMiddleware = Reflect.getMetadata('route:middleware', target, propertyKey) || [];
     Reflect.defineMetadata('route:middleware', [...existingMiddleware, ...middleware], target, propertyKey);
+
+    // 2. Also update MetadataRegistry directly so the middleware is not lost when
+    //    @UseMiddleware runs AFTER the HTTP method decorator (bottom-up execution order).
+    //    MetadataRegistry.defineRoute merges middleware arrays, so this is idempotent.
+    const existingRoute = MetadataRegistry.getRouteMetadata(target, propertyKey as string);
+    MetadataRegistry.defineRoute(target, propertyKey as string, {
+      ...existingRoute,
+      middleware: [
+        ...(existingRoute?.middleware || []),
+        ...middleware,
+      ],
+    });
   };
 }

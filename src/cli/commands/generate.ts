@@ -38,7 +38,7 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
 
     if (!existsSync(appPath)) {
       console.error('Error: src/index.ts not found');
-      console.error('Make sure you are in a FastAPI-TS project directory');
+      console.error('Make sure you are in a VeloceTS project directory');
       process.exit(1);
     }
 

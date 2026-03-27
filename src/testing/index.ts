@@ -1,6 +1,6 @@
 // Testing utilities exports
-export { TestClient } from './test-client';
-export type { TestRequestOptions, TestResponse } from './test-client';
+export { TestClient, TestResponse } from './test-client';
+export type { TestRequestOptions } from './test-client';
 export {
   createTestApp,
   createTestClient,

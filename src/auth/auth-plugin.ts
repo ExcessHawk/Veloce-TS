@@ -25,6 +25,7 @@ export class AuthPlugin implements Plugin {
   version = '1.0.0';
 
   private authService: AuthService;
+  private compileExtended = false;
 
   constructor(private config: AuthPluginConfig) {
     this.authService = new AuthService(config.jwt, config.userProvider);
@@ -51,6 +52,9 @@ export class AuthPlugin implements Plugin {
   }
 
   private extendRouterCompiler(app: VeloceTS): void {
+    if (this.compileExtended) return;
+    this.compileExtended = true;
+
     // Add auth middleware that runs before route handlers
     app.use(async (c, next) => {
       // Store auth service in context for later use

@@ -64,40 +64,7 @@ export function createCompressionMiddleware(options?: CompressionOptions): Middl
     let compressed: Uint8Array | null = null;
     let encoding: string | null = null;
 
-    // Try brotli first (better compression)
-    if (acceptEncoding.includes('br') && typeof CompressionStream !== 'undefined') {
-      try {
-        const stream = new CompressionStream('deflate');
-        const writer = stream.writable.getWriter();
-        writer.write(new Uint8Array(body));
-        writer.close();
-        
-        const reader = stream.readable.getReader();
-        const chunks: Uint8Array[] = [];
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-        }
-        
-        const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-        const result = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          result.set(chunk, offset);
-          offset += chunk.length;
-        }
-        
-        compressed = result;
-        encoding = 'deflate';
-      } catch (error) {
-        // Fallback to gzip
-        compressed = null;
-      }
-    }
-
-    // Try gzip if brotli not available or failed
+    // Try gzip first (broadly supported)
     if (!compressed && acceptEncoding.includes('gzip') && typeof CompressionStream !== 'undefined') {
       try {
         const stream = new CompressionStream('gzip');
@@ -145,10 +112,9 @@ export function createCompressionMiddleware(options?: CompressionOptions): Middl
         headers
       });
 
-      // Replace the response in context
-      // Note: This is a workaround since Hono's context doesn't allow direct response replacement
-      // In practice, this middleware should be used with Hono's compress middleware
-      return newResponse;
+      // Replace the response in the Hono context so downstream code sees the compressed version
+      c.res = newResponse;
+      return;
     }
   };
 }

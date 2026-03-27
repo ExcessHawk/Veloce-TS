@@ -34,10 +34,67 @@ export interface CompiledRouteMetadata extends RouteMetadata {
  */
 export class MetadataCompiler {
   /**
-   * Compile a route metadata object into an optimized version
-   * Pre-computes regex patterns, parameter order, and other expensive operations
+   * Route compilation cache keyed by `ControllerName:methodName`.
+   * A second Map stores the exact metadata snapshot used to build the cache
+   * entry so we can detect if the metadata has changed (e.g. during testing
+   * when routes are re-registered).
+   */
+  private static cache = new Map<string, CompiledRouteMetadata>();
+  private static snapshotCache = new Map<string, string>();
+
+  /** Invalidate all cached compilations (useful between test runs). */
+  static clearCache(): void {
+    this.cache.clear();
+    this.snapshotCache.clear();
+  }
+
+  /**
+   * Compute a stable snapshot key for a RouteMetadata object.
+   * We only hash the fields that affect compilation output.
+   * Functional routes carry an inline `handler` function whose identity
+   * must be part of the snapshot to avoid false cache hits across different
+   * app instances that register the same path.
+   */
+  private static snapshot(route: RouteMetadata): string {
+    const handler = (route as any).handler;
+    return JSON.stringify({
+      method: route.method,
+      path: route.path,
+      params: route.parameters?.map(p => ({ i: p.index, t: p.type, n: p.name })),
+      deps: route.dependencies?.map(d => ({ i: d.index })),
+      // Use a per-function symbol so two different handler functions with the
+      // same source text still produce different snapshots.
+      handlerId: handler ? (MetadataCompiler.handlerIds.get(handler) ?? MetadataCompiler.assignHandlerId(handler)) : null,
+    });
+  }
+
+  private static handlerIds = new WeakMap<Function, number>();
+  private static nextHandlerId = 0;
+
+  private static assignHandlerId(fn: Function): number {
+    const id = ++MetadataCompiler.nextHandlerId;
+    MetadataCompiler.handlerIds.set(fn, id);
+    return id;
+  }
+
+  /**
+   * Compile a route metadata object into an optimized version.
+   * Results are cached by controller + method key; the cache is invalidated
+   * automatically when the metadata changes (covers hot-reload / test scenarios).
+   *
+   * Functional routes (which carry an inline handler function) are also cached,
+   * but each unique handler function gets its own cache slot so that two different
+   * app instances registering the same path don't share compiled metadata.
    */
   static compile(route: RouteMetadata): CompiledRouteMetadata {
+    const cacheKey = `${route.target?.name ?? 'anon'}:${route.propertyKey}`;
+    const snap = this.snapshot(route);
+
+    const cached = this.cache.get(cacheKey);
+    if (cached && this.snapshotCache.get(cacheKey) === snap) {
+      return cached;
+    }
+
     // Pre-compile path regex for parameter extraction
     const pathRegex = this.compilePathRegex(route.path);
     
@@ -54,16 +111,21 @@ export class MetadataCompiler {
     );
     
     // Pre-compute parameter type flags for quick checks
-    const flags = this.computeParameterFlags(route.parameters);
+    const flags = this.computeParameterFlags(route.parameters, route.dependencies);
     
-    return {
+    const compiled: CompiledRouteMetadata = {
       ...route,
       pathRegex,
       parameterOrder,
       dependencyOrder,
       maxArgumentIndex,
-      ...flags
+      ...flags,
     };
+
+    this.cache.set(cacheKey, compiled);
+    this.snapshotCache.set(cacheKey, snap);
+
+    return compiled;
   }
 
   /**
@@ -145,7 +207,10 @@ export class MetadataCompiler {
    * Pre-compute flags for parameter types to avoid repeated checks
    * These flags enable quick conditional logic during request processing
    */
-  private static computeParameterFlags(parameters: ParameterMetadata[]): {
+  private static computeParameterFlags(
+    parameters: ParameterMetadata[],
+    dependencies?: any[]
+  ): {
     hasBody: boolean;
     hasQuery: boolean;
     hasParams: boolean;
@@ -153,6 +218,8 @@ export class MetadataCompiler {
     hasCookies: boolean;
     hasDependencies: boolean;
   } {
+    const hasDependencies = !!(dependencies && dependencies.length > 0);
+
     if (!parameters || parameters.length === 0) {
       return {
         hasBody: false,
@@ -160,7 +227,7 @@ export class MetadataCompiler {
         hasParams: false,
         hasHeaders: false,
         hasCookies: false,
-        hasDependencies: false
+        hasDependencies
       };
     }
     
@@ -170,7 +237,7 @@ export class MetadataCompiler {
       hasParams: parameters.some(p => p.type === 'param'),
       hasHeaders: parameters.some(p => p.type === 'header'),
       hasCookies: parameters.some(p => p.type === 'cookie'),
-      hasDependencies: false // Dependencies are tracked separately
+      hasDependencies
     };
   }
 

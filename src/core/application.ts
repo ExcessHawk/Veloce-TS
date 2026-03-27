@@ -543,6 +543,7 @@ export class VeloceTS {
   }
 
   private serverInstance: any = null;
+  private shutdownHandlersRegistered: boolean = false;
 
   /**
    * Start the server and listen on the specified port
@@ -573,6 +574,8 @@ export class VeloceTS {
    */
   private setupGracefulShutdown(): void {
     if (typeof process === 'undefined') return;
+    if (this.shutdownHandlersRegistered) return;
+    this.shutdownHandlersRegistered = true;
 
     const shutdown = async (signal: string) => {
       const logger = getLogger().child({ component: 'app' });

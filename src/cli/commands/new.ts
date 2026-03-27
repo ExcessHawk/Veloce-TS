@@ -58,9 +58,10 @@ async function generateSwaggerUI(projectPath: string): Promise<void> {
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
-        url: 'http://localhost:3000/openapi.json',
+        url: '/openapi.json',
         dom_id: '#swagger-ui',
         deepLinking: true,
+        tryItOutEnabled: true,
         presets: [
           SwaggerUIBundle.presets.apis,
           SwaggerUIStandalonePreset
@@ -333,7 +334,7 @@ const app = new Veloce({
   },
 });
 
-// Enable OpenAPI documentation
+// Enable OpenAPI documentation — serves /openapi.json and /docs automatically
 app.usePlugin(new OpenAPIPlugin({
   path: '/openapi.json',
   docsPath: '/docs',
@@ -341,41 +342,6 @@ app.usePlugin(new OpenAPIPlugin({
 
 // Register controllers
 app.include(UserController);
-
-// Add a simple docs route
-app.get('/docs', {
-  handler: async (c) => {
-    const html = \`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
-  <script>
-    window.onload = function() {
-      window.ui = SwaggerUIBundle({
-        url: '/openapi.json',
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        layout: "StandaloneLayout"
-      });
-    };
-  </script>
-</body>
-</html>\`;
-    
-    return new Response(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
-  },
-});
 
 // Start server
 async function startServer() {
@@ -588,7 +554,10 @@ async function generateFullstackTemplate(projectPath: string): Promise<void> {
   // Generate main file
   const mainFile = `import 'reflect-metadata';
 import { Veloce, OpenAPIPlugin } from 'veloce-ts';
+import { GraphQLPlugin, WebSocketPlugin } from 'veloce-ts/plugins';
 import { UserController } from './controllers/user.controller';
+import { UserResolver } from './resolvers/user.resolver';
+import { ChatWebSocket } from './websockets/chat.websocket';
 
 const app = new Veloce({
   title: 'My Fullstack API',
@@ -601,18 +570,26 @@ const app = new Veloce({
   },
 });
 
-// Enable OpenAPI documentation
+// OpenAPI docs — serves /openapi.json and /docs
 app.usePlugin(new OpenAPIPlugin({
   path: '/openapi.json',
   docsPath: '/docs',
 }));
 
+// GraphQL — serves /graphql with a built-in playground
+app.usePlugin(new GraphQLPlugin({
+  resolvers: [UserResolver],
+  path: '/graphql',
+  playground: true,
+}));
+
+// WebSocket — registers the chat handler
+app.usePlugin(new WebSocketPlugin({
+  handlers: [ChatWebSocket],
+}));
+
 // REST API
 app.include(UserController);
-
-// TODO: Add GraphQL and WebSocket support when plugins are available
-// app.usePlugin(new GraphQLPlugin({ resolvers: [UserResolver] }));
-// app.usePlugin(new WebSocketPlugin({ handlers: [ChatWebSocket] }));
 
 // Start server
 async function startServer() {
@@ -620,13 +597,13 @@ async function startServer() {
     console.log('🔄 Compiling application...');
     await app.compile();
     console.log('✅ Application compiled successfully');
-    
+
     app.listen(3000, () => {
       console.log('🚀 Server running on http://localhost:3000');
-      console.log('📚 REST API docs at http://localhost:3000/docs');
-      console.log('📄 OpenAPI Spec at http://localhost:3000/openapi.json');
-      // console.log('🔮 GraphQL Playground at http://localhost:3000/graphql');
-      // console.log('🔌 WebSocket endpoint at ws://localhost:3000/ws/chat');
+      console.log('📚 REST API docs  → http://localhost:3000/docs');
+      console.log('📄 OpenAPI spec   → http://localhost:3000/openapi.json');
+      console.log('🔮 GraphQL        → http://localhost:3000/graphql');
+      console.log('🔌 WebSocket      → ws://localhost:3000/ws/chat');
     });
   } catch (error) {
     console.error('❌ Error starting server:', error);

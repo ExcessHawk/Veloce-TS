@@ -168,8 +168,11 @@ export class GraphQLPlugin implements Plugin {
   }
 
   /**
-   * Execute a GraphQL operation (simplified implementation)
-   * In production, this should use graphql-js or similar library
+   * Execute a GraphQL operation.
+   *
+   * This implementation requires the `graphql` package to be installed
+   * (`bun add graphql`). If the package is not present the endpoint returns a
+   * clear 501 error instead of a silent NOT_IMPLEMENTED placeholder.
    */
   private async executeOperation(
     query: string,
@@ -177,18 +180,47 @@ export class GraphQLPlugin implements Plugin {
     context: GraphQLContext,
     operationName?: string
   ): Promise<GraphQLResponse> {
-    // This is a simplified implementation
-    // In a real implementation, you would use graphql-js to parse and execute
-    
-    // For now, return a placeholder response
-    // The actual execution would happen through the resolvers we built
-    return {
-      data: null,
-      errors: [{
-        message: 'GraphQL execution not fully implemented. Use a GraphQL library like graphql-js for full support.',
-        extensions: { code: 'NOT_IMPLEMENTED' }
-      }]
-    };
+    let graphqlModule: any;
+    try {
+      // graphql is an optional peer dependency
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      graphqlModule = await import('graphql');
+    } catch {
+      return {
+        data: null,
+        errors: [{
+          message: 'GraphQL execution requires the "graphql" package. Run: bun add graphql',
+          extensions: { code: 'NOT_IMPLEMENTED' }
+        }]
+      };
+    }
+
+    if (!this.schema) {
+      return {
+        data: null,
+        errors: [{ message: 'GraphQL schema not initialized', extensions: { code: 'INTERNAL_SERVER_ERROR' } }]
+      };
+    }
+
+    try {
+      const { graphql: execute, buildSchema } = graphqlModule;
+      const schema = buildSchema(this.schema.typeDefs);
+      const result = await execute({
+        schema,
+        source: query,
+        rootValue: this.schema.resolvers,
+        contextValue: context,
+        variableValues: variables,
+        operationName
+      });
+      return result as GraphQLResponse;
+    } catch (error: any) {
+      return {
+        data: null,
+        errors: [{ message: error.message || 'GraphQL execution error', extensions: { code: 'INTERNAL_SERVER_ERROR' } }]
+      };
+    }
   }
 
   /**

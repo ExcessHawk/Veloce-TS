@@ -27,6 +27,7 @@ export { ValidationException } from './validation/exceptions';
 
 // Dependency Injection exports
 export { DIContainer } from './dependencies/container';
+export { registerDrizzle, InjectDB, DB_TOKEN } from './dependencies/drizzle';
 
 // Response exports
 export * from './responses/response';
@@ -95,6 +96,3 @@ export * from './context/request-context';
 
 // Cache exports
 export * from './cache';
-
-// Health check plugin
-export * from './plugins/health';

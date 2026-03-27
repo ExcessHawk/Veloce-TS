@@ -34,6 +34,11 @@ async function build(options: BuildOptions = {}) {
     './src/websocket/index.ts',
     './src/plugins/index.ts',
     './src/cli/index.ts',
+    // Subpath exports that consumers can import directly
+    './src/auth/index.ts',
+    './src/adapters/base.ts',
+    './src/adapters/hono.ts',
+    './src/adapters/express.ts',
   ];
 
   // Build ESM

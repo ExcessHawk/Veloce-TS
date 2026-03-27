@@ -17,10 +17,12 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
     windowMs = 60000, // 1 minute default
     max = 100, // 100 requests per window default
     keyGenerator = (c: Context) => {
-      // Default: use X-Forwarded-For header or fallback to 'unknown'
-      return c.req.header('x-forwarded-for') || 
-             c.req.header('x-real-ip') || 
-             'unknown';
+      // x-forwarded-for can be a comma-separated list; take the first (leftmost) IP
+      const forwarded = c.req.header('x-forwarded-for');
+      if (forwarded) {
+        return forwarded.split(',')[0].trim();
+      }
+      return c.req.header('x-real-ip') || 'unknown';
     }
   } = options;
 

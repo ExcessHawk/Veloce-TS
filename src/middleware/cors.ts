@@ -48,6 +48,11 @@ export function createCorsMiddleware(options?: CorsOptions): Middleware {
 
     // Handle preflight requests
     if (requestMethod === 'OPTIONS') {
+      if (!allowedOrigin) {
+        // Origin not allowed — reject preflight
+        return c.body(null, 403);
+      }
+
       c.header('Access-Control-Allow-Methods', methods.join(', '));
       c.header('Access-Control-Allow-Headers', allowedHeaders.join(', '));
       c.header('Access-Control-Max-Age', maxAge.toString());

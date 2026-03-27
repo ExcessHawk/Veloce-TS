@@ -169,9 +169,12 @@ export class JWTProvider {
 
   /**
    * Blacklist a token (for logout)
+   * Automatically purges already-expired tokens to keep the set bounded.
    */
   blacklistToken(token: string): void {
     this.blacklistedTokens.add(token);
+    // Prune expired tokens every time a new one is added to keep the set small
+    this.cleanupBlacklist();
   }
 
   /**

@@ -32,6 +32,30 @@ export class OpenAPIGenerator {
   }
 
   /**
+   * Derive a human-readable tag from a route path.
+   * "/products/:id" → "Products", "/api/v1/users" → "Users"
+   */
+  private static tagFromPath(path: string): string {
+    const segments = path.split('/').filter(Boolean);
+    // Skip generic version/api prefix segments
+    const skip = new Set(['api', 'v1', 'v2', 'v3']);
+    for (const seg of segments) {
+      if (!skip.has(seg.toLowerCase()) && !seg.startsWith(':') && !seg.startsWith('{')) {
+        return seg.charAt(0).toUpperCase() + seg.slice(1);
+      }
+    }
+    return 'Default';
+  }
+
+  /**
+   * Returns true when the route has any auth-related metadata,
+   * meaning it should carry the Bearer security requirement in OpenAPI.
+   */
+  private static isSecured(route: RouteMetadata): boolean {
+    return !!(route.auth || route.roles || route.permissions || route.minimumRole);
+  }
+
+  /**
    * Generate complete OpenAPI 3.0 specification
    */
   generate(): OpenAPISpec {
@@ -45,18 +69,36 @@ export class OpenAPIGenerator {
         description: this.options.description
       },
       paths: {},
+      // Security scheme so Swagger UI can send Bearer tokens
       components: {
-        schemas: {}
-      }
+        schemas: {},
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'JWT access token — include as: Authorization: Bearer <token>',
+          },
+        },
+      },
+      // Collect unique tags (auto-generated from route prefixes)
+      tags: [],
     };
 
     // Initialize converter with spec reference
     this.converter = new ZodToJsonSchemaConverter(spec);
 
+    const tagSet = new Set<string>();
+
     // Process each route and add to spec
     for (const route of routes) {
-      this.addRouteToSpec(spec, route);
+      const tag = OpenAPIGenerator.tagFromPath(route.path);
+      tagSet.add(tag);
+      this.addRouteToSpec(spec, route, tag);
     }
+
+    // Populate tags array
+    (spec as any).tags = Array.from(tagSet).map(name => ({ name }));
 
     return spec;
   }
@@ -64,7 +106,7 @@ export class OpenAPIGenerator {
   /**
    * Add a single route to the OpenAPI specification
    */
-  private addRouteToSpec(spec: OpenAPISpec, route: RouteMetadata): void {
+  private addRouteToSpec(spec: OpenAPISpec, route: RouteMetadata, autoTag: string): void {
     const path = this.convertPathToOpenAPI(route.path);
     const method = route.method.toLowerCase();
 
@@ -78,14 +120,22 @@ export class OpenAPIGenerator {
       spec.paths[path] = {};
     }
 
+    // Merge explicit tags with the auto-derived tag
+    const tags: string[] = route.docs?.tags?.length
+      ? route.docs.tags
+      : [autoTag];
+
+    // Determine the effective success status code for this route
+    const successCode: number = (route as any).statusCode ?? 200;
+
     // Build operation object
     const operation: any = {
       summary: route.docs?.summary,
       description: route.docs?.description,
-      tags: route.docs?.tags || [],
+      tags,
       deprecated: route.docs?.deprecated || false,
       parameters: this.extractParameters(route, spec),
-      responses: this.extractResponses(route, spec)
+      responses: this.extractResponses(route, spec, successCode),
     };
 
     // Extract request body if present
@@ -98,8 +148,10 @@ export class OpenAPIGenerator {
     if (operation.parameters.length === 0) {
       delete operation.parameters;
     }
-    if (operation.tags.length === 0) {
-      delete operation.tags;
+
+    // Attach Bearer security requirement for protected routes
+    if (OpenAPIGenerator.isSecured(route)) {
+      operation.security = [{ bearerAuth: [] }];
     }
 
     // Add operation to spec
@@ -145,12 +197,13 @@ export class OpenAPIGenerator {
   }
 
   /**
-   * Extract responses from route metadata
+   * Extract responses from route metadata.
+   * @param successCode - The HTTP status code for the primary success response.
    */
-  private extractResponses(route: RouteMetadata, spec: OpenAPISpec): Record<string, any> {
+  private extractResponses(route: RouteMetadata, spec: OpenAPISpec, successCode: number = 200): Record<string, any> {
     const responses: Record<string, any> = {};
 
-    // Add documented responses
+    // Add documented responses (from @ApiResponse or @ResponseSchema)
     if (route.responses && route.responses.length > 0) {
       for (const response of route.responses) {
         responses[response.statusCode.toString()] = {
@@ -162,19 +215,25 @@ export class OpenAPIGenerator {
           } : undefined
         };
       }
-    } else {
-      // Add default 200 response if no responses are documented
-      responses['200'] = {
-        description: 'Successful response',
+    }
+
+    // Ensure the primary success response is present
+    const successKey = successCode.toString();
+    if (!responses[successKey]) {
+      const responseSchema = (route as any).responseSchema;
+      responses[successKey] = {
+        description: this.getDefaultResponseDescription(successCode),
         content: {
           'application/json': {
-            schema: { type: 'object' }
+            schema: responseSchema
+              ? this.zodToOpenAPISchema(responseSchema, spec)
+              : { type: 'object' }
           }
         }
       };
     }
 
-    // Always add 422 validation error response
+    // Always document the 422 validation error response
     if (!responses['422']) {
       responses['422'] = {
         description: 'Validation error',
@@ -184,6 +243,7 @@ export class OpenAPIGenerator {
               type: 'object',
               properties: {
                 error: { type: 'string' },
+                statusCode: { type: 'number', example: 422 },
                 details: {
                   type: 'array',
                   items: {
@@ -195,6 +255,24 @@ export class OpenAPIGenerator {
                     }
                   }
                 }
+              }
+            }
+          }
+        }
+      };
+    }
+
+    // Document 401 for secured routes
+    if (OpenAPIGenerator.isSecured(route) && !responses['401']) {
+      responses['401'] = {
+        description: 'Unauthorized — missing or invalid JWT token',
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                error: { type: 'string' },
+                statusCode: { type: 'number', example: 401 }
               }
             }
           }

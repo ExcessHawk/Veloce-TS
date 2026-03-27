@@ -37,17 +37,17 @@ import { MetadataRegistry } from '../core/metadata';
  */
 export function Cache(options: CacheOptions): MethodDecorator {
   return (target: any, propertyKey: string | symbol) => {
-    // Store cache metadata
+    // Keep Reflect metadata for compatibility
     Reflect.defineMetadata('cache:options', options, target, propertyKey);
 
-    // Also store in our metadata registry for route compilation
+    // Always update MetadataRegistry regardless of decorator order.
+    // If the HTTP method decorator hasn't run yet the entry will be partial,
+    // but defineRoute merges instead of replacing so nothing is lost.
     const existingMetadata = MetadataRegistry.getRouteMetadata(target, propertyKey as string);
-    if (existingMetadata) {
-      MetadataRegistry.defineRoute(target, propertyKey as string, {
-        ...existingMetadata,
-        cache: options
-      });
-    }
+    MetadataRegistry.defineRoute(target, propertyKey as string, {
+      ...existingMetadata,
+      cache: options,
+    });
   };
 }
 
@@ -73,17 +73,14 @@ export function Cache(options: CacheOptions): MethodDecorator {
 export function CacheInvalidate(pattern: string | string[]): MethodDecorator {
   return (target: any, propertyKey: string | symbol) => {
     const patterns = Array.isArray(pattern) ? pattern : [pattern];
-    
-    // Store invalidation metadata
+
     Reflect.defineMetadata('cache:invalidate', patterns, target, propertyKey);
 
     const existingMetadata = MetadataRegistry.getRouteMetadata(target, propertyKey as string);
-    if (existingMetadata) {
-      MetadataRegistry.defineRoute(target, propertyKey as string, {
-        ...existingMetadata,
-        cacheInvalidate: patterns
-      });
-    }
+    MetadataRegistry.defineRoute(target, propertyKey as string, {
+      ...existingMetadata,
+      cacheInvalidate: patterns,
+    });
   };
 }
 

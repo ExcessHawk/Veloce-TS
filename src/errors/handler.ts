@@ -1,6 +1,7 @@
 import type { Context } from '../types';
 import { HTTPException } from './exceptions.js';
 import { ValidationException } from '../validation/exceptions.js';
+import { getLogger } from '../logging/logger.js';
 
 /**
  * Custom error handler function type
@@ -37,32 +38,36 @@ export class ErrorHandler {
    * @returns HTTP response with error details
    */
   async handle(error: Error, c: Context): Promise<Response> {
-    console.log('ErrorHandler.handle called with:', error.constructor.name, error.message);
-    
     // If custom handler is provided, use it first
     if (this.customHandler) {
       try {
         return await this.customHandler(error, c);
       } catch (customHandlerError) {
-        // If custom handler fails, fall back to default handling
-        console.error('Custom error handler failed:', customHandlerError);
+        if (this.isDevelopment) {
+          console.error('Custom error handler failed:', customHandlerError);
+        }
       }
     }
 
     // Handle ValidationException (422)
     if (error instanceof ValidationException) {
-      console.log('Handling as ValidationException');
       return this.handleValidationException(error, c);
+    }
+
+    // Handle raw ZodError — can occur when the consumer app has a different instance
+    // of the zod module than the framework (e.g. when using bun link / file: protocol).
+    // Detected by name rather than instanceof to survive cross-module boundaries.
+    if (error.name === 'ZodError' && Array.isArray((error as any).issues)) {
+      const wrapped = new ValidationException(error as any);
+      return this.handleValidationException(wrapped, c);
     }
 
     // Handle HTTPException and its subclasses
     if (error instanceof HTTPException) {
-      console.log('Handling as HTTPException');
       return this.handleHTTPException(error, c);
     }
 
     // Handle generic errors (500)
-    console.log('Handling as generic error');
     return this.handleGenericError(error, c);
   }
 
@@ -98,24 +103,26 @@ export class ErrorHandler {
 
     // Log HTTP exceptions based on severity
     if (error.statusCode >= 500) {
-      // Server errors - always log
-      console.error('HTTP Exception:', {
+      // Server errors — use structured logger when available, fall back to console
+      const logCtx = {
         name: error.name,
         statusCode: error.statusCode,
         message: error.message,
         path: c.req.path,
         method: c.req.method,
-        ...(this.isDevelopment && error.stack ? { stack: error.stack } : {})
-      });
+        ...(this.isDevelopment && error.stack ? { stack: error.stack } : {}),
+      };
+      try { getLogger().error('HTTP Server Error', error, logCtx as any); } catch { console.error('HTTP Exception:', logCtx); }
     } else if (this.isDevelopment) {
-      // Client errors - log only in development
-      console.warn('HTTP Exception:', {
+      // Client errors — log only in development
+      const logCtx = {
         name: error.name,
         statusCode: error.statusCode,
         message: error.message,
         path: c.req.path,
-        method: c.req.method
-      });
+        method: c.req.method,
+      };
+      try { getLogger().warn('HTTP Client Error', logCtx as any); } catch { console.warn('HTTP Exception:', logCtx); }
     }
 
     return c.json(response, error.statusCode as any);
@@ -129,14 +136,15 @@ export class ErrorHandler {
    * @returns JSON response with error details
    */
   private handleGenericError(error: Error, c: Context): Response {
-    // Always log generic errors
-    console.error('Internal Server Error:', {
+    // Always log generic errors — structured logger first, console fallback
+    const logCtx = {
       name: error.name,
       message: error.message,
       path: c.req.path,
       method: c.req.method,
-      stack: error.stack
-    });
+      stack: error.stack,
+    };
+    try { getLogger().error('Internal Server Error', error, logCtx as any); } catch { console.error('Internal Server Error:', logCtx); }
 
     // Build response based on environment
     const response: any = {

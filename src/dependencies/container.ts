@@ -86,7 +86,14 @@ export class DIContainer {
       }
     }
 
-    // Fast-path for request-scoped: check cache first
+    // Fast-path for request-scoped: a context is required
+    if (scope === 'request' && !options?.context) {
+      throw new Error(
+        `Cannot resolve request-scoped provider "${this.getProviderName(provider)}" without a request context. ` +
+        'Pass { context } in the resolve options.'
+      );
+    }
+
     if (scope === 'request' && options?.context) {
       let requestMap = this.requestScoped.get(options.context);
       
