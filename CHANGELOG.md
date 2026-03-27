@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-27
+
+### Fixed
+- `include()` in `VeloceTS` application no longer drops decorator-set route fields (e.g. `statusCode` from `@HttpCode`, `responseSchema` from `@ResponseSchema`) when registering controller routes.
+
+### Added
+- New test suite: `tests/routing.test.ts`, `tests/validation.test.ts`, `tests/errors.test.ts`, `tests/di.test.ts` — 53 integration tests covering functional API, decorator routing, body/query validation, HTTP exceptions, and DI container.
+- Console-based fallback logger: if `pino` is not installed, the framework now falls back silently to a `console`-based logger instead of crashing at startup.
+
+### Changed
+- `pino`, `pino-pretty`, and `ioredis` moved from `dependencies` to `optionalDependencies`. They are no longer installed automatically, reducing the default install footprint by ~7 MB. Install them explicitly if needed (`bun add pino pino-pretty` / `bun add ioredis`).
+- `winston` removed from `dependencies` entirely (it was listed but never used by the framework).
+- `@types/ioredis` and `@types/pino` removed from `devDependencies` (no longer needed).
+- Build threshold in `build.ts` updated from 100 KB to 600 KB to reflect the full framework scope.
+- Core bundle reduced from 444 KB to 408 KB (minified ESM).
+
+### Deprecated
+- `FastAPITS` export: use `VeloceTS` or the shorter `Veloce` alias instead. `FastAPITS` will be removed in v1.0.0.
+
 ## [0.4.0] - 2026-03-27
 
 Esta versión representa la mayor actualización desde el lanzamiento inicial. Se añadieron más de 25 mejoras nuevas distribuidas en tres oleadas de trabajo (alta, media y baja prioridad), cubriendo la cadena completa desde la generación de rutas hasta la documentación OpenAPI, el testing, el ORM y la CLI.

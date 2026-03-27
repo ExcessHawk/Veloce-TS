@@ -5,7 +5,9 @@ import 'reflect-metadata';
 export { VeloceTS } from './core/application';
 // Export Veloce as a shorter alias
 export { VeloceTS as Veloce } from './core/application';
-// Keep FastAPITS as an alias for compatibility
+/**
+ * @deprecated Use `VeloceTS` or `Veloce` instead. `FastAPITS` will be removed in v1.0.0.
+ */
 export { VeloceTS as FastAPITS } from './core/application';
 export { MetadataRegistry } from './core/metadata';
 export { RouterCompiler } from './core/router-compiler';

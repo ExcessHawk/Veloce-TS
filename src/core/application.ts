@@ -178,8 +178,11 @@ export class VeloceTS {
         const prefix = controllerMetadata?.prefix || '';
         const fullPath = this.normalizePath(prefix, routeMetadata.path);
 
-        // Register the complete route metadata
+        // Register the complete route metadata.
+        // Spread routeMetadata first so that decorator-set fields (e.g. statusCode,
+        // responseSchema) are preserved, then override the fields we compute here.
         this.metadata.registerRoute({
+          ...routeMetadata,
           target: controller,
           propertyKey: methodName,
           method: routeMetadata.method,
