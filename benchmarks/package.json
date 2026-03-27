@@ -1,0 +1,23 @@
+{
+  "name": "veloce-ts-benchmarks",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "bun run run.ts",
+    "bench:hello": "bun run run.ts --scenario hello",
+    "bench:params": "bun run run.ts --scenario params",
+    "bench:body": "bun run run.ts --scenario body",
+    "bench:validation": "bun run run.ts --scenario validation"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "fastify": "^5.3.2",
+    "hono": "^4.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/bun": "latest"
+  }
+}

@@ -38,10 +38,7 @@ coverage/
 
 # Development
 .kiro/
-benchmarks/
 
-
-tests
 #starlight
 website
 app-ejemplo
