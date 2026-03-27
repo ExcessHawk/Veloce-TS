@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-03-27
+
+### Fixed
+- **HealthCheckPlugin:** checker display names are set with `Object.defineProperty` (with a fallback) so runtimes such as Bun do not throw when assigning `.name` on async checker functions.
+- **Public API:** `@Req` is now exported from the main `veloce-ts` entry (it was implemented in `decorators/params` but missing from the package exports).
+
 ## [0.4.1] - 2026-03-27
 
 ### Fixed

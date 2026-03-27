@@ -15,7 +15,7 @@ export { MetadataCompiler, type CompiledRouteMetadata } from './core/compiled-me
 
 // Decorator exports
 export * from './decorators/http';
-export { Body, Param, Header, Cookie, Ctx, Query, RequestId, AbortSignal } from './decorators/params';
+export { Body, Param, Header, Cookie, Ctx, Query, Req, RequestId, AbortSignal } from './decorators/params';
 export * from './decorators/dependencies';
 export * from './decorators/middleware';
 export * from './decorators/docs';

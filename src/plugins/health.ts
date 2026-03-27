@@ -35,6 +35,28 @@ export type HealthChecker = {
 };
 
 /**
+ * Bun (and some runtimes) reject plain assignment `fn.name = 'x'` on async functions.
+ * Use defineProperty so check names appear correctly in /health JSON.
+ */
+function setCheckerDisplayName(checker: HealthChecker, displayName: string): void {
+  try {
+    Object.defineProperty(checker, 'name', {
+      value: displayName,
+      configurable: true,
+      enumerable: false,
+      writable: false,
+    });
+  } catch {
+    (checker as HealthChecker & { __veloceCheckerName?: string }).__veloceCheckerName = displayName;
+  }
+}
+
+function getCheckerKey(check: HealthChecker): string {
+  const anyCheck = check as HealthChecker & { __veloceCheckerName?: string };
+  return check.name || anyCheck.__veloceCheckerName || 'unknown';
+}
+
+/**
  * Health Check Plugin
  * Adds /health, /ready, and /live endpoints
  */
@@ -113,14 +135,14 @@ export class HealthCheckPlugin implements Plugin {
     for (const check of this.options.checks) {
       try {
         const result = await Promise.resolve(check());
-        checks[check.name || 'unknown'] = result;
+        checks[getCheckerKey(check)] = result;
         
         if (result.status === 'unhealthy') {
           allHealthy = false;
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        checks[check.name || 'unknown'] = {
+        checks[getCheckerKey(check)] = {
           status: 'unhealthy',
           message: errorMessage
         };
@@ -145,11 +167,10 @@ export class HealthCheckPlugin implements Plugin {
     const uptime = Date.now() - this.startTime;
     
     // Run readiness checks (only critical checks)
-    const criticalChecks = this.options.checks.filter(check => 
-      check.name?.includes('database') || 
-      check.name?.includes('cache') ||
-      check.name?.includes('ready')
-    );
+    const criticalChecks = this.options.checks.filter((check) => {
+      const key = getCheckerKey(check);
+      return key.includes('database') || key.includes('cache') || key.includes('ready');
+    });
 
     let isReady = true;
     const checks: Record<string, CheckResult> = {};
@@ -157,7 +178,7 @@ export class HealthCheckPlugin implements Plugin {
     for (const check of criticalChecks) {
       try {
         const result = await Promise.resolve(check());
-        checks[check.name || 'unknown'] = result;
+        checks[getCheckerKey(check)] = result;
         
         if (result.status === 'unhealthy') {
           isReady = false;
@@ -165,7 +186,7 @@ export class HealthCheckPlugin implements Plugin {
       } catch (error) {
         isReady = false;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        checks[check.name || 'unknown'] = {
+        checks[getCheckerKey(check)] = {
           status: 'unhealthy',
           message: errorMessage
         };
@@ -225,7 +246,7 @@ export const HealthCheckers = {
         };
       }
     };
-    checker.name = 'database';
+    setCheckerDisplayName(checker, 'database');
     return checker;
   },
 
@@ -249,7 +270,7 @@ export const HealthCheckers = {
         maxUsageMB
       };
     };
-    checker.name = 'memory';
+    setCheckerDisplayName(checker, 'memory');
     return checker;
   },
 
@@ -300,7 +321,7 @@ export const HealthCheckers = {
         };
       }
     };
-    checker.name = 'disk';
+    setCheckerDisplayName(checker, 'disk');
     return checker;
   }
 };
