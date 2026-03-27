@@ -1,6 +1,6 @@
 # Veloce-TS Benchmarks
 
-Comparative performance measurements of **Veloce-TS v0.4.1** against three popular
+Comparative performance measurements of **Veloce-TS v0.4.2** against three popular
 Node.js/Bun web frameworks.
 
 > **Run them yourself:**
@@ -31,7 +31,7 @@ _6 000 requests · 50 concurrent connections · each server tested in isolation_
 |------------------|----------:|-------:|-------:|-------:|
 | **Hono (raw)**   | **29 248** | 0.98 | 1.87 | 2.66 |
 | **Fastify 5**    | **19 853** | 1.34 | 2.44 | 3.11 |
-| **Veloce-TS v0.4.1** | **17 337** | 1.56 | 3.13 | 4.04 |
+| **Veloce-TS v0.4.2** | **17 337** | 1.56 | 3.13 | 4.04 |
 | Express 4        |   14 337 | 1.83 | 3.85 | 5.06 |
 
 ### 3. POST /echo — JSON body parse
@@ -51,7 +51,7 @@ while other frameworks require manual `safeParse` calls.
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms | Boilerplate |
 |------------------|----------:|-------:|-------:|-------:|-------------|
 | **Hono (raw)**   | **19 018** | 1.37 | 2.55 | 3.35 | Manual `safeParse` |
-| **Veloce-TS v0.4.1** | **15 405** | 1.68 | 3.19 | 4.33 | **`@Body(Schema)` only** |
+| **Veloce-TS v0.4.2** | **15 405** | 1.68 | 3.19 | 4.33 | **`@Body(Schema)` only** |
 | Fastify 5        |   12 827 | 1.98 | 3.86 | 4.98 | Manual `safeParse` |
 | Express 4        |    9 794 | 2.58 | 4.93 | 6.21 | Manual `safeParse` |
 
