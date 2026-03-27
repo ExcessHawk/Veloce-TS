@@ -40,7 +40,7 @@ coverage/
 .kiro/
 benchmarks/
 
-examples
+
 tests
 #starlight
 website

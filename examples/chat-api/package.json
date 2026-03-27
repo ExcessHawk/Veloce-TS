@@ -1,0 +1,28 @@
+{
+  "name": "chat-api",
+  "version": "0.1.0",
+  "description": "A Veloce-TS application",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun run dist/index.js",
+    "generate:openapi": "bun run node_modules/veloce-ts/bin/veloce.ts generate openapi",
+    "generate:client": "bun run node_modules/veloce-ts/bin/veloce.ts generate client"
+  },
+  "dependencies": {
+    "veloce-ts": "link:veloce-ts",
+    "hono": "^4.0.0",
+    "reflect-metadata": "^0.2.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  }
+}
