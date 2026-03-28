@@ -1,17 +1,15 @@
+/**
+ * @module veloce-ts/validation/exceptions
+ * @description {@link ValidationException}: error 422 cuando falla la validación Zod en `@Body`, `@Query`, etc.
+ * Expone `violations` (lista de campos/mensajes/códigos) y el formato Problem Details + legacy `details`.
+ */
+
 import { ZodError } from 'zod';
 import { HTTPException } from '../errors/exceptions.js';
+import { problemTypeUri, resolveProblemTitle } from '../errors/problem-details.js';
 
 /**
- * Convert a Zod error path array into a readable string.
- *
- * Rules:
- *  - String segments become dot-separated properties: `user.email`
- *  - Number segments become bracket notation: `items[0].price`
- *
- * @example
- * ['user', 'email']          → 'user.email'
- * ['items', 0, 'price']      → 'items[0].price'
- * [0, 'name']                → '[0].name'
+ * Convierte la ruta Zod (`path`) en string legible (`user.email`, `items[0].price`, …).
  */
 function formatPath(path: (string | number)[]): string {
   if (path.length === 0) return '(root)';
@@ -20,56 +18,55 @@ function formatPath(path: (string | number)[]): string {
     if (typeof segment === 'number') {
       return `${acc}[${segment}]`;
     }
-    // First string segment — no leading dot
     return idx === 0 ? segment : `${acc}.${segment}`;
   }, '');
 }
 
 /**
- * ValidationException is thrown when Zod validation fails.
- * Extends HTTPException with 422 Unprocessable Entity status
- * and provides structured, human-readable validation error details.
+ * Se lanza cuando un esquema Zod rechaza el input. El framework la convierte en respuesta 422.
  */
 export class ValidationException extends HTTPException {
   constructor(public zodError: ZodError) {
-    super(422, 'Validation failed');
+    super(422, 'One or more fields did not pass validation.', undefined, {
+      problemType: problemTypeUri('validation-error'),
+      title: 'Validation Error',
+    });
     this.name = 'ValidationException';
   }
 
   /**
-   * Convert the Zod error to a user-friendly JSON format.
-   *
-   * Each issue in `details` contains:
-   * - `field`   – dot/bracket path to the failing field (e.g. `"items[0].price"`)
-   * - `message` – human-readable validation message
-   * - `code`    – Zod error code (e.g. `"too_small"`, `"invalid_type"`)
-   * - `received`– the actual value type that was received (when available)
-   * - `expected`– what was expected (when available)
+   * Cuerpo JSON sin `instance`: RFC 9457 + `violations` + alias legacy (`details`, `error`, `statusCode`).
    */
-  toJSON() {
+  toJSON(): Record<string, unknown> {
+    const violations = this.zodError.errors.map((err) => {
+      const row: Record<string, unknown> = {
+        field: formatPath(err.path),
+        message: err.message,
+        code: err.code,
+      };
+      if ('received' in err && err.received !== undefined) {
+        row.received = err.received;
+      }
+      if ('expected' in err && (err as any).expected !== undefined) {
+        row.expected = (err as any).expected;
+      }
+      if ('minimum' in err) row.minimum = (err as any).minimum;
+      if ('maximum' in err) row.maximum = (err as any).maximum;
+      return row;
+    });
+
+    const status = this.statusCode;
+    const title = resolveProblemTitle(status, this.message, 'Validation Error');
+
     return {
+      type: problemTypeUri('validation-error'),
+      title,
+      status,
+      detail: this.message,
+      violations,
+      details: violations,
       error: 'Validation Error',
-      statusCode: this.statusCode,
-      details: this.zodError.errors.map(err => {
-        const detail: Record<string, any> = {
-          field:   formatPath(err.path),
-          message: err.message,
-          code:    err.code,
-        };
-
-        // Include type information when present (helps API consumers debug)
-        if ('received' in err && err.received !== undefined) {
-          detail.received = err.received;
-        }
-        if ('expected' in err && (err as any).expected !== undefined) {
-          detail.expected = (err as any).expected;
-        }
-        // Include min/max for range errors
-        if ('minimum' in err) detail.minimum = (err as any).minimum;
-        if ('maximum' in err) detail.maximum = (err as any).maximum;
-
-        return detail;
-      }),
+      statusCode: status,
     };
   }
 }

@@ -1,4 +1,8 @@
-// Core application class
+/**
+ * @module veloce-ts/core/application
+ * @description Clase {@link VeloceTS}: arranque del servidor, registro de controladores/rutas funcionales,
+ * middleware global (CORS, rate limit, compresión), plugins y delegación del manejo de errores al {@link ErrorHandler}.
+ */
 import { Hono } from 'hono';
 import { MetadataRegistry } from './metadata';
 import { DIContainer } from '../dependencies/container';
@@ -90,7 +94,9 @@ export class VeloceTS {
     this.metadata = new MetadataRegistry();
     this.container = new DIContainer();
     this.validator = new ValidationEngine();
-    this.errorHandler = new ErrorHandler();
+    this.errorHandler = new ErrorHandler(undefined, {
+      errorResponseFormat: this.config.errorResponseFormat,
+    });
     this.pluginManager = new PluginManager();
 
     // Create RouterCompiler

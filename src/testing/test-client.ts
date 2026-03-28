@@ -1,3 +1,7 @@
+/**
+ * @module veloce-ts/testing/test-client
+ * @description Cliente HTTP de pruebas sobre `app.getHono().request()` con aserciones encadenables (`expectStatus`, `expectJson`, …).
+ */
 import type { VeloceTS } from '../core/application';
 import type { Hono } from 'hono';
 

@@ -1,6 +1,6 @@
 /**
- * Request Context for tracking request lifecycle
- * Provides Request ID, AbortSignal, timeouts, and shared context across middleware and handlers
+ * @module veloce-ts/context/request-context
+ * @description Contexto por request: `requestId`, `AbortSignal`, timeouts y helpers almacenados en el `Context` de Hono.
  */
 
 import type { Context } from '../types';

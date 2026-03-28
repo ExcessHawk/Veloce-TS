@@ -1,177 +1,152 @@
 /**
- * Base HTTP exception class
- * All HTTP exceptions should extend this class
- * Provides consistent error response format
+ * @module veloce-ts/errors/exceptions
+ * @description Jerarquía de excepciones HTTP usadas en handlers y middleware.
+ * Todas extienden {@link HTTPException}; al serializarse incluyen campos **RFC 9457** (`type`, `title`, `status`, `detail`)
+ * más espejos legacy (`error`, `statusCode`) para compatibilidad. El campo `instance` lo añade {@link ErrorHandler}.
+ */
+
+import {
+  resolveProblemTitle,
+  resolveProblemType,
+} from './problem-details.js';
+
+/** Opciones opcionales al construir un {@link HTTPException}. */
+export type HTTPExceptionOptions = {
+  /**
+   * URI `type` del problema (RFC 9457). Si se omite, se usa la URI por defecto del framework para el código HTTP.
+   */
+  problemType?: string;
+  /**
+   * Título humano breve (`title`). Si se omite, se usa el título estándar del código (p. ej. "Not Found").
+   * El mensaje del error sigue siendo `detail` para el cliente.
+   */
+  title?: string;
+};
+
+/**
+ * Excepción HTTP base. Lánzala o extiéndela para respuestas 4xx/5xx tipadas.
+ *
+ * - `message` → se expone como `detail` (RFC) y como `error` (legacy).
+ * - `details` → datos extra (extensión); en legacy suele mapearse a `details`.
  */
 export class HTTPException extends Error {
+  public readonly problemType?: string;
+  public readonly title?: string;
+
   constructor(
     public statusCode: number,
     message: string,
-    public details?: any
+    public details?: any,
+    options?: HTTPExceptionOptions
   ) {
     super(message);
     this.name = 'HTTPException';
-    
-    // Maintains proper stack trace for where error was thrown (V8 only)
+    this.problemType = options?.problemType;
+    this.title = options?.title;
+
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }
   }
 
   /**
-   * Convert exception to JSON format for HTTP response
-   * @returns Object with error details
+   * Representación JSON **sin** `instance` (se completa en el manejador con la URL del request).
+   * Incluye campos RFC 9457 y alias legacy.
    */
-  toJSON() {
+  toJSON(): Record<string, unknown> {
+    const status = this.statusCode;
+    const type = resolveProblemType(status, this.problemType);
+    const title = resolveProblemTitle(status, this.message, this.title);
     return {
+      type,
+      title,
+      status,
+      detail: this.message,
+      ...(this.details !== undefined ? { details: this.details } : {}),
       error: this.message,
-      statusCode: this.statusCode,
-      ...(this.details && { details: this.details })
+      statusCode: status,
     };
   }
 }
 
-/**
- * 404 Not Found exception
- * Thrown when a requested resource cannot be found
- */
+/** 404 — recurso inexistente o ruta no encontrada. */
 export class NotFoundException extends HTTPException {
   constructor(message: string = 'Not Found', details?: any) {
-    super(404, message, details);
+    super(404, message, details, { title: 'Not Found' });
     this.name = 'NotFoundException';
   }
-
-  toJSON() {
-    return {
-      error: this.message,
-      statusCode: this.statusCode,
-      ...(this.details && { details: this.details })
-    };
-  }
 }
 
-/**
- * 401 Unauthorized exception
- * Thrown when authentication is required but not provided or invalid
- */
+/** 401 — falta autenticación o credenciales inválidas. */
 export class UnauthorizedException extends HTTPException {
   constructor(message: string = 'Unauthorized', details?: any) {
-    super(401, message, details);
+    super(401, message, details, { title: 'Unauthorized' });
     this.name = 'UnauthorizedException';
   }
-
-  toJSON() {
-    return {
-      error: this.message,
-      statusCode: this.statusCode,
-      ...(this.details && { details: this.details })
-    };
-  }
 }
 
-/**
- * 403 Forbidden exception
- * Thrown when user is authenticated but doesn't have permission
- */
+/** 403 — autenticado pero sin permiso para la acción. */
 export class ForbiddenException extends HTTPException {
   constructor(message: string = 'Forbidden', details?: any) {
-    super(403, message, details);
+    super(403, message, details, { title: 'Forbidden' });
     this.name = 'ForbiddenException';
   }
-
-  toJSON() {
-    return {
-      error: this.message,
-      statusCode: this.statusCode,
-      ...(this.details && { details: this.details })
-    };
-  }
 }
 
-/**
- * 400 Bad Request exception
- * Thrown when the request is malformed or invalid
- */
+/** 400 — sintaxis o parámetros de request inválidos (distinto de validación de esquema Zod). */
 export class BadRequestException extends HTTPException {
   constructor(message: string = 'Bad Request', details?: any) {
-    super(400, message, details);
+    super(400, message, details, { title: 'Bad Request' });
     this.name = 'BadRequestException';
-  }
-
-  toJSON() {
-    return {
-      error: this.message,
-      statusCode: this.statusCode,
-      ...(this.details && { details: this.details })
-    };
   }
 }
 
-/**
- * 409 Conflict exception
- * Thrown when the request conflicts with the current state of the resource
- * (e.g. duplicate key, version mismatch)
- */
+/** 409 — conflicto de estado (p. ej. duplicado, versión obsoleta). */
 export class ConflictException extends HTTPException {
   constructor(message: string = 'Conflict', details?: any) {
-    super(409, message, details);
+    super(409, message, details, { title: 'Conflict' });
     this.name = 'ConflictException';
   }
 }
 
-/**
- * 410 Gone exception
- * Thrown when a resource previously existed but has been permanently removed
- */
+/** 410 — el recurso existió y fue eliminado de forma permanente. */
 export class GoneException extends HTTPException {
   constructor(message: string = 'Gone', details?: any) {
-    super(410, message, details);
+    super(410, message, details, { title: 'Gone' });
     this.name = 'GoneException';
   }
 }
 
-/**
- * 413 Payload Too Large exception
- * Thrown when the request body exceeds the allowed size limit
- */
+/** 413 — cuerpo demasiado grande. */
 export class PayloadTooLargeException extends HTTPException {
   constructor(message: string = 'Payload Too Large', details?: any) {
-    super(413, message, details);
+    super(413, message, details, { title: 'Payload Too Large' });
     this.name = 'PayloadTooLargeException';
   }
 }
 
 /**
- * 422 Unprocessable Entity exception
- * Semantic error: the request is well-formed but cannot be processed
- * (distinct from ValidationException which wraps Zod errors)
+ * 422 — error semántico de negocio (no confundir con {@link ValidationException}, que envuelve Zod).
  */
 export class UnprocessableEntityException extends HTTPException {
   constructor(message: string = 'Unprocessable Entity', details?: any) {
-    super(422, message, details);
+    super(422, message, details, { title: 'Unprocessable Entity' });
     this.name = 'UnprocessableEntityException';
   }
 }
 
-/**
- * 429 Too Many Requests exception
- * Thrown when rate limiting is triggered manually from a handler
- */
+/** 429 — rate limit u otra política de throttling. */
 export class TooManyRequestsException extends HTTPException {
   constructor(message: string = 'Too Many Requests', details?: any) {
-    super(429, message, details);
+    super(429, message, details, { title: 'Too Many Requests' });
     this.name = 'TooManyRequestsException';
   }
 }
 
-/**
- * 503 Service Unavailable exception
- * Thrown when the service is temporarily unable to handle the request
- * (e.g. dependency down, maintenance mode)
- */
+/** 503 — dependencia caída, mantenimiento, etc. */
 export class ServiceUnavailableException extends HTTPException {
   constructor(message: string = 'Service Unavailable', details?: any) {
-    super(503, message, details);
+    super(503, message, details, { title: 'Service Unavailable' });
     this.name = 'ServiceUnavailableException';
   }
 }

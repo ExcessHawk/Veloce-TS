@@ -1,4 +1,8 @@
-// VeloceTS - Main entry point
+/**
+ * @module veloce-ts
+ * @description Punto de entrada del paquete: exporta la clase {@link VeloceTS}, decoradores HTTP/DI, validación,
+ * errores, plugins, adaptadores y módulos opcionales (auth, ORM, GraphQL, WebSocket, caché, testing).
+ */
 import 'reflect-metadata';
 
 // Core exports
@@ -34,9 +38,20 @@ export { registerDrizzle, InjectDB, DB_TOKEN } from './dependencies/drizzle';
 // Response exports
 export * from './responses/response';
 
-// Error exports
+// Error exports (RFC 9457 + legacy; ver `VeloceTSConfig.errorResponseFormat`)
 export * from './errors/exceptions';
-export { ErrorHandler } from './errors/handler';
+export { ErrorHandler, type CustomErrorHandler, type ErrorHandlerOptions } from './errors/handler';
+export {
+  PROBLEM_JSON_MEDIA_TYPE,
+  DEFAULT_PROBLEM_TYPE_BASE,
+  problemTypeUri,
+  resolveProblemType,
+  resolveProblemTitle,
+  buildProblemInstance,
+  toLegacyErrorBody,
+  sendErrorResponse,
+  type ErrorResponseFormat,
+} from './errors/problem-details';
 
 // Middleware exports
 export * from './middleware';

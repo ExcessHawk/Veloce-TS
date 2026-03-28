@@ -1,6 +1,6 @@
 # Veloce-TS Benchmarks
 
-Comparative performance measurements of **Veloce-TS v0.4.2** against three popular
+Comparative performance measurements of **Veloce-TS v0.4.3** against three popular
 Node.js/Bun web frameworks.
 
 > **Run them yourself:**
@@ -14,34 +14,34 @@ Node.js/Bun web frameworks.
 
 ## Results — Bun 1.3.5 · Windows 11 · Ryzen 5
 
-_6 000 requests · 50 concurrent connections · each server tested in isolation_
+_6 000 requests · 50 concurrent connections · each server tested in isolation · run 2026-03-28_
 
 ### 1. GET /hello — simple JSON response
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **30 593** | 0.95 | 1.87 | 2.87 |
-| **Fastify 5**    | **17 874** | 1.48 | 2.97 | 4.08 |
-| **Veloce-TS v0.4.1** | **16 688** | 1.62 | 3.03 | 3.66 |
-| Express 4        |   13 618 | 1.92 | 4.02 | 5.51 |
+| **Hono (raw)**   | **30 376** | 0.95 | 1.70 | 2.62 |
+| **Veloce-TS v0.4.3** | **19 252** | 1.43 | 2.76 | 5.79 |
+| **Fastify 5**    | **16 918** | 1.58 | 3.49 | 5.45 |
+| Express 4        |   14 189 | 1.83 | 3.64 | 5.05 |
 
 ### 2. GET /users/:id — route parameter extraction
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **29 248** | 0.98 | 1.87 | 2.66 |
-| **Fastify 5**    | **19 853** | 1.34 | 2.44 | 3.11 |
-| **Veloce-TS v0.4.2** | **17 337** | 1.56 | 3.13 | 4.04 |
-| Express 4        |   14 337 | 1.83 | 3.85 | 5.06 |
+| **Hono (raw)**   | **28 479** | 1.00 | 1.75 | 2.60 |
+| **Veloce-TS v0.4.3** | **22 219** | 1.23 | 2.18 | 3.02 |
+| **Fastify 5**    | **19 375** | 1.36 | 2.52 | 3.32 |
+| Express 4        |   15 084 | 1.73 | 3.21 | 4.15 |
 
 ### 3. POST /echo — JSON body parse
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **22 187** | 1.21 | 2.17 | 3.04 |
-| **Veloce-TS v0.4.1** | **16 117** | 1.64 | 3.09 | 4.06 |
-| Fastify 5        |   13 758 | 1.86 | 3.53 | 4.24 |
-| Express 4        |    8 513 | 3.06 | 5.86 | 12.18 |
+| **Hono (raw)**   | **23 271** | 1.16 | 2.02 | 2.69 |
+| **Veloce-TS v0.4.3** | **18 788** | 1.40 | 2.52 | 3.42 |
+| Fastify 5        |   13 768 | 1.85 | 3.54 | 4.62 |
+| Express 4        |   10 110 | 2.50 | 4.69 | 5.89 |
 
 ### 4. POST /validate — Zod schema validation ⭐
 
@@ -50,10 +50,10 @@ while other frameworks require manual `safeParse` calls.
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms | Boilerplate |
 |------------------|----------:|-------:|-------:|-------:|-------------|
-| **Hono (raw)**   | **19 018** | 1.37 | 2.55 | 3.35 | Manual `safeParse` |
-| **Veloce-TS v0.4.2** | **15 405** | 1.68 | 3.19 | 4.33 | **`@Body(Schema)` only** |
-| Fastify 5        |   12 827 | 1.98 | 3.86 | 4.98 | Manual `safeParse` |
-| Express 4        |    9 794 | 2.58 | 4.93 | 6.21 | Manual `safeParse` |
+| **Hono (raw)**   | **19 722** | 1.35 | 2.49 | 3.27 | Manual `safeParse` |
+| **Veloce-TS v0.4.3** | **15 988** | 1.64 | 2.98 | 4.11 | **`@Body(Schema)` only** |
+| Fastify 5        |   13 265 | 1.95 | 3.62 | 4.36 | Manual `safeParse` |
+| Express 4        |    9 930 | 2.57 | 4.81 | 6.26 | Manual `safeParse` |
 
 ---
 
@@ -61,14 +61,14 @@ while other frameworks require manual `safeParse` calls.
 
 | Comparison | Result |
 |---|---|
-| Veloce-TS vs Express (GET) | **+22 % faster** |
-| Veloce-TS vs Express (POST + body) | **+89 % faster** |
-| Veloce-TS vs Express (validation) | **+57 % faster** |
-| Veloce-TS vs Fastify (validation) | **+20 % faster** |
-| Veloce-TS vs raw Hono overhead | Only **−13 % to −43 %** slower |
+| Veloce-TS vs Express (GET /hello) | **+36 % faster** |
+| Veloce-TS vs Express (GET /users/:id) | **+47 % faster** |
+| Veloce-TS vs Express (POST + body) | **+86 % faster** |
+| Veloce-TS vs Express (validation) | **+61 % faster** |
+| Veloce-TS vs Fastify (validation) | **+21 % faster** |
+| Veloce-TS vs raw Hono overhead | About **−19 % to −37 %** slower (scenario-dependent) |
 
-The decorator + DI layer of Veloce-TS adds **~1–2 ms** of overhead per request compared
-to raw Hono. In exchange, you get automatic Zod validation, OpenAPI generation,
+The decorator + DI layer of Veloce-TS adds **roughly sub–2 ms** average latency versus raw Hono on these runs. In exchange, you get automatic Zod validation, OpenAPI generation,
 dependency injection, and type-safe route parameters — for free.
 
 ---
@@ -97,9 +97,10 @@ dependency injection, and type-safe route parameters — for free.
 
 ```
 Runtime : Bun 1.3.5
-OS      : Windows 11
+OS      : Windows 11 (win32)
 CPU     : AMD Ryzen 5
 Requests: 6 000  |  Concurrency: 50  |  Warmup: 500
+Captured: 2026-03-28 (see benchmarks/results/latest.json)
 ```
 
 ### How to reproduce

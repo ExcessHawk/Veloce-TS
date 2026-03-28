@@ -1,3 +1,8 @@
+/**
+ * @module veloce-ts/dependencies/container
+ * @description {@link DIContainer}: registro y resolución de proveedores con ámbitos singleton, request y transient;
+ * detección de dependencias circulares y estadísticas de resolución.
+ */
 import type { Provider, Scope, Context, ProviderConfig, Class } from '../types';
 
 /**

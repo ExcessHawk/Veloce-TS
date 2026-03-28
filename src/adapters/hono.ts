@@ -1,6 +1,6 @@
 /**
- * Hono adapter for runtime-agnostic server deployment
- * Supports Bun, Node.js, Deno, and Cloudflare Workers
+ * @module veloce-ts/adapters/hono
+ * @description {@link HonoAdapter}: detecta runtime (Bun/Node/Deno/Workers) y expone `listen` sobre la instancia Hono.
  */
 import type { Hono } from 'hono';
 import type { Adapter, ServerInstance } from './base';

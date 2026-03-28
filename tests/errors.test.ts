@@ -15,6 +15,7 @@ import {
   TooManyRequestsException,
   ServiceUnavailableException,
 } from '../src/errors/exceptions';
+import { PROBLEM_JSON_MEDIA_TYPE } from '../src/errors/problem-details';
 
 // ── Exception classes ─────────────────────────────────────────────────────────
 
@@ -25,11 +26,16 @@ describe('HTTP Exception classes', () => {
     if (err.message !== "I'm a teapot") throw new Error('Wrong message');
   });
 
-  it('toJSON includes statusCode and error fields', () => {
+  it('toJSON includes RFC 9457 fields and legacy mirrors', () => {
     const err = new HTTPException(500, 'Server Error', { info: 'db down' });
-    const json = err.toJSON();
+    const json = err.toJSON() as Record<string, unknown>;
+    if (json.status !== 500) throw new Error('Missing RFC status in JSON');
     if (json.statusCode !== 500) throw new Error('Missing statusCode in JSON');
-    if (json.error !== 'Server Error') throw new Error('Missing error in JSON');
+    if (json.detail !== 'Server Error') throw new Error('Missing detail in JSON');
+    if (json.error !== 'Server Error') throw new Error('Missing legacy error in JSON');
+    if (typeof json.type !== 'string' || !(json.type as string).includes('problems')) {
+      throw new Error('Missing or invalid type URI');
+    }
     if (!json.details) throw new Error('Missing details in JSON');
   });
 
@@ -106,6 +112,35 @@ describe('Error handling in routes', () => {
     });
     const res = await client.get('/guarded/missing');
     res.expectNotFound();
+  });
+
+  it('default error responses use application/problem+json (RFC 9457)', async () => {
+    const { client } = await setupTestApp((app) => {
+      app.include(GuardedController);
+    });
+    const res = await client.get('/guarded/missing');
+    const ct = res.headers.get('content-type') ?? '';
+    if (!ct.includes(PROBLEM_JSON_MEDIA_TYPE)) {
+      throw new Error(`Expected Content-Type to include ${PROBLEM_JSON_MEDIA_TYPE}, got: ${ct}`);
+    }
+    const body = res.body as Record<string, unknown>;
+    if (typeof body.instance !== 'string') throw new Error('Expected instance URI');
+    if (body.status !== 404) throw new Error('Expected RFC status 404');
+  });
+
+  it('legacy error format omits problem+json', async () => {
+    const { client } = await setupTestApp(
+      (app) => {
+        app.include(GuardedController);
+      },
+      { errorResponseFormat: 'legacy' }
+    );
+    const res = await client.get('/guarded/missing');
+    const ct = res.headers.get('content-type') ?? '';
+    if (ct.includes('problem+json')) {
+      throw new Error('Legacy format should not use problem+json');
+    }
+    res.expectField('statusCode', 404).expectField('error', 'Resource not found');
   });
 
   it('UnauthorizedException returns 401', async () => {

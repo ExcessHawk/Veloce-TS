@@ -1,32 +1,29 @@
+/**
+ * @module veloce-ts/auth/exceptions
+ * @description Errores específicos de autenticación/autorización JWT/sesión. Extienden {@link HTTPException}
+ * con `problemType` dedicados para clientes que discriminan por URI RFC 9457.
+ */
+
 import { HTTPException } from '../errors/exceptions.js';
+import { problemTypeUri } from '../errors/problem-details.js';
 
 export class AuthenticationException extends HTTPException {
   constructor(message: string = 'Authentication required') {
-    super(401, message);
+    super(401, message, undefined, {
+      title: 'Authentication Error',
+      problemType: problemTypeUri('authentication-error'),
+    });
     this.name = 'AuthenticationException';
-  }
-
-  toJSON() {
-    return {
-      error: 'Authentication Error',
-      message: this.message,
-      statusCode: 401,
-    };
   }
 }
 
 export class AuthorizationException extends HTTPException {
   constructor(message: string = 'Insufficient permissions') {
-    super(403, message);
+    super(403, message, undefined, {
+      title: 'Authorization Error',
+      problemType: problemTypeUri('authorization-error'),
+    });
     this.name = 'AuthorizationException';
-  }
-
-  toJSON() {
-    return {
-      error: 'Authorization Error',
-      message: this.message,
-      statusCode: 403,
-    };
   }
 }
 

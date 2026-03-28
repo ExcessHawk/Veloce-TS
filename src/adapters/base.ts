@@ -1,7 +1,7 @@
 /**
- * Base adapter interface for runtime-agnostic server implementations
- * Adapters allow FastAPI-TS to run on different runtimes (Bun, Node.js, Deno, Workers)
- * and integrate with different frameworks (Hono, Express)
+ * @module veloce-ts/adapters/base
+ * @description Contrato {@link ServerAdapter} / {@link ServerInstance}: abstrae `listen` y cierre graceful
+ * sobre distintos runtimes (Bun, Node, etc.) y backends (Hono, Express).
  */
 
 /**

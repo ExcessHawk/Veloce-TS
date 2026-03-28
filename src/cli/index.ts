@@ -1,4 +1,8 @@
 #!/usr/bin/env bun
+/**
+ * @module veloce-ts/cli
+ * @description Punto de entrada del binario `veloce` / `veloce-ts`: comandos `new`, `generate`, `dev`, `build` (Commander).
+ */
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join } from 'path';

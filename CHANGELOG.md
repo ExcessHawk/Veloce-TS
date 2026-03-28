@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-03-27
+
+### Added
+- **RFC 9457 (Problem Details):** respuestas de error por defecto con `Content-Type: application/problem+json`, campos `type`, `title`, `status`, `detail`, `instance` y extensiones (`violations`/`details` en validación; `debug` en 500 solo en desarrollo).
+- **`VeloceTSConfig.errorResponseFormat`:** `'rfc9457'` (defecto) o `'legacy'` para el JSON `{ error, statusCode, details? }` anterior.
+- Helpers exportados: `problemTypeUri`, `resolveProblemType`, `resolveProblemTitle`, `buildProblemInstance`, `toLegacyErrorBody`, `sendErrorResponse`, constantes `PROBLEM_JSON_MEDIA_TYPE`, `DEFAULT_PROBLEM_TYPE_BASE`.
+- **`HTTPExceptionOptions`:** `problemType` y `title` opcionales en el constructor de `HTTPException`.
+
+### Changed
+- Excepciones de auth (`AuthenticationException`, `AuthorizationException`) dejan de definir `toJSON` propio; heredan el formato unificado con URIs `authentication-error` / `authorization-error`.
+
+### Documentation
+- Cabeceras `@module` en el núcleo (application, metadata, router-compiler, plugin, compiled-metadata), errores, validación, DI, respuestas, logging, middleware, adapters, testing, barrels y más.
+- **Benchmarks:** `benchmarks/run.ts` etiquetado como v0.4.3; `BENCHMARKS.md` y `benchmarks/results/latest.json` regenerados (6 000 req, 50 concurrentes, Bun 1.3.5, 2026-03-28).
+
+### Notes
+- El cuerpo JSON de error sigue incluyendo `error` y `statusCode` junto a los campos RFC 9457. Si tu cliente exige `Content-Type: application/json` en errores, usa `errorResponseFormat: 'legacy'` o acepta `application/problem+json`.
+
 ## [0.4.2] - 2026-03-27
 
 ### Fixed

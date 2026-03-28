@@ -1,3 +1,7 @@
+/**
+ * @module veloce-ts/testing/helpers
+ * @description Fábricas `createTestApp` / `setupTestApp` y utilidades de mock en el contenedor DI para tests.
+ */
 import { VeloceTS } from '../core/application';
 import { TestClient } from './test-client';
 import type { VeloceTSConfig, Provider, ProviderConfig } from '../types';

@@ -26,7 +26,7 @@ const OUTPUT_JSON     = args.includes('--json');
 const SCENARIO_FILTER = getArg('scenario', 'all');
 
 const SERVERS = [
-  { name: 'Veloce-TS v0.4.2', file: './servers/veloce.ts', port: 3001, color: '\x1b[36m' },
+  { name: 'Veloce-TS v0.4.3', file: './servers/veloce.ts', port: 3001, color: '\x1b[36m' },
   { name: 'Hono (raw)',        file: './servers/hono.ts',   port: 3002, color: '\x1b[33m' },
   { name: 'Express 4',         file: './servers/express.ts',port: 3003, color: '\x1b[90m' },
   { name: 'Fastify 5',         file: './servers/fastify.ts',port: 3004, color: '\x1b[35m' },
@@ -191,7 +191,7 @@ function printTable(
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 console.log(`\n${BOLD}╔══════════════════════════════════════════════════╗${RESET}`);
-console.log(`${BOLD}║      Veloce-TS  Benchmark Suite  v0.4.2          ║${RESET}`);
+console.log(`${BOLD}║      Veloce-TS  Benchmark Suite  v0.4.3          ║${RESET}`);
 console.log(`${BOLD}╚══════════════════════════════════════════════════╝${RESET}`);
 console.log(`  Requests: ${TOTAL_REQUESTS.toLocaleString()}   Concurrency: ${CONCURRENCY}   Warmup: ${WARMUP_REQUESTS}`);
 

@@ -1,4 +1,8 @@
-// Metadata registry for storing decorator metadata
+/**
+ * @module veloce-ts/core/metadata
+ * @description {@link MetadataRegistry}: almacén en memoria de metadatos generados por decoradores
+ * (`@Controller`, `@Get`, parámetros `@Body`, dependencias, WebSocket, GraphQL, etc.) antes de compilar rutas.
+ */
 import 'reflect-metadata';
 import type {
   RouteMetadata,

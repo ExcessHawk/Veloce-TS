@@ -1,4 +1,8 @@
-// Plugin system
+/**
+ * @module veloce-ts/core/plugin
+ * @description Contrato {@link Plugin}, {@link PluginManager} y orden de instalación: extensión del núcleo
+ * (OpenAPI, GraphQL, WebSocket, ORM, auth, etc.) antes de {@link VeloceTS.compile}.
+ */
 import type { VeloceTS } from './application';
 
 /**

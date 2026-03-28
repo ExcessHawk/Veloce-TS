@@ -1,3 +1,8 @@
+/**
+ * @module veloce-ts/core/compiled-metadata
+ * @description {@link MetadataCompiler}: precomputa regex de path, orden de parámetros/dependencias y flags
+ * (`hasBody`, etc.) a partir de {@link RouteMetadata} para acelerar el dispatch en {@link RouterCompiler}.
+ */
 import type { RouteMetadata, ParameterMetadata } from '../types';
 
 /**

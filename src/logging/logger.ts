@@ -1,8 +1,7 @@
 /**
- * Logger para Veloce-TS usando Pino
- * 
- * Pino es el logger más rápido para Node.js con excelente rendimiento
- * y formato JSON estructurado ideal para producción.
+ * @module veloce-ts/logging/logger
+ * @description Fábrica de logger estructurado: usa **Pino** si está instalado; si no, consola con formato legible.
+ * Consumido por middleware de request context y por {@link ErrorHandler} en errores 5xx.
  */
 
 import type { Logger, LoggerConfig, LogContext } from './types';

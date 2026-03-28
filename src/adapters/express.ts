@@ -1,4 +1,7 @@
 /**
+ * @module veloce-ts/adapters/express
+ * @description {@link ExpressAdapter}: monta la app Hono interna detrás de Express reenviando cada request a `fetch` y copiando la `Response`.
+ *
  * Express adapter for Veloce-TS
  *
  * Bridges Veloce-TS / Hono routes into an existing Express application.

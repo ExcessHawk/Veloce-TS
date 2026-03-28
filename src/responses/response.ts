@@ -1,4 +1,8 @@
-// Response builders for different content types
+/**
+ * @module veloce-ts/responses/response
+ * @description Helpers de respuesta HTTP (`JSONResponse`, `HTMLResponse`, `FileResponse`, `RedirectResponse`)
+ * y {@link ResponseSerializer} usado por el compilador de rutas para normalizar valores de retorno de handlers.
+ */
 import type { Context } from '../types';
 
 export interface FileOptions {

@@ -1,4 +1,8 @@
-// Type definitions for Veloce-TS
+/**
+ * @module veloce-ts/types
+ * @description Tipos compartidos: `Context`, metadatos de rutas, configuración de la app (`VeloceTSConfig`),
+ * opciones de CORS/rate-limit, contratos de auth/sesión y re-export de `z` (Zod).
+ */
 import type { Context as HonoContext, Hono, MiddlewareHandler } from 'hono';
 import type { ZodSchema, z } from 'zod';
 
@@ -107,6 +111,13 @@ export interface VeloceTSConfig {
   docs?: boolean | { path?: string; openapi?: string };
   cors?: CorsOptions | boolean;
   plugins?: any[];
+  /**
+   * Formato de respuestas de error del framework.
+   * - `rfc9457` — Problem Details (`application/problem+json`).
+   * - `legacy` — `{ error, statusCode, details? }` como en versiones anteriores a 0.5.
+   * @default 'rfc9457'
+   */
+  errorResponseFormat?: 'rfc9457' | 'legacy';
 }
 
 export interface CorsOptions {

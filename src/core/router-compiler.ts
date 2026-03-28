@@ -1,3 +1,8 @@
+/**
+ * @module veloce-ts/core/router-compiler
+ * @description {@link RouterCompiler}: traduce metadatos + rutas funcionales a rutas Hono reales, aplicando
+ * validación Zod, inyección de dependencias, serialización de respuestas y el manejador global de errores.
+ */
 import type { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import type { Context } from '../types';

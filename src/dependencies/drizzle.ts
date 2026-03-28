@@ -1,4 +1,7 @@
 /**
+ * @module veloce-ts/dependencies/drizzle
+ * @description Registro del cliente Drizzle en el DI (`registerDrizzle`, `InjectDB`, `DB_TOKEN`) para inyectar DB en servicios y controladores.
+ *
  * Drizzle ORM integration helpers for Veloce-TS DI container.
  *
  * These utilities let you register a Drizzle database instance as an

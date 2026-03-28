@@ -1,4 +1,7 @@
-// Authentication module exports
+/**
+ * @module veloce-ts/auth
+ * @description JWT, sesiones, OAuth, RBAC/permisos, plugins y decoradores de identidad en rutas.
+ */
 export * from './jwt-provider.js';
 export * from './auth-service.js';
 export * from './decorators.js';

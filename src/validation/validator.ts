@@ -1,3 +1,7 @@
+/**
+ * @module veloce-ts/validation/validator
+ * @description {@link ValidationEngine}: ejecuta esquemas Zod sobre body, query, params y headers según metadatos de ruta.
+ */
 import { ZodSchema, ZodError } from 'zod';
 import { ValidationException } from './exceptions.js';
 
