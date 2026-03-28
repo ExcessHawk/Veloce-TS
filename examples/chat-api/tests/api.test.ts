@@ -331,6 +331,18 @@ describe('GET /ws/chat', () => {
     expect(res.status).toBe(401);
     expect(body.error).toContain('token');
   });
+
+  it('devuelve 401 con token inválido (con upgrade header)', async () => {
+    const res = await hono.fetch(
+      new Request('http://localhost/ws/chat?token=not.a.valid.jwt', {
+        headers: { upgrade: 'websocket', connection: 'Upgrade' },
+      }),
+    );
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(401);
+    expect(body.error).toMatch(/invalid|expired|Invalid/i);
+  });
 });
 
 // ─── OpenAPI / Swagger ────────────────────────────────────────────────────────
