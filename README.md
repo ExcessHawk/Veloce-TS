@@ -505,8 +505,10 @@ app.usePlugin(new GraphQLPlugin({
 | **Deno** | ✅ Supported | Use `npm:veloce` |
 | **Cloudflare Workers** | ✅ Supported | Edge-ready |
 
+> **WebSockets:** HTTP → WS upgrade is supported on **Bun** and **Deno**. On **Node.js** the built-in WebSocket plugin still returns **501** until a Node upgrade path lands (see **Current limitations** below).
+
 ```typescript
-// Same code works everywhere!
+// Core HTTP routing works on all runtimes; WebSocket upgrades — check Bun/Deno vs Node.
 import { Veloce } from 'veloce-ts';
 const app = new Veloce();
 app.listen(3000);
