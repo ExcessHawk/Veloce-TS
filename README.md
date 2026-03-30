@@ -512,11 +512,34 @@ const app = new Veloce();
 app.listen(3000);
 ```
 
+## ⚠️ Current limitations
+
+These are **known gaps today** so you can choose Veloce-TS with clear expectations:
+
+| Area | Limitation |
+|------|------------|
+| **WebSockets on Node.js** | The built-in WebSocket plugin responds with **501** on Node.js. WebSocket upgrades are supported on **Bun** and **Deno**; Node support is not wired up yet (e.g. no `ws`/HTTP upgrade bridge in core). |
+| **GraphQL** | The GraphQL plugin and decorators are **still maturing**. Treat them as **experimental** for production unless you have validated your use case. |
+| **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
+| **Pre-1.0** | APIs may change between minor versions. Check the [CHANGELOG](CHANGELOG.md) before upgrading. |
+
+## 🔭 Planned updates (roadmap)
+
+Directional priorities—not a release calendar. Items may ship in a different order.
+
+1. **ORM choice** — Make **Drizzle, Prisma, and TypeORM** practical first-class options: clear patterns, docs, and (where it helps) small helpers so teams can **pick one ORM** without fighting the framework.
+2. **WebSockets on Node.js** — Remove the Node **501** path by integrating a real upgrade path (e.g. `ws` or runtime-appropriate APIs) so the same decorator API works on Node as on Bun/Deno.
+3. **CLI scaffolding** — Lightweight **code generation** (e.g. controller + route + test skeleton), similar in spirit to Feathers’ `generate service`, kept maintainable and optional.
+4. **GraphQL** — Improve stability and docs **after** REST, caching, WebSockets-on-Node, and ORM stories are in better shape (lower priority than the items above).
+
+For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and proposals: [GitHub Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions).
+
 ## 📖 Documentation
 
 | Resource | Description |
 |----------|-------------|
 | [📚 Full Documentation](https://docs.veloce-ts.com) | Complete guides and API reference |
+| [⚠️ Limitations & roadmap](https://docs.veloce-ts.com/guides/limitations-and-roadmap/) | Known gaps and planned direction |
 | [💡 Examples & Guides](https://docs.veloce-ts.com/guides/getting-started) | Tutorials and code examples |
 | [🔧 API Reference](https://docs.veloce-ts.com/reference/api-reference) | Detailed API documentation |
 
