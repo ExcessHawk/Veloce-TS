@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-03-29
+
+Mismo parche CORS que se intentó en **0.4.4**; npm **no permite republicar** un número de versión tras `npm unpublish` (`E400 Cannot publish over previously published version`).
+
+### Fixed
+- **CORS on error responses:** las respuestas del `ErrorHandler` (401, 422, 500, `application/problem+json`, etc.) incluyen `Access-Control-Allow-Origin` y el resto de cabeceras CORS configuradas, alineadas con respuestas OK (`veloce:corsHeaders` + `mergeVeloceCorsHeaders`). Export público: `mergeVeloceCorsHeaders`, `VELOCE_CORS_HEADERS_KEY`, `VeloceCorsHeadersSnapshot`.
+
+## [0.4.4] - 2026-03-28
+
+**No usar:** la release en npm llegó sin tarball servible (404). Tras `npm unpublish veloce-ts@0.4.4`, el registry **bloquea** volver a publicar el mismo número. El parche CORS válido está en **0.4.5**.
+
 ## [0.4.3] - 2026-03-27
 
 ### Added

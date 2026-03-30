@@ -8,6 +8,7 @@ import type { Context } from '../types';
 import { HTTPException } from './exceptions.js';
 import { ValidationException } from '../validation/exceptions.js';
 import { getLogger } from '../logging/logger.js';
+import { mergeVeloceCorsHeaders } from '../middleware/cors.js';
 import {
   type ErrorResponseFormat,
   resolveProblemTitle,
@@ -64,7 +65,8 @@ export class ErrorHandler {
   async handle(error: Error, c: Context): Promise<Response> {
     if (this.customHandler) {
       try {
-        return await this.customHandler(error, c);
+        const res = await this.customHandler(error, c);
+        return mergeVeloceCorsHeaders(c, res);
       } catch (customHandlerError) {
         if (this.isDevelopment) {
           console.error('Custom error handler failed:', customHandlerError);
@@ -73,19 +75,19 @@ export class ErrorHandler {
     }
 
     if (error instanceof ValidationException) {
-      return this.handleValidationException(error, c);
+      return mergeVeloceCorsHeaders(c, this.handleValidationException(error, c));
     }
 
     if (error.name === 'ZodError' && Array.isArray((error as any).issues)) {
       const wrapped = new ValidationException(error as any);
-      return this.handleValidationException(wrapped, c);
+      return mergeVeloceCorsHeaders(c, this.handleValidationException(wrapped, c));
     }
 
     if (error instanceof HTTPException) {
-      return this.handleHTTPException(error, c);
+      return mergeVeloceCorsHeaders(c, this.handleHTTPException(error, c));
     }
 
-    return this.handleGenericError(error, c);
+    return mergeVeloceCorsHeaders(c, this.handleGenericError(error, c));
   }
 
   private handleValidationException(error: ValidationException, c: Context): Response {

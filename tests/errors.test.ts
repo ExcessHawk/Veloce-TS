@@ -209,4 +209,40 @@ describe('Error handling in routes', () => {
     const res = await client.get('/fail');
     res.expectStatus(500).expectJson({ custom: true });
   });
+
+  it('error responses include Access-Control-Allow-Origin when CORS is configured', async () => {
+    @Controller('/cors-api')
+    class CorsErrorController {
+      @Get('/denied')
+      denied() {
+        throw new UnauthorizedException('no token');
+      }
+    }
+
+    const origin = 'https://client.example';
+    const { client } = await setupTestApp(
+      (app) => {
+        app.include(CorsErrorController);
+      },
+      {
+        cors: {
+          origin: [origin, 'https://other.test'],
+          credentials: true,
+        },
+      }
+    );
+
+    const res = await client.get('/cors-api/denied', {
+      headers: { Origin: origin },
+    });
+    res.expectUnauthorized();
+    if (res.headers.get('Access-Control-Allow-Origin') !== origin) {
+      throw new Error(
+        `Expected Access-Control-Allow-Origin "${origin}", got: ${res.headers.get('Access-Control-Allow-Origin')}`
+      );
+    }
+    if (res.headers.get('Access-Control-Allow-Credentials') !== 'true') {
+      throw new Error('Expected Access-Control-Allow-Credentials: true on error body');
+    }
+  });
 });
