@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-04-12
+
+### Fixed
+- **Constructor injection en DIContainer:** `DIContainer.create()` ahora lee los metadatos de dependencias del constructor (`MetadataRegistry.getDependencyMetadata`) y resuelve cada dependencia antes de instanciar la clase. Anteriormente llamaba `new Class()` sin argumentos, causando que decoradores como `@InjectDB()` en parámetros de constructor no tuvieran efecto y las propiedades quedaran como `undefined`.
+- **`@Depends` en parámetros de constructor:** eliminada la restricción que lanzaba error al usar `@Depends` en constructores. Ahora soporta tanto parámetros de método como de constructor.
+
+### Added
+- **`@Inject(Provider, scope?)` decorator:** nuevo decorador para inyección de dependencias en constructores, con scope `'singleton'` por defecto. Alternativa semántica a `@Depends` optimizada para el patrón de constructor injection en controllers y servicios.
+
 ## [0.4.5] - 2026-03-29
 
 Mismo parche CORS que se intentó en **0.4.4**; npm **no permite republicar** un número de versión tras `npm unpublish` (`E400 Cannot publish over previously published version`).

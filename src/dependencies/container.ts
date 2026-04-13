@@ -4,6 +4,7 @@
  * detección de dependencias circulares y estadísticas de resolución.
  */
 import type { Provider, Scope, Context, ProviderConfig, Class } from '../types';
+import { MetadataRegistry } from '../core/metadata';
 
 /**
  * Dependency Injection Container
@@ -180,12 +181,27 @@ export class DIContainer {
       // Check if it's a class (has prototype) or a factory function
       if (provider.prototype && provider.prototype.constructor === provider) {
         // It's a class - instantiate it
-        // Check if the class has constructor dependencies
-        const instance = new (provider as Class<T>)();
-        
-        // Resolve nested dependencies if any are registered
-        // This allows for constructor injection in the future
-        await this.resolveNestedDependencies(instance, context);
+        // Resolve constructor dependencies from metadata
+        const ctorDeps = MetadataRegistry.getDependencyMetadata(
+          (provider as Class<T>).prototype,
+          'constructor'
+        );
+
+        let instance: T;
+        if (ctorDeps && ctorDeps.length > 0) {
+          // Build constructor arguments array, resolving each dependency
+          const args: any[] = [];
+          for (const dep of ctorDeps) {
+            if (!dep) continue;
+            args[dep.index] = await this.resolve(dep.provider, {
+              scope: dep.scope,
+              context,
+            });
+          }
+          instance = new (provider as Class<T>)(...args);
+        } else {
+          instance = new (provider as Class<T>)();
+        }
         
         return instance;
       } else {

@@ -12,14 +12,14 @@
     "generate:client": "bun run node_modules/veloce-ts/bin/veloce.ts generate client"
   },
   "dependencies": {
-    "veloce-ts": "link:veloce-ts",
-    "hono": "^4.0.0",
-    "reflect-metadata": "^0.2.0",
-    "zod": "^3.22.0"
+    "hono": "^4.12.9",
+    "reflect-metadata": "^0.2.2",
+    "veloce-ts": "^0.4.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.3.0"
+    "@types/bun": "^1.3.11",
+    "typescript": "^6.0.2"
   },
   "engines": {
     "node": ">=18.0.0",

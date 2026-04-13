@@ -11,6 +11,7 @@ import { createCorsMiddleware } from '../src/middleware/cors';
 function makeFakeContext(overrides: any = {}): any {
   const headers: Record<string, string> = {};
   const reqHeaders: Record<string, string> = {};
+  const store: Record<string, any> = {};
   return {
     req: {
       header: (name: string) => reqHeaders[name.toLowerCase()] ?? null,
@@ -20,6 +21,8 @@ function makeFakeContext(overrides: any = {}): any {
     res: overrides.res ?? undefined,
     header: (name: string, val: string) => { headers[name.toLowerCase()] = val; },
     _headers: headers,
+    set: (key: string, val: any) => { store[key] = val; },
+    get: (key: string) => store[key],
     body: (body: any, status: number) => ({ body, status }),
     json: (data: any, status: number = 200) => ({ data, status }),
     ...overrides,

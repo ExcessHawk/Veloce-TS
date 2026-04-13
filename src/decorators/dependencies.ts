@@ -29,16 +29,58 @@ import { MetadataRegistry } from '../core/metadata';
  */
 export function Depends<T>(provider: Provider<T>, scope: Scope = 'request'): ParameterDecorator {
   return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
-    // propertyKey is undefined for constructor parameters
     if (propertyKey === undefined) {
-      throw new Error('@Depends decorator can only be used on method parameters, not constructor parameters');
+      // Constructor parameter — store on prototype with key 'constructor'
+      MetadataRegistry.defineDependency(target.prototype, 'constructor', parameterIndex, {
+        index: parameterIndex,
+        provider,
+        scope,
+      });
+    } else {
+      // Method parameter
+      MetadataRegistry.defineDependency(target, propertyKey as string, parameterIndex, {
+        index: parameterIndex,
+        provider,
+        scope
+      });
     }
+  };
+}
 
-    // Store dependency metadata
-    MetadataRegistry.defineDependency(target, propertyKey as string, parameterIndex, {
-      index: parameterIndex,
-      provider,
-      scope
-    });
+/**
+ * @Inject decorator for constructor dependency injection
+ * Marks a constructor parameter to be injected with a dependency from the DI container
+ *
+ * @param provider - The provider (class, token, or symbol) to inject
+ * @param scope - The lifecycle scope: 'singleton', 'request', or 'transient'
+ *
+ * @example
+ * ```typescript
+ * @Controller('/users')
+ * class UserController {
+ *   constructor(
+ *     @InjectDB() private db: DrizzleDB,
+ *     @Inject(UserService) private userService: UserService,
+ *   ) {}
+ * }
+ * ```
+ */
+export function Inject<T>(provider: Provider<T>, scope: Scope = 'singleton'): ParameterDecorator {
+  return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
+    if (propertyKey === undefined) {
+      // Constructor parameter
+      MetadataRegistry.defineDependency(target.prototype, 'constructor', parameterIndex, {
+        index: parameterIndex,
+        provider,
+        scope,
+      });
+    } else {
+      // Method parameter (fallback — same as @Depends)
+      MetadataRegistry.defineDependency(target, propertyKey as string, parameterIndex, {
+        index: parameterIndex,
+        provider,
+        scope,
+      });
+    }
   };
 }

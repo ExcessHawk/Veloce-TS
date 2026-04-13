@@ -38,6 +38,19 @@ export class ValidationException extends HTTPException {
    * Cuerpo JSON sin `instance`: RFC 9457 + `violations` + alias legacy (`details`, `error`, `statusCode`).
    */
   toJSON(): Record<string, unknown> {
+    if (!this.zodError?.errors || !Array.isArray(this.zodError.errors)) {
+      return {
+        type: problemTypeUri('validation-error'),
+        title: resolveProblemTitle(this.statusCode, this.message, 'Validation Error'),
+        status: this.statusCode,
+        detail: this.message,
+        violations: [],
+        details: [],
+        error: 'Validation Error',
+        statusCode: this.statusCode,
+      };
+    }
+
     const violations = this.zodError.errors.map((err) => {
       const row: Record<string, unknown> = {
         field: formatPath(err.path),
