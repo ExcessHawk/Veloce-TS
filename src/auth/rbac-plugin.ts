@@ -2,7 +2,10 @@ import { Plugin } from '../core/plugin.js';
 import { VeloceTS } from '../core/application.js';
 import { RBACManager, createDefaultRBAC, Role } from './rbac.js';
 import { createRBACMiddleware, RBACGuard } from './rbac-decorators.js';
+import { getCurrentUser } from './decorators.js';
+import { AuthorizationException } from './exceptions.js';
 import { Context } from 'hono';
+import type { Middleware } from '../types/index.js';
 
 export interface RBACPluginConfig {
   rbac?: RBACManager;
@@ -70,26 +73,52 @@ export class RBACPlugin implements Plugin {
 
   private extendRouterCompiler(app: VeloceTS): void {
     const originalCompile = app.compile.bind(app);
-    
-    app.compile = async () => {
-      // First compile normally
-      await originalCompile();
 
-      // Then add RBAC checks to routes that need them
+    app.compile = async () => {
+      // Inject RBAC middleware into routes BEFORE compiling so Hono sees them
       const routes = app.getMetadata().getRoutes();
-      
+
       for (const route of routes) {
         if (route.roles || route.permissions || route.minimumRole) {
-          this.addRBACGuards(app, route);
+          const rbacMiddleware = this.buildRBACMiddleware(route);
+          app.getMetadata().registerRoute({
+            ...route,
+            middleware: [rbacMiddleware, ...(route.middleware || [])],
+          });
         }
       }
+
+      await originalCompile();
     };
   }
 
-  private addRBACGuards(app: VeloceTS, route: any): void {
-    // This would add RBAC guard middleware before the route handler
-    // Similar to how auth plugin adds auth guards
-    // For now, we'll keep it simple and handle it in the parameter extraction
+  private buildRBACMiddleware(route: any): Middleware {
+    const guard = this.guard;
+    const rolesConfig = route.roles?.config;
+    const permissionsConfig = route.permissions?.config;
+    const minimumRoleConfig = route.minimumRole;
+
+    return async (c: Context, next: () => Promise<void>) => {
+      const user = getCurrentUser(c);
+
+      if (!user) {
+        throw new AuthorizationException('Authentication required');
+      }
+
+      if (rolesConfig) {
+        guard.checkRoles(c, rolesConfig);
+      }
+
+      if (permissionsConfig) {
+        guard.checkPermissions(c, permissionsConfig);
+      }
+
+      if (minimumRoleConfig) {
+        guard.checkMinimumRole(c, minimumRoleConfig.roleName);
+      }
+
+      await next();
+    };
   }
 
   private addManagementRoutes(app: VeloceTS): void {
