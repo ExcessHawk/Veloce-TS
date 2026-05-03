@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-05-03
+
+### Changed
+- **Dependencias actualizadas:** bump de todas las dependencias a sus últimas versiones patch/minor disponibles. Sin breaking changes.
+  - `commander` 14.0.1 → 14.0.3
+  - `hono` 4.12.12 → 4.12.16
+  - `jsonwebtoken` 9.0.2 → 9.0.3
+  - `zod-to-json-schema` 3.24.6 → 3.25.2
+  - `ioredis` 5.8.2 → 5.10.1 (opcional)
+  - `pino` 10.1.0 → 10.3.1 (opcional)
+  - `pino-pretty` 13.1.2 → 13.1.3 (opcional)
+
+## [0.4.8] - 2026-05-03
+
+### Fixed
+- **Logger transport eliminado:** se removió el uso de `pino-pretty` como `transport` en el logger de desarrollo. El transport de pino usa `thread-stream` para correr el pretty-printer en un worker thread, lo que causaba un crash al iniciar el servidor con el error `ModuleNotFound resolving "...thread-stream/lib/worker.js"` — el bundle publicado en npm tenía el `__dirname` de la máquina del autor hardcodeado (`C:\Users\alfredo\Desktop\...`). Ahora pino escribe JSON directo a stdout sin workers, eliminando la dependencia de `thread-stream` en runtime.
+
 ## [0.4.6] - 2026-04-12
 
 ### Fixed

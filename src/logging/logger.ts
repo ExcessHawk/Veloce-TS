@@ -27,7 +27,6 @@ class PinoLogger implements Logger {
     const pinoLib = loadPino();
     
     const isDev = process.env.NODE_ENV !== 'production';
-    const pretty = config?.pretty !== undefined ? config.pretty : isDev;
 
     if (!pinoLib) {
       // pino is not installed — delegate to the console fallback
@@ -37,15 +36,6 @@ class PinoLogger implements Logger {
 
     this.logger = pinoLib({
       level: config?.level || (isDev ? 'debug' : 'info'),
-      transport: pretty ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:HH:MM:ss',
-          ignore: 'pid,hostname',
-          singleLine: false
-        }
-      } : undefined
     });
   }
 
