@@ -118,7 +118,7 @@ export class WebSocketManager {
     data?: any
   ): Promise<void> {
     try {
-      const instance = new metadata.target();
+      const instance = metadata.instance ?? new metadata.target();
       const method = (instance as any)[methodName];
 
       if (typeof method === 'function') {

@@ -20,9 +20,10 @@ export class WebSocketPlugin implements Plugin {
   async install(app: VeloceTS): Promise<void> {
     const metadata = app.getMetadata();
     const websockets = metadata.getWebSockets();
+    const container = app.getContainer();
 
-    // Register each WebSocket handler
     for (const ws of websockets) {
+      ws.instance = await container.resolve(ws.target);
       this.registerWebSocket(app, ws);
     }
   }

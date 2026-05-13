@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-05-12
+
+### Fixed
+- **WebSocket gateway DI injection:** `WebSocketPlugin.install()` now resolves each gateway from the DI container via `container.resolve(ws.target)` and stores the instance in the metadata. `WebSocketManager.executeHandler()` uses that pre-resolved instance instead of calling `new metadata.target()`, so constructor-injected dependencies (`@Inject`, `@InjectDB`) are available in all WebSocket event handlers (`@OnConnect`, `@OnMessage`, `@OnDisconnect`).
+
 ## [0.4.9] - 2026-05-03
 
 ### Changed

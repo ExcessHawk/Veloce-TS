@@ -196,6 +196,8 @@ export interface WebSocketMetadata {
   onMessage?: string;
   onDisconnect?: string;
   messageSchema?: ZodSchema;
+  /** Resolved DI instance — populated by WebSocketPlugin.install() */
+  instance?: any;
 }
 
 export interface WebSocketHandlerMetadata {
