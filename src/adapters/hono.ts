@@ -92,20 +92,21 @@ export class HonoAdapter implements Adapter {
 
   /**
    * Start server using Bun's native server
+   * Passes the Bun server instance as `env` to Hono so WebSocketPlugin
+   * can call server.upgrade() from within route handlers.
    */
   private listenBun(port: number, callback?: () => void): ServerInstance {
+    const hono = this.hono;
     const server = Bun.serve({
       port,
-      fetch: this.hono.fetch,
-      // EN: WebSocket handlers required by Bun. The manager and metadata are
-      //     passed via ws.data (set during the HTTP upgrade in WebSocketPlugin).
-      // ES: Handlers WebSocket requeridos por Bun. El manager y metadata se
-      //     pasan vía ws.data (seteado durante el upgrade HTTP en WebSocketPlugin).
+      fetch(req: Request, bunServer: any) {
+        // Pass the Bun server as `env` so c.env.upgrade() works in handlers
+        return hono.fetch(req, { upgrade: bunServer.upgrade.bind(bunServer) });
+      },
       websocket: {
         open(ws: any) {
           const { manager, metadata } = ws.data ?? {};
           if (!manager || !metadata) return;
-          // Create the connection wrapper and store it on ws.data for message/close
           const connection = manager.handleConnectionBun(ws, metadata);
           ws.data._connection = connection;
         },
