@@ -97,6 +97,32 @@ export class HonoAdapter implements Adapter {
     const server = Bun.serve({
       port,
       fetch: this.hono.fetch,
+      // EN: WebSocket handlers required by Bun. The manager and metadata are
+      //     passed via ws.data (set during the HTTP upgrade in WebSocketPlugin).
+      // ES: Handlers WebSocket requeridos por Bun. El manager y metadata se
+      //     pasan vía ws.data (seteado durante el upgrade HTTP en WebSocketPlugin).
+      websocket: {
+        open(ws: any) {
+          const { manager, metadata } = ws.data ?? {};
+          if (!manager || !metadata) return;
+          // Create the connection wrapper and store it on ws.data for message/close
+          const connection = manager.handleConnectionBun(ws, metadata);
+          ws.data._connection = connection;
+        },
+        message(ws: any, message: string | Buffer) {
+          const { manager, metadata, _connection } = ws.data ?? {};
+          if (!manager || !metadata || !_connection) return;
+          manager.handleMessageBun(message, _connection, metadata);
+        },
+        close(ws: any, code: number, reason: string) {
+          const { manager, metadata, _connection } = ws.data ?? {};
+          if (!manager || !metadata || !_connection) return;
+          manager.handleDisconnectBun(_connection, metadata);
+        },
+        error(ws: any, error: Error) {
+          console.error('[WS] Bun WebSocket error:', error);
+        },
+      },
     });
 
     if (callback) {

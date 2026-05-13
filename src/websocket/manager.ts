@@ -45,9 +45,44 @@ export class WebSocketManager {
   }
 
   /**
+   * Bun-specific: register connection without addEventListener (Bun WS has no addEventListener).
+   * Called from the Bun websocket.open handler in HonoAdapter.
+   */
+  handleConnectionBun(ws: any, metadata: WebSocketMetadata): WebSocketConnection {
+    const connection = new WebSocketConnection(ws, this);
+    this.connections.set(connection.id, connection);
+
+    if (metadata.onConnect) {
+      this.executeHandler(metadata, metadata.onConnect, connection);
+    }
+
+    return connection;
+  }
+
+  /**
+   * Bun-specific: handle an incoming message. Called from websocket.message in HonoAdapter.
+   */
+  async handleMessageBun(
+    message: string | Buffer,
+    connection: WebSocketConnection,
+    metadata: WebSocketMetadata
+  ): Promise<void> {
+    const data = typeof message === 'string' ? message : message.toString();
+    const event = { data } as MessageEvent;
+    await this.handleMessage(event, connection, metadata);
+  }
+
+  /**
+   * Bun-specific: handle disconnection. Called from websocket.close in HonoAdapter.
+   */
+  handleDisconnectBun(connection: WebSocketConnection, metadata: WebSocketMetadata): void {
+    this.handleDisconnect(connection, metadata);
+  }
+
+  /**
    * Handle incoming WebSocket message
    */
-  private async handleMessage(
+  async handleMessage(
     event: MessageEvent,
     connection: WebSocketConnection,
     metadata: WebSocketMetadata
@@ -81,7 +116,7 @@ export class WebSocketManager {
   /**
    * Handle WebSocket disconnection
    */
-  private handleDisconnect(connection: WebSocketConnection, metadata: WebSocketMetadata): void {
+  handleDisconnect(connection: WebSocketConnection, metadata: WebSocketMetadata): void {
     // Remove from all rooms
     Array.from(this.connectionsByRoom.entries()).forEach(([room, connections]) => {
       connections.delete(connection);

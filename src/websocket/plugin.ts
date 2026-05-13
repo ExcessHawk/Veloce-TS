@@ -79,7 +79,7 @@ export class WebSocketPlugin implements Plugin {
     }
 
     const success = bunEnv.upgrade(c.req.raw, {
-      data: { manager: this.manager, metadata }
+      data: { manager: this.manager, metadata, requestUrl: c.req.url }
     });
 
     if (!success) {
