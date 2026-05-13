@@ -86,8 +86,10 @@ export class WebSocketPlugin implements Plugin {
       return c.text('WebSocket upgrade failed', 500);
     }
 
-    // Bun handles the actual response; returning undefined signals Hono to stop
-    return undefined as any;
+    // Bun has taken over the connection for WebSocket (101 already sent).
+    // Return a Response to satisfy Hono's finalization requirement — Bun
+    // ignores the fetch() return value after a successful upgrade().
+    return new Response(null, { status: 101 });
   }
 
   /**

@@ -150,9 +150,18 @@ export class VeloceTS {
    * ```
    */
   include(controller: Class): void {
+    // If this is a WebSocket gateway, register it and stop — it has no HTTP routes
+    if (MetadataRegistry.hasWebSocketMetadata(controller)) {
+      const wsMetadata = MetadataRegistry.getWebSocketMetadata(controller);
+      if (wsMetadata?.path) {
+        this.metadata.registerWebSocket(wsMetadata as any);
+      }
+      return;
+    }
+
     // Get controller metadata from decorators
     const controllerMetadata = MetadataRegistry.getControllerMetadata(controller);
-    
+
     if (controllerMetadata) {
       this.metadata.registerController(controller, controllerMetadata);
     }

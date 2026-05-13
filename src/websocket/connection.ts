@@ -75,6 +75,17 @@ export class WebSocketConnection {
   }
 
   /**
+   * Get the original request URL for this connection.
+   * In Bun, the URL is stored in ws.data.requestUrl (set by WebSocketPlugin).
+   * Falls back to the ws.url property for standard WebSocket environments.
+   */
+  get requestUrl(): string {
+    if (!this._ws) return '';
+    const ws = this._ws as any;
+    return ws?.data?.requestUrl ?? ws?.url ?? '';
+  }
+
+  /**
    * Check if the connection is open
    */
   get isOpen(): boolean {
