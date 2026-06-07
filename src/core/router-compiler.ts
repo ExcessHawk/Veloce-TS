@@ -36,6 +36,13 @@ export class RouterCompiler {
    * This is the main entry point that processes all route metadata
    */
   compile(): void {
+    // Route-level middleware (e.g. the RBAC guard) runs OUTSIDE the per-route
+    // handler's try/catch, so an exception thrown there bypasses createHandler's
+    // error handling and Hono would turn it into a generic 500. Register a global
+    // Hono error hook that funnels every uncaught error through the same
+    // ErrorHandler, so an AuthorizationException from a guard maps to 403, etc.
+    this.app.onError((err, c) => this.errorHandler.handle(err as Error, c));
+
     const routes = this.metadata.getRoutes();
 
     // Pre-compile all routes for performance

@@ -70,6 +70,11 @@ export class MetadataCompiler {
       // Use a per-function symbol so two different handler functions with the
       // same source text still produce different snapshots.
       handlerId: handler ? (MetadataCompiler.handlerIds.get(handler) ?? MetadataCompiler.assignHandlerId(handler)) : null,
+      // Middleware identity must be part of the snapshot: route guards (e.g. the
+      // RBAC guard) are injected by re-registering an existing route with extra
+      // middleware. Without this, a re-registration that only changes middleware
+      // would hit a stale cache entry and the guard would be silently dropped.
+      mw: route.middleware?.map(m => MetadataCompiler.handlerIds.get(m) ?? MetadataCompiler.assignHandlerId(m)),
     });
   }
 

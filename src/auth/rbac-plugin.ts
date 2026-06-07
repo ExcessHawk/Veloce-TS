@@ -3,7 +3,7 @@ import { VeloceTS } from '../core/application.js';
 import { RBACManager, createDefaultRBAC, Role } from './rbac.js';
 import { createRBACMiddleware, RBACGuard } from './rbac-decorators.js';
 import { getCurrentUser } from './decorators.js';
-import { AuthorizationException } from './exceptions.js';
+import { AuthenticationException } from './exceptions.js';
 import { Context } from 'hono';
 import type { Middleware } from '../types/index.js';
 
@@ -62,8 +62,14 @@ export class RBACPlugin implements Plugin {
       scope: 'singleton'
     });
 
-    // Extend router compiler to handle RBAC metadata
-    this.extendRouterCompiler(app);
+    // Inject RBAC guards into every route that declares role/permission/minimum-role
+    // metadata. This MUST run here (during plugin install) rather than by wrapping
+    // app.compile: install() is itself invoked from inside the already-running
+    // VeloceTS.compile(), so reassigning app.compile at this point is a no-op — the
+    // wrapper never fires and @Roles silently becomes unenforced. Because install()
+    // runs before RouterCompiler.compile(), guards injected into the route metadata
+    // now land on the live Hono routes.
+    this.injectRouteGuards(app);
 
     // Add management routes if enabled
     if (this.config.enableManagementRoutes !== false) {
@@ -71,25 +77,20 @@ export class RBACPlugin implements Plugin {
     }
   }
 
-  private extendRouterCompiler(app: VeloceTS): void {
-    const originalCompile = app.compile.bind(app);
+  private injectRouteGuards(app: VeloceTS): void {
+    const registry = app.getMetadata();
 
-    app.compile = async () => {
-      // Inject RBAC middleware into routes BEFORE compiling so Hono sees them
-      const routes = app.getMetadata().getRoutes();
-
-      for (const route of routes) {
-        if (route.roles || route.permissions || route.minimumRole) {
-          const rbacMiddleware = this.buildRBACMiddleware(route);
-          app.getMetadata().registerRoute({
-            ...route,
-            middleware: [rbacMiddleware, ...(route.middleware || [])],
-          });
-        }
+    for (const route of registry.getRoutes()) {
+      if (route.roles || route.permissions || route.minimumRole) {
+        const guard = this.buildRBACMiddleware(route);
+        // Re-register the same route (keyed by target:propertyKey, so this replaces
+        // in place) with the guard prepended ahead of any existing middleware.
+        registry.registerRoute({
+          ...route,
+          middleware: [guard, ...(route.middleware || [])],
+        });
       }
-
-      await originalCompile();
-    };
+    }
   }
 
   private buildRBACMiddleware(route: any): Middleware {
@@ -102,7 +103,10 @@ export class RBACPlugin implements Plugin {
       const user = getCurrentUser(c);
 
       if (!user) {
-        throw new AuthorizationException('Authentication required');
+        // No authenticated principal → this is an authentication failure (401),
+        // not an authorization failure (403). Returning 403 here mislabels
+        // missing/invalid credentials as "forbidden".
+        throw new AuthenticationException('Authentication required');
       }
 
       if (rolesConfig) {
