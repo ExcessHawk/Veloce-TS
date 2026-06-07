@@ -21,6 +21,20 @@ import {
  */
 export type CustomErrorHandler = (error: Error, c: Context) => Response | Promise<Response>;
 
+/**
+ * PostgreSQL SQLSTATE codes for "data exception" (class 22) conditions that are
+ * caused by malformed client input reaching the driver — a non-UUID/non-numeric
+ * value for a typed column, an out-of-range number, a bad datetime. Treated as
+ * 400 Bad Request rather than 500. Kept narrow on purpose: only codes that map
+ * cleanly to bad input, not every class-22 condition.
+ */
+const DATA_EXCEPTION_SQLSTATES = new Set<string>([
+  '22P02', // invalid_text_representation (e.g. bad uuid / integer text)
+  '22003', // numeric_value_out_of_range
+  '22007', // invalid_datetime_format
+  '22008', // datetime_field_overflow
+]);
+
 export type ErrorHandlerOptions = {
   /**
    * `rfc9457` — `Content-Type: application/problem+json` y cuerpo con `type`, `title`, `status`, `detail`, `instance`.
@@ -87,7 +101,32 @@ export class ErrorHandler {
       return mergeVeloceCorsHeaders(c, this.handleHTTPException(error, c));
     }
 
+    // Map SQL "data exception" errors (e.g. a non-UUID value supplied for a
+    // uuid column, an out-of-range number) to 400 instead of a generic 500.
+    // These are caused by malformed client input reaching the database driver
+    // (commonly a bad route/query param), so they are client errors, and a 500
+    // here can also leak driver/stack detail under verbose error formats.
+    const sqlState = this.extractSqlState(error);
+    if (sqlState && DATA_EXCEPTION_SQLSTATES.has(sqlState)) {
+      const badRequest = new HTTPException(400, 'Invalid request parameter', undefined, {
+        title: 'Bad Request',
+      });
+      return mergeVeloceCorsHeaders(c, this.handleHTTPException(badRequest, c));
+    }
+
     return mergeVeloceCorsHeaders(c, this.handleGenericError(error, c));
+  }
+
+  /**
+   * Pull a PostgreSQL SQLSTATE code off an error or its wrapped cause. Drizzle
+   * wraps the driver error as `.cause`; node-postgres exposes `.code`.
+   */
+  private extractSqlState(error: any): string | undefined {
+    if (!error || typeof error !== 'object') return undefined;
+    if (typeof error.code === 'string') return error.code;
+    const cause = (error as any).cause;
+    if (cause && typeof cause.code === 'string') return cause.code;
+    return undefined;
   }
 
   private handleValidationException(error: ValidationException, c: Context): Response {

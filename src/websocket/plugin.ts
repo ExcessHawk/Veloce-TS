@@ -38,9 +38,27 @@ export class WebSocketPlugin implements Plugin {
     hono.get(metadata.path, async (c) => {
       // Check if this is a WebSocket upgrade request
       const upgrade = c.req.header('upgrade');
-      
+
       if (upgrade?.toLowerCase() !== 'websocket') {
         return c.text('Expected WebSocket upgrade', 426);
+      }
+
+      // Optional pre-upgrade authorization. If the gateway exposes an
+      // `authorizeUpgrade(c)` method, run it BEFORE switching protocols so an
+      // unauthenticated client is rejected at the handshake (HTTP 401) instead
+      // of completing the upgrade and being closed afterwards. Gateways that do
+      // not define the method keep the previous behavior (upgrade always).
+      const instance = metadata.instance;
+      if (instance && typeof instance.authorizeUpgrade === 'function') {
+        let authorized = false;
+        try {
+          authorized = await instance.authorizeUpgrade(c);
+        } catch {
+          authorized = false;
+        }
+        if (!authorized) {
+          return c.text('Unauthorized', 401);
+        }
       }
 
       // Handle WebSocket upgrade based on runtime

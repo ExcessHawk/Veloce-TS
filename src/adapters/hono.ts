@@ -100,8 +100,11 @@ export class HonoAdapter implements Adapter {
     const server = Bun.serve({
       port,
       fetch(req: Request, bunServer: any) {
-        // Pass the Bun server as `env` so c.env.upgrade() works in handlers
-        return hono.fetch(req, { upgrade: bunServer.upgrade.bind(bunServer) });
+        // Pass the Bun server as `env` so c.env.upgrade() works in handlers,
+        // and expose the server itself so `getConnInfo` (hono/bun) can read the
+        // trusted peer IP — needed for IP-based rate limiting that must not
+        // trust client-supplied X-Forwarded-For headers.
+        return hono.fetch(req, { server: bunServer, upgrade: bunServer.upgrade.bind(bunServer) });
       },
       websocket: {
         open(ws: any) {
