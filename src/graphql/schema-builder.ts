@@ -1,40 +1,38 @@
 // GraphQL Schema Builder for Veloce-TS
-import type { MetadataRegistry } from '../core/metadata';
 import type { DIContainer } from '../dependencies/container';
-import type { GraphQLFieldMetadata, GraphQLArgumentMetadata, Context } from '../types';
-import { getArgumentsMetadata } from '../decorators/graphql';
+import type { GraphQLFieldMetadata, Context } from '../types';
+import { getResolverMetadata, getFieldsMetadata, getArgumentsMetadata } from '../decorators/graphql';
 import { zodToGraphQLType, isNullable } from './zod-to-graphql';
 import { ValidationEngine } from '../validation/validator';
 
 /**
  * GraphQL Schema Builder
- * Generates GraphQL schema from decorator metadata
+ * Generates GraphQL schema from resolver classes decorated with @Resolver/@GQLQuery/@GQLMutation.
  */
 export class GraphQLSchemaBuilder {
   private validationEngine: ValidationEngine;
   private customTypes: Map<string, string> = new Map();
 
   constructor(
-    private metadata: MetadataRegistry,
+    private resolverClasses: any[],
     private container: DIContainer
   ) {
     this.validationEngine = new ValidationEngine();
   }
 
   /**
-   * Build the complete GraphQL schema
+   * Build the complete GraphQL schema from resolver classes.
    */
   build(): GraphQLSchemaDefinition {
-    const resolvers = this.metadata.getGraphQLResolvers();
-    
     const queries: string[] = [];
     const mutations: string[] = [];
     const subscriptions: string[] = [];
-    const types: string[] = [];
 
-    // Process each resolver
-    for (const resolver of resolvers) {
-      const fields = this.metadata.getGraphQLFieldsByResolver(resolver.target);
+    for (const resolverClass of this.resolverClasses) {
+      const resolverMeta = getResolverMetadata(resolverClass);
+      if (!resolverMeta) continue;
+
+      const fields = getFieldsMetadata(resolverClass);
 
       for (const field of fields) {
         const fieldDef = this.buildFieldDefinition(field);
@@ -141,18 +139,20 @@ export class GraphQLSchemaBuilder {
    * Build resolvers object with validation and DI
    */
   private buildResolvers(): GraphQLResolvers {
-    const resolvers = this.metadata.getGraphQLResolvers();
     const resolversObj: GraphQLResolvers = {
       Query: {},
       Mutation: {},
       Subscription: {}
     };
 
-    for (const resolver of resolvers) {
-      const fields = this.metadata.getGraphQLFieldsByResolver(resolver.target);
+    for (const resolverClass of this.resolverClasses) {
+      const resolverMeta = getResolverMetadata(resolverClass);
+      if (!resolverMeta) continue;
+
+      const fields = getFieldsMetadata(resolverClass);
 
       for (const field of fields) {
-        const resolverFn = this.createResolverFunction(resolver.target, field);
+        const resolverFn = this.createResolverFunction(resolverClass, field);
 
         switch (field.type) {
           case 'query':

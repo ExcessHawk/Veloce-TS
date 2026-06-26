@@ -10,15 +10,28 @@ import type { GraphQLContext } from './schema-builder';
 export interface GraphQLPluginOptions {
   /** Path to serve GraphQL endpoint (default: /graphql) */
   path?: string;
-  
+
   /** Path to serve GraphQL Playground (default: /graphql/playground) */
   playgroundPath?: string;
-  
+
   /** Enable GraphQL Playground in development (default: true) */
   playground?: boolean;
-  
+
   /** Custom context factory function */
   context?: (request: any) => Promise<any> | any;
+
+  /**
+   * Resolver classes decorated with @Resolver, @GQLQuery, @GQLMutation.
+   * Pass all resolver classes here so the plugin can build the schema.
+   *
+   * @example
+   * ```typescript
+   * app.usePlugin(new GraphQLPlugin({
+   *   resolvers: [UserResolver, PostResolver],
+   * }));
+   * ```
+   */
+  resolvers?: any[];
 }
 
 /**
@@ -45,16 +58,14 @@ export class GraphQLPlugin implements Plugin {
       path: options?.path || '/graphql',
       playgroundPath: options?.playgroundPath || '/graphql/playground',
       playground: options?.playground !== false,
-      context: options?.context || ((request: any) => ({ request }))
+      context: options?.context || ((request: any) => ({ request })),
+      resolvers: options?.resolvers || []
     };
   }
 
   async install(app: VeloceTS): Promise<void> {
-    // Build GraphQL schema from metadata
-    const metadata = app.getMetadata();
     const container = app.getContainer();
-    
-    const schemaBuilder = new GraphQLSchemaBuilder(metadata, container);
+    const schemaBuilder = new GraphQLSchemaBuilder(this.options.resolvers, container);
     this.schema = schemaBuilder.build();
 
     // Register GraphQL endpoint

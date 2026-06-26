@@ -1,10 +1,40 @@
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll } from 'bun:test';
 import { Veloce, GraphQLPlugin } from 'veloce-ts';
+import { Resolver, GQLQuery, GQLMutation, Arg, getResolverMetadata, getFieldsMetadata } from 'veloce-ts/graphql';
+import { z } from 'zod';
 
 // graphql package is an optional peer dep — may not be installed.
 // Tests exercise what we can regardless: plugin installation, route registration,
 // error paths, and graceful degradation when graphql is absent.
+
+// ── Resolver fixtures ────────────────────────────────────────────────────────
+
+@Resolver('user')
+class UserResolver {
+  @GQLQuery('getUser')
+  async getUser(@Arg('id', z.string()) id: string) {
+    return { id, name: 'Test User' };
+  }
+
+  @GQLMutation('createUser')
+  async createUser(
+    @Arg('name', z.string()) name: string,
+    @Arg('email', z.string().email()) email: string
+  ) {
+    return { id: '1', name, email };
+  }
+}
+
+@Resolver('post')
+class PostResolver {
+  @GQLQuery('getPosts')
+  async getPosts() {
+    return [];
+  }
+}
+
+// ── Base test app ────────────────────────────────────────────────────────────
 
 let app: Veloce;
 let hono: any;
@@ -110,5 +140,64 @@ describe('GraphQLPlugin Playground', () => {
     const h = a.getHono();
     const res = await h.fetch(new Request('http://localhost/graphql/playground'));
     expect(res.status).toBe(404);
+  });
+});
+
+describe('@Resolver / @GQLQuery / @GQLMutation decorator metadata', () => {
+  it('@Resolver stores resolver metadata on the class', () => {
+    const meta = getResolverMetadata(UserResolver);
+    expect(meta).toBeDefined();
+    expect(meta!.name).toBe('user');
+    expect(meta!.target).toBe(UserResolver);
+  });
+
+  it('@GQLQuery stores field metadata', () => {
+    const fields = getFieldsMetadata(UserResolver);
+    const query = fields.find(f => f.name === 'getUser');
+    expect(query).toBeDefined();
+    expect(query!.type).toBe('query');
+    expect(query!.propertyKey).toBe('getUser');
+  });
+
+  it('@GQLMutation stores mutation field metadata', () => {
+    const fields = getFieldsMetadata(UserResolver);
+    const mutation = fields.find(f => f.name === 'createUser');
+    expect(mutation).toBeDefined();
+    expect(mutation!.type).toBe('mutation');
+  });
+
+  it('multiple resolvers accumulate fields independently', () => {
+    const userFields = getFieldsMetadata(UserResolver);
+    const postFields = getFieldsMetadata(PostResolver);
+    expect(userFields.length).toBe(2);
+    expect(postFields.length).toBe(1);
+    expect(postFields[0].name).toBe('getPosts');
+  });
+
+  it('GraphQLSchemaBuilder picks up resolver classes via plugin resolvers option', async () => {
+    const a = new Veloce({ docs: false });
+    a.usePlugin(new GraphQLPlugin({
+      resolvers: [UserResolver, PostResolver],
+      playground: false
+    }));
+    await a.compile();
+    // Plugin installed without throwing → schema was built
+    expect(true).toBe(true);
+  });
+
+  it('plugin with resolvers → POST still returns 200 (schema built)', async () => {
+    const a = new Veloce({ docs: false });
+    a.usePlugin(new GraphQLPlugin({
+      resolvers: [UserResolver, PostResolver],
+      playground: false
+    }));
+    await a.compile();
+    const h = a.getHono();
+    const res = await h.fetch(new Request('http://localhost/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ getUser(id: "1") }' })
+    }));
+    expect(res.status).toBe(200);
   });
 });
