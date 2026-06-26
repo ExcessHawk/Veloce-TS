@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-26
+
+### Fixed
+
+- **GraphQL decorator pipeline wired up.** `@Resolver`, `@GQLQuery`, `@GQLMutation`, `@GQLSubscription`, and `@Arg` decorators now correctly connect to `GraphQLPlugin`. Previously the decorators wrote metadata using local symbols that `GraphQLSchemaBuilder` never read — the schema was always empty.
+
+  Pass resolver classes to the plugin via the new `resolvers` option:
+  ```typescript
+  app.usePlugin(new GraphQLPlugin({ resolvers: [UserResolver, PostResolver] }));
+  ```
+  Or register them with `app.include()` before calling `usePlugin()`:
+  ```typescript
+  app.include(UserResolver);
+  app.usePlugin(new GraphQLPlugin());
+  ```
+
+- **`PermissionManager.revokePermission()` bug fixed.** When called without a `resourceId`, the filter condition `resourceId ? p.resourceId !== resourceId : true` always returned `true` (kept all records, removed nothing). Now correctly removes all permissions for the user+resource pair when no `resourceId` is specified.
+
+- **`app.include()` now recognises `@Resolver` classes.** Previously silently ignored — now registers resolver metadata into `MetadataRegistry` so `GraphQLPlugin` can pick it up automatically.
+
+### Added
+
+- **89 new tests** (507 total, 0 failures) covering:
+  - GraphQL decorator metadata pipeline end-to-end
+  - `app.include()` + `resolvers: []` option merge
+  - `PermissionPlugin` construction, `PermissionManager` unit logic, management route auth guards
+  - `HealthCheckPlugin` `/health`, `/ready`, `/live` endpoints, custom check logic, `HealthCheckers` factory
+  - `OAuthPlugin` route behavior, `BaseOAuthProvider`/`GoogleOAuthProvider`/`GitHubOAuthProvider`, `OAuthStateManager`, `PKCEUtils`
+  - Logger (`createLogger`, `getLogger`, `initializeLogger`, `createChildLogger`, child context propagation)
+
 ## [1.0.0] - 2026-06-26
 
 First stable release. Establishes a frozen public API with semver guarantees going forward.
