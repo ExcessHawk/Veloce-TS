@@ -14,7 +14,7 @@
 [![Bun](https://img.shields.io/badge/Bun-1.0+-black.svg)](https://bun.sh/)
 [![Documentation](https://img.shields.io/badge/docs-online-brightgreen.svg)](https://docs.veloce-ts.com)
 
-[Documentation](https://docs.veloce-ts.com) • [Examples](https://docs.veloce-ts.com/guides/getting-started) • [API Reference](https://docs.veloce-ts.com/reference/api-reference)
+[Documentation](https://docs.veloce-ts.com) • [Examples](https://docs.veloce-ts.com/en/guides/getting-started) • [API Reference](https://docs.veloce-ts.com/en/reference/api-reference)
 
 ---
 
@@ -571,9 +571,9 @@ For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and pr
 | Resource | Description |
 |----------|-------------|
 | [📚 Full Documentation](https://docs.veloce-ts.com) | Complete guides and API reference |
-| [⚠️ Limitations & roadmap](https://docs.veloce-ts.com/guides/limitations-and-roadmap/) | Known gaps and planned direction |
-| [💡 Examples & Guides](https://docs.veloce-ts.com/guides/getting-started) | Tutorials and code examples |
-| [🔧 API Reference](https://docs.veloce-ts.com/reference/api-reference) | Detailed API documentation |
+| [⚠️ Limitations & roadmap](https://docs.veloce-ts.com/en/guides/limitations-and-roadmap/) | Known gaps and planned direction |
+| [💡 Examples & Guides](https://docs.veloce-ts.com/en/guides/getting-started) | Tutorials and code examples |
+| [🔧 API Reference](https://docs.veloce-ts.com/en/reference/api-reference) | Detailed API documentation |
 
 ## ⚙️ Requirements
 
