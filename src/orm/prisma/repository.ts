@@ -65,25 +65,17 @@ export class PrismaRepository<T, ID = string | number> extends BaseRepository<T,
     }
   }
   
-  // Optimized bulk operations using Prisma's native methods
+  // Bulk insert via Prisma's createMany, then fetch created records.
+  // createMany returns only {count}, so we query back using the same data as filters.
   async createMany(data: Partial<T>[]): Promise<T[]> {
     const validatedData = data.map(item => this.validatePartial(item));
-    
-    // Use Prisma's createMany for better performance
-    await this.delegate.create({
+
+    await this.delegate.createMany({
       data: validatedData,
       skipDuplicates: true
     });
-    
-    // Note: Prisma's createMany doesn't return created records
-    // For now, we'll fall back to individual creates if we need the results
-    const results: T[] = [];
-    for (const item of validatedData) {
-      const created = await this.create(item);
-      results.push(created);
-    }
-    
-    return results;
+
+    return Promise.all(validatedData.map(item => this.findOne({ where: item as any }))) as Promise<T[]>;
   }
   
   async updateMany(where: FilterOptions, data: Partial<T>): Promise<number> {

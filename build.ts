@@ -41,6 +41,19 @@ async function build(options: BuildOptions = {}) {
     './src/adapters/express.ts',
   ];
 
+  // Optional peer dependencies — not bundled; users install them separately
+  const external = [
+    'drizzle-orm',
+    'typeorm',
+    'prisma',
+    '@prisma/client',
+    'reflect-metadata',
+    'graphql',
+    'ioredis',
+    'express',
+    'hono',
+  ];
+
   // Build ESM
   console.log('📦 Building ESM...');
   const esmResult = await Bun.build({
@@ -52,6 +65,7 @@ async function build(options: BuildOptions = {}) {
     sourcemap: production ? 'external' : 'inline',
     splitting: false, // Disable code splitting to avoid export conflicts
     naming: '[dir]/[name].js',
+    external,
   });
 
   if (!esmResult.success) {
@@ -81,6 +95,7 @@ async function build(options: BuildOptions = {}) {
     minify: production || minify,
     sourcemap: production ? 'external' : 'inline',
     naming: '[dir]/[name].js',
+    external,
   });
 
   if (!cjsResult.success) {

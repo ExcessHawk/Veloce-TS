@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * TypeORM integration plugin for FastAPI-TS
+ * TypeORM integration plugin for Veloce-TS
  */
 export class TypeORMPlugin implements Plugin {
   name = 'typeorm';

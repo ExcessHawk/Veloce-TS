@@ -37,6 +37,17 @@ export interface SessionStore {
 
 export class MemorySessionStore implements SessionStore {
   private sessions: Map<string, SessionData> = new Map();
+  private cleanupTimer: ReturnType<typeof setInterval>;
+
+  constructor(cleanupIntervalMs = 60_000) {
+    this.cleanupTimer = setInterval(() => this.cleanup(), cleanupIntervalMs);
+    if (typeof process !== 'undefined' && process.on) {
+      const stop = () => clearInterval(this.cleanupTimer);
+      process.on('exit', stop);
+      process.on('SIGTERM', stop);
+      process.on('SIGINT', stop);
+    }
+  }
 
   async get(sessionId: string): Promise<SessionData | null> {
     const session = this.sessions.get(sessionId);

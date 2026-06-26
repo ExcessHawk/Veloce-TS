@@ -114,24 +114,28 @@ export class DrizzleTransactionManager extends BaseTransactionManager {
         this.setRequestTransaction(context, transactionContext);
       }
       
+      let succeeded = false;
       try {
-        // Inject the transaction database into repositories if needed
         const result = await this.injectTransactionDatabase(target, args, originalMethod, tx);
-        
+
         if (transactionContext.rollbackOnly) {
           throw new Error('Transaction marked for rollback');
         }
-        
+
+        succeeded = true;
         return result;
       } catch (error) {
-        // Mark transaction for rollback
         this.setRollbackOnly(transactionContext);
         throw error;
       } finally {
         if (context) {
           this.clearRequestTransaction(context);
         }
-        await this.commit(transactionContext);
+        if (succeeded) {
+          await this.commit(transactionContext);
+        } else {
+          await this.rollback(transactionContext);
+        }
       }
     }, metadata);
   }

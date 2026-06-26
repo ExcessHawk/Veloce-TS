@@ -30,7 +30,8 @@ export class OAuthPlugin implements Plugin {
   dependencies = ['auth']; // Depends on auth plugin
 
   private stateManager = new OAuthStateManager();
-  private pkceStore = new Map<string, PKCEChallenge>();
+  private pkceStore = new Map<string, { challenge: PKCEChallenge; expiresAt: number }>();
+  private readonly pkceStoreTTLMs = 10 * 60 * 1000; // 10 minutes — max time to complete an OAuth flow
 
   constructor(private config: OAuthPluginConfig) {}
 
@@ -48,7 +49,7 @@ export class OAuthPlugin implements Plugin {
     // OAuth login initiation route
     app.get(routes.login || '/auth/oauth/:provider', {
       handler: async (c: Context) => {
-        const provider = c.req.param('provider');
+        const provider = c.req.param('provider') as string;
         const oauthProvider = this.config.providers[provider];
 
         if (!oauthProvider) {
@@ -60,10 +61,13 @@ export class OAuthPlugin implements Plugin {
 
         let authUrl: string;
 
+        // Purge stale PKCE entries before adding a new one
+        this.cleanupPkceStore();
+
         // Generate PKCE challenge if supported
         if (oauthProvider.config.pkce) {
           const pkceChallenge = await PKCEUtils.generatePKCEChallenge();
-          this.pkceStore.set(state, pkceChallenge);
+          this.pkceStore.set(state, { challenge: pkceChallenge, expiresAt: Date.now() + this.pkceStoreTTLMs });
           authUrl = oauthProvider.getAuthUrl(state, pkceChallenge.codeChallenge);
         } else {
           authUrl = oauthProvider.getAuthUrl(state);
@@ -80,7 +84,7 @@ export class OAuthPlugin implements Plugin {
     // OAuth callback route
     app.get(routes.callback || '/auth/oauth/:provider/callback', {
       handler: async (c: Context) => {
-        const provider = c.req.param('provider');
+        const provider = c.req.param('provider') as string;
         const query = c.req.query();
 
         // Validate callback parameters
@@ -106,8 +110,8 @@ export class OAuthPlugin implements Plugin {
 
         try {
           // Get PKCE verifier if used
-          const pkceChallenge = this.pkceStore.get(callbackData.state);
-          const codeVerifier = pkceChallenge?.codeVerifier;
+          const pkceEntry = this.pkceStore.get(callbackData.state);
+          const codeVerifier = pkceEntry?.challenge.codeVerifier;
 
           // Exchange code for tokens
           const tokens = await oauthProvider.exchangeCodeForTokens(
@@ -118,10 +122,8 @@ export class OAuthPlugin implements Plugin {
           // Get user info
           const oauthUser = await oauthProvider.getUserInfo(tokens.accessToken);
 
-          // Clean up PKCE challenge
-          if (pkceChallenge) {
-            this.pkceStore.delete(callbackData.state);
-          }
+          // Clean up PKCE entry
+          this.pkceStore.delete(callbackData.state);
 
           // Handle user creation/login
           let user: any = null;
@@ -135,11 +137,17 @@ export class OAuthPlugin implements Plugin {
             await this.config.onUserLogin(oauthUser, user);
           }
 
-          // Generate JWT tokens if auth service is available
+          // Generate JWT tokens if auth service is available.
+          // OAuth users have no password — call generateTokens() directly instead
+          // of going through login() which would fail the password check.
           let jwtTokens: any = null;
           if (this.config.authService && user) {
-            const authResult = await this.config.authService.login(user.username, ''); // OAuth users don't have passwords
-            jwtTokens = authResult.tokens;
+            const jwtProvider = this.config.authService.getJWTProvider();
+            jwtTokens = jwtProvider.generateTokens({
+              sub: String(user.id ?? user.username ?? oauthUser.id),
+              username: user.username,
+              email: user.email,
+            });
           }
 
           return c.json({
@@ -163,7 +171,7 @@ export class OAuthPlugin implements Plugin {
     // OAuth user info route (for testing)
     app.get('/auth/oauth/:provider/user', {
       handler: async (c: Context) => {
-        const provider = c.req.param('provider');
+        const provider = c.req.param('provider') as string;
         const authHeader = c.req.header('Authorization');
 
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -188,6 +196,13 @@ export class OAuthPlugin implements Plugin {
         }
       }
     });
+  }
+
+  private cleanupPkceStore(): void {
+    const now = Date.now();
+    for (const [state, entry] of this.pkceStore) {
+      if (entry.expiresAt < now) this.pkceStore.delete(state);
+    }
   }
 
   private async findOrCreateUser(oauthUser: OAuthUser): Promise<any> {

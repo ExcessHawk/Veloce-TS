@@ -327,19 +327,40 @@ export class VeloceTS {
     // Apply group prefix if we're inside a group
     const fullPath = this.normalizePath(this.groupPrefix, path);
 
-    // Create a synthetic route metadata for functional routes
-    // We use a special marker class to distinguish functional routes
+    // Build middleware list — prepend timeout wrapper when config.timeout is set
+    const middleware: Middleware[] = [];
+    if (config.timeout) {
+      const ms = config.timeout;
+      const timeoutMiddleware: Middleware = async (c, next) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(Object.assign(new Error(`Request timed out after ${ms}ms`), { name: 'TimeoutError', statusCode: 408 }));
+          }, ms);
+        });
+        try {
+          c.header('X-Timeout-Ms', String(ms));
+          await Promise.race([next(), timeoutPromise]);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      };
+      middleware.push(timeoutMiddleware);
+    }
+    middleware.push(...(config.middleware || []));
+
     const routeMetadata = {
       target: FunctionalRoute as any,
       propertyKey: `${method.toLowerCase()}_${fullPath}`,
       method,
       path: fullPath,
-      middleware: config.middleware || [],
+      middleware,
       parameters: this.extractParametersFromSchema(config.schema),
       dependencies: [],
       responses: config.responses || [],
       docs: config.docs,
-      handler: config.handler // Store handler directly for functional routes
+      cache: config.cache,
+      handler: config.handler
     };
 
     this.metadata.registerRoute(routeMetadata as any);
@@ -577,7 +598,7 @@ export class VeloceTS {
     }
 
     // Create and use the appropriate adapter based on configuration
-    const adapter = this.createAdapter();
+    const adapter = await this.createAdapter();
     
     this.serverInstance = adapter.listen(port, callback);
     
@@ -629,26 +650,22 @@ export class VeloceTS {
    * Create the appropriate adapter based on configuration
    * @private
    */
-  private createAdapter() {
+  private async createAdapter() {
     const adapterType = this.config.adapter || 'hono';
 
     switch (adapterType) {
       case 'hono': {
-        // Dynamically import to avoid circular dependencies
-        const { HonoAdapter } = require('../adapters/hono');
+        const { HonoAdapter } = await import('../adapters/hono.js');
         return new HonoAdapter(this.hono);
       }
 
       case 'express': {
-        // Dynamically import ExpressAdapter
-        const { ExpressAdapter } = require('../adapters/express');
+        const { ExpressAdapter } = await import('../adapters/express.js');
         return new ExpressAdapter(this);
       }
 
       case 'native': {
-        // Native adapter would use Web Standards directly
-        // For now, fall back to Hono adapter
-        const { HonoAdapter } = require('../adapters/hono');
+        const { HonoAdapter } = await import('../adapters/hono.js');
         return new HonoAdapter(this.hono);
       }
 

@@ -52,6 +52,7 @@ export interface PrismaClientLike {
 // Prisma delegate interface for model operations
 export interface PrismaDelegate {
   create(args: any): Promise<any>;
+  createMany(args: any): Promise<{ count: number }>;
   findUnique(args: any): Promise<any>;
   findFirst(args: any): Promise<any>;
   findMany(args: any): Promise<any[]>;

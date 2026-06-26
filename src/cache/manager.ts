@@ -14,6 +14,14 @@ export class CacheManager {
   private static stores: Map<string, CacheStore> = new Map();
 
   /**
+   * Reset all stores to their initial state — use in tests between suites.
+   */
+  static reset(): void {
+    this.defaultStore = new MemoryCacheStore();
+    this.stores.clear();
+  }
+
+  /**
    * Set the default cache store
    */
   static setDefaultStore(store: CacheStore): void {

@@ -20,8 +20,6 @@ import { BadRequestException } from '../errors/exceptions';
  * into actual Hono routes with full validation and dependency injection
  */
 export class RouterCompiler {
-  // Cache compiled metadata for performance
-  private compiledRoutes: Map<string, CompiledRouteMetadata> = new Map();
 
   constructor(
     private app: Hono,
@@ -49,20 +47,17 @@ export class RouterCompiler {
     const compiledRoutes = MetadataCompiler.compileAll(routes);
 
     for (const route of compiledRoutes) {
-      // Cache compiled route for potential reuse
-      const routeKey = `${route.target.name}:${route.propertyKey}`;
-      this.compiledRoutes.set(routeKey, route);
-
       const handler = this.createHandler(route);
       const path = this.normalizePath(route.path);
       const method = route.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete' | 'patch';
 
       // Register route with Hono, including any middleware
       // Note: Controller middleware is already included in route.middleware by application.ts
+      const register = this.app[method].bind(this.app) as (path: string, ...handlers: any[]) => any;
       if (route.middleware && route.middleware.length > 0) {
-        this.app[method](path, ...route.middleware, handler);
+        register(path, ...route.middleware, handler);
       } else {
-        this.app[method](path, handler);
+        register(path, handler);
       }
     }
   }

@@ -1,0 +1,2 @@
+# Veloce-TS Internal Benchmarks — 2026-06-26T05:09:53.318Z
+# Re-run: bun benchmarks/internal.bench.ts

@@ -27,7 +27,8 @@ export interface TokenPair {
 }
 
 export class JWTProvider {
-  private blacklistedTokens: Set<string> = new Set();
+  // Map<token, exp_unix_seconds> — O(1) lookup, lazy expiry cleanup
+  private blacklistedTokens: Map<string, number> = new Map();
   
   constructor(private config: JWTConfig) {
     if (!config.secret) {
@@ -168,33 +169,35 @@ export class JWTProvider {
   }
 
   /**
-   * Blacklist a token (for logout)
-   * Automatically purges already-expired tokens to keep the set bounded.
+   * Blacklist a token (for logout).
+   * Stores the token's expiry so isBlacklisted() can lazily drop expired entries.
    */
   blacklistToken(token: string): void {
-    this.blacklistedTokens.add(token);
-    // Prune expired tokens every time a new one is added to keep the set small
-    this.cleanupBlacklist();
+    const payload = this.decodeToken(token);
+    const exp = payload?.exp ?? (Math.floor(Date.now() / 1000) + 3600);
+    this.blacklistedTokens.set(token, exp);
   }
 
   /**
-   * Check if token is blacklisted
+   * Check if token is blacklisted. Lazily removes expired entries on hit.
    */
   isBlacklisted(token: string): boolean {
-    return this.blacklistedTokens.has(token);
+    const exp = this.blacklistedTokens.get(token);
+    if (exp === undefined) return false;
+    if (exp < Math.floor(Date.now() / 1000)) {
+      this.blacklistedTokens.delete(token);
+      return false;
+    }
+    return true;
   }
 
   /**
-   * Clear expired tokens from blacklist
+   * Remove all expired tokens from the blacklist.
    */
   cleanupBlacklist(): void {
     const now = Math.floor(Date.now() / 1000);
-    
-    for (const token of this.blacklistedTokens) {
-      const payload = this.decodeToken(token);
-      if (payload && payload.exp && payload.exp < now) {
-        this.blacklistedTokens.delete(token);
-      }
+    for (const [token, exp] of this.blacklistedTokens) {
+      if (exp < now) this.blacklistedTokens.delete(token);
     }
   }
 

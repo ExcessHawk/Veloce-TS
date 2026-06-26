@@ -1,5 +1,48 @@
 # Veloce-TS Benchmarks
 
+---
+
+## Internal Micro-Benchmarks — v0.4.18
+
+In-process measurements of framework internals. No network, no TCP — pure dispatch overhead.
+
+_Run: 2026-06-25 · Bun 1.x · `bun benchmarks/internal.bench.ts`_
+
+| Operation | Throughput | Latency |
+|---|---:|---:|
+| **JWT** | | |
+| `generateTokens()` | 31,640 ops/s | 31.6 µs |
+| `verifyAccessToken()` | 45,116 ops/s | 22.2 µs |
+| `decodeToken()` | 225,270 ops/s | 4.4 µs |
+| `isBlacklisted()` — Map.has() | 77,000,000 ops/s | 0.013 µs |
+| **MetadataCompiler** | | |
+| `compile()` — cache miss | 291,815 ops/s | 3.4 µs |
+| `compile()` — cache hit | 1,570,000 ops/s | 0.64 µs |
+| **Zod Validation** | | |
+| `safeParse()` valid | 1,640,000 ops/s | 0.6 µs |
+| `safeParse()` invalid | 387,769 ops/s | 2.6 µs |
+| **CacheManager (MemoryStore)** | | |
+| `get()` — cache hit | 2,660,000 ops/s | 0.38 µs |
+| `set()` | 2,090,000 ops/s | 0.48 µs |
+| **DIContainer** | | |
+| `resolve()` — singleton (cached) | 1,330,000 ops/s | 0.75 µs |
+| **In-process HTTP Dispatch** | | |
+| `GET /hello` | 97,545 ops/s | 10.25 µs |
+| `GET /users/:id` (param extract) | 85,422 ops/s | 11.7 µs |
+| `POST /validate` (Zod body) | 53,859 ops/s | 18.6 µs |
+
+**Key observations:**
+- JWT crypto (WebCrypto HMAC-SHA256) is the slowest operation at ~32–45 K ops/s — expected and unavoidable.
+- MetadataCompiler cache hit is **5× faster** than a cache miss (0.64 µs vs 3.4 µs).
+- CacheManager and DI resolution are effectively free (sub-microsecond on cache hit).
+- Full in-process HTTP dispatch (including Hono routing, param extraction, handler, JSON serialization) takes **10–19 µs** depending on body/validation work.
+
+> Full results: `benchmarks/results/internal-2026-06-25.txt`
+
+---
+
+## HTTP Throughput Comparison — v0.4.3
+
 Comparative performance measurements of **Veloce-TS v0.4.3** against three popular
 Node.js/Bun web frameworks.
 

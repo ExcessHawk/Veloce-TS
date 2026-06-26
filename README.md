@@ -83,6 +83,13 @@ Request tracing
 - Timeout management
 - Structured logging
 
+### 🛡️ **Battle-tested** (v0.4.18)
+Security & correctness audit
+- 375 tests, 0 failures
+- Auth routes secured (RBAC/Permissions)
+- JWT blacklist O(1) Map lookup
+- In-process benchmarks included
+
 </td>
 </tr>
 </table>
@@ -520,7 +527,7 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 
 | Area | Limitation |
 |------|------------|
-| **WebSockets on Node.js** | The built-in WebSocket plugin responds with **501** on Node.js. WebSocket upgrades are supported on **Bun** and **Deno**; Node support is not wired up yet (e.g. no `ws`/HTTP upgrade bridge in core). |
+| **WebSockets on Node.js** | `WebSocketPlugin` throws at startup on Node.js with a clear error message directing you to Bun/Deno. WebSocket upgrades are supported on **Bun** and **Deno** only; Node.js support requires a `ws`/HTTP upgrade bridge not yet implemented. |
 | **GraphQL** | The GraphQL plugin and decorators are **still maturing**. Treat them as **experimental** for production unless you have validated your use case. |
 | **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
 | **Pre-1.0** | APIs may change between minor versions. Check the [CHANGELOG](CHANGELOG.md) before upgrading. |
@@ -533,6 +540,8 @@ Directional priorities—not a release calendar. Items may ship in a different o
 2. **WebSockets on Node.js** — Remove the Node **501** path by integrating a real upgrade path (e.g. `ws` or runtime-appropriate APIs) so the same decorator API works on Node as on Bun/Deno.
 3. **CLI scaffolding** — Lightweight **code generation** (e.g. controller + route + test skeleton), similar in spirit to Feathers’ `generate service`, kept maintainable and optional.
 4. **GraphQL** — Improve stability and docs **after** REST, caching, WebSockets-on-Node, and ORM stories are in better shape (lower priority than the items above).
+
+**Completed in v0.4.18:** Security audit of auth routes, JWT blacklist correctness, MetadataCompiler cache isolation fix, ORM lazy-loading for optional peer deps, 375-test suite, internal micro-benchmarks.
 
 For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and proposals: [GitHub Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions).
 

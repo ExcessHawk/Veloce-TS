@@ -80,9 +80,17 @@ export class GraphQLPlugin implements Plugin {
           return c.json({ error: 'Query parameter is required' }, 400);
         }
 
+        let parsedVariables: Record<string, any> | undefined;
+        if (variables) {
+          try {
+            parsedVariables = JSON.parse(variables);
+          } catch {
+            return c.json({ error: 'Invalid JSON in variables parameter' }, 400);
+          }
+        }
         return this.executeGraphQL(c, {
           query,
-          variables: variables ? JSON.parse(variables) : undefined,
+          variables: parsedVariables,
           operationName
         });
       },

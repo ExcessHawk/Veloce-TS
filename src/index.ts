@@ -9,10 +9,6 @@ import 'reflect-metadata';
 export { VeloceTS } from './core/application';
 // Export Veloce as a shorter alias
 export { VeloceTS as Veloce } from './core/application';
-/**
- * @deprecated Use `VeloceTS` or `Veloce` instead. `FastAPITS` will be removed in v1.0.0.
- */
-export { VeloceTS as FastAPITS } from './core/application';
 export { MetadataRegistry } from './core/metadata';
 export { RouterCompiler } from './core/router-compiler';
 export { MetadataCompiler, type CompiledRouteMetadata } from './core/compiled-metadata';
@@ -34,6 +30,8 @@ export { ValidationException } from './validation/exceptions';
 // Dependency Injection exports
 export { DIContainer } from './dependencies/container';
 export { registerDrizzle, InjectDB, DB_TOKEN } from './dependencies/drizzle';
+export { registerPrisma, PRISMA_TOKEN } from './dependencies/prisma';
+export { registerTypeORM, TYPEORM_TOKEN } from './dependencies/typeorm';
 
 // Response exports
 export * from './responses/response';
@@ -96,7 +94,12 @@ export type { OAuthProvider } from './auth/oauth-provider';
 export { OAuthUserSchema } from './auth/oauth-provider';
 export { OAuth, OAuthUser, OAuthToken, getOAuthUser, getOAuthToken, isOAuthAuthenticated, getOAuthProvider } from './auth/oauth-decorators';
 
-// Session exports (specific exports to avoid conflicts)  
+// Auth plugin exports (OAuthPlugin, PermissionPlugin, SessionPlugin)
+export { OAuthPlugin } from './auth/oauth-plugin';
+export { PermissionPlugin } from './auth/permission-plugin';
+export { SessionPlugin } from './auth/session-plugin';
+
+// Session exports (specific exports to avoid conflicts)
 export { SessionManager, SessionDataSchema } from './auth/session';
 export type { SessionStore } from './auth/session';
 export { Session, CurrentSession, CSRFToken, RequireCSRF, createSessionMiddleware, SessionGuard, getCurrentSession, getSessionManager, getCSRFProtection, getSessionData, isSessionAuthenticated, getSessionUserId, setSessionData, removeSessionData } from './auth/session-decorators';

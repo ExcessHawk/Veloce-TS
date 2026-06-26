@@ -423,44 +423,6 @@ export function createDrizzlePlugin(database: DrizzleDatabase, config?: DrizzleC
 }
 
 /**
- * Decorator to automatically inject Drizzle repository
- * @param tableName - Name of the table to inject repository for
- * @param zodSchema - Optional Zod schema for validation
- * @returns Property decorator
- * 
- * @example
- * ```typescript
- * class UserService {
- *   @InjectDrizzleRepository('users', UserSchema)
- *   private userRepo!: DrizzleRepository<User>;
- * }
- * ```
- * 
- * @deprecated This decorator is not yet fully implemented. 
- * Use dependency injection or direct instantiation instead:
- * ```typescript
- * const factory = container.resolve('DrizzleRepositoryFactory');
- * const repo = factory.create<User>('users');
- * ```
- */
-export function InjectDrizzleRepository(tableName: string, zodSchema?: any): PropertyDecorator {
-  return (target: any, propertyKey: string | symbol) => {
-    const metadata = {
-      type: 'drizzle-repository',
-      tableName,
-      zodSchema
-    };
-    
-    Reflect.defineMetadata('inject', metadata, target, propertyKey);
-    
-    // TODO: Implement automatic injection in the DI container
-    // This would require intercepting property access and resolving from container
-    const logger = createChildLogger({ component: 'DrizzleRepository' });
-    logger.warn('@InjectDrizzleRepository decorator is not fully implemented yet. Consider using factory pattern instead.');
-  };
-}
-
-/**
  * Seeder base class for Drizzle
  */
 export abstract class DrizzleSeeder {

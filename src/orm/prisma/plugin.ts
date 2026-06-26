@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Prisma integration plugin for FastAPI-TS
+ * Prisma integration plugin for Veloce-TS
  */
 export class PrismaPlugin implements Plugin {
   name = 'prisma';

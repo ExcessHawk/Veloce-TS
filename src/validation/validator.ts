@@ -5,14 +5,8 @@
 import { ZodSchema, ZodError } from 'zod';
 import { ValidationException } from './exceptions.js';
 
-/**
- * Cached schema wrapper that stores parsed schema and validation results
- */
 interface CachedSchema<T = any> {
   schema: ZodSchema<T>;
-  // Cache for successful validation results (optional optimization)
-  // Using WeakMap to allow garbage collection of validated data
-  resultCache?: WeakMap<any, T>;
 }
 
 /**
@@ -54,10 +48,7 @@ export class ValidationEngine {
       if (!cached) {
         this.stats.misses++;
         // First time seeing this schema - cache it
-        cached = {
-          schema: schema,
-          resultCache: new WeakMap()
-        };
+        cached = { schema };
         this.schemaCache.set(schema, cached);
       } else {
         this.stats.hits++;
@@ -93,10 +84,7 @@ export class ValidationEngine {
       if (!cached) {
         this.stats.misses++;
         // First time seeing this schema - cache it
-        cached = {
-          schema: schema,
-          resultCache: new WeakMap()
-        };
+        cached = { schema };
         this.schemaCache.set(schema, cached);
       } else {
         this.stats.hits++;

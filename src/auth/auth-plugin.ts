@@ -81,28 +81,21 @@ export class AuthPlugin implements Plugin {
         const authRequired = route.auth?.required || authMetadata?.required;
         
         if (authRequired) {
-          console.log('Adding auth middleware for route:', route.path, route.method);
           const authConfig = route.auth?.config || authMetadata?.config;
-          
+
           // Add middleware specifically for this route
           hono.use(route.path, async (c, next) => {
-            console.log('Auth middleware executing for:', c.req.path, c.req.method, 'target:', route.path, route.method);
-            
             // Only apply to the specific method
             if (c.req.method !== route.method) {
-              console.log('Method mismatch, skipping auth check');
               return next();
             }
-            
-            console.log('Checking authentication...');
-            
+
             // Check authentication
             const user = (c as any).get('auth.user');
             const error = (c as any).get('auth.error');
-            
+
             if (!user) {
               const authError = error || 'Authentication required';
-              console.log('No user found, throwing auth exception');
               throw new AuthenticationException(authError);
             }
 

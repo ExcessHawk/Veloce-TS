@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 
 /**
- * TypeORM-specific decorators for FastAPI-TS integration
+ * TypeORM-specific decorators for Veloce-TS integration
  */
 
 // Entity decorator metadata

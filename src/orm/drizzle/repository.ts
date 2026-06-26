@@ -2,6 +2,20 @@ import { z } from 'zod';
 import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository';
 import { DrizzleRepositoryOptions, DrizzleDatabase, DrizzleTable, DrizzleOperators } from './types';
 
+// Drizzle operator cache — loaded on first use
+let _drizzleOps: any = null;
+function getDrizzleOps() {
+  if (!_drizzleOps) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      _drizzleOps = require('drizzle-orm');
+    } catch {
+      throw new Error('drizzle-orm must be installed to use DrizzleRepository: bun add drizzle-orm');
+    }
+  }
+  return _drizzleOps;
+}
+
 /**
  * Drizzle-specific repository implementation
  */
@@ -20,25 +34,14 @@ export class DrizzleRepository<T, ID = string | number> extends BaseRepository<T
   }
   
   private initializeOperators(): DrizzleOperators {
-    // In a real implementation, these would be imported from drizzle-orm
-    // For now, we'll create placeholder implementations
+    const d = getDrizzleOps();
     return {
-      eq: (column: any, value: any) => ({ type: 'eq', column, value }),
-      ne: (column: any, value: any) => ({ type: 'ne', column, value }),
-      gt: (column: any, value: any) => ({ type: 'gt', column, value }),
-      gte: (column: any, value: any) => ({ type: 'gte', column, value }),
-      lt: (column: any, value: any) => ({ type: 'lt', column, value }),
-      lte: (column: any, value: any) => ({ type: 'lte', column, value }),
-      like: (column: any, value: string) => ({ type: 'like', column, value }),
-      ilike: (column: any, value: string) => ({ type: 'ilike', column, value }),
-      inArray: (column: any, values: any[]) => ({ type: 'in', column, values }),
-      notInArray: (column: any, values: any[]) => ({ type: 'notIn', column, values }),
-      isNull: (column: any) => ({ type: 'isNull', column }),
-      isNotNull: (column: any) => ({ type: 'isNotNull', column }),
-      between: (column: any, min: any, max: any) => ({ type: 'between', column, min, max }),
-      and: (...conditions: any[]) => ({ type: 'and', conditions }),
-      or: (...conditions: any[]) => ({ type: 'or', conditions }),
-      not: (condition: any) => ({ type: 'not', condition })
+      eq: d.eq, ne: d.ne, gt: d.gt, gte: d.gte, lt: d.lt, lte: d.lte,
+      like: d.like, ilike: d.ilike, inArray: d.inArray, notInArray: d.notInArray,
+      isNull: d.isNull, isNotNull: d.isNotNull, between: d.between,
+      and: (...conditions: any[]) => d.and(...conditions),
+      or: (...conditions: any[]) => d.or(...conditions),
+      not: (condition: any) => d.not(condition),
     };
   }
   
@@ -174,14 +177,15 @@ export class DrizzleRepository<T, ID = string | number> extends BaseRepository<T
   }
   
   async count(where?: FilterOptions): Promise<number> {
-    let query = this.database.select({ count: 'COUNT(*)' }).from(this.table);
-    
+    const { sql } = getDrizzleOps();
+    let query = this.database.select({ count: sql<number>`count(*)` }).from(this.table);
+
     if (where) {
       query = query.where(this.buildWhereClause(where));
     }
-    
+
     const result = await query.execute();
-    return result[0]?.count || 0;
+    return Number(result[0]?.count ?? 0);
   }
   
   async exists(where: FilterOptions): Promise<boolean> {
@@ -198,8 +202,9 @@ export class DrizzleRepository<T, ID = string | number> extends BaseRepository<T
     const offset = (page - 1) * limit;
     
     // Build base query
+    const { sql } = getDrizzleOps();
     let dataQuery = this.database.select().from(this.table);
-    let countQuery = this.database.select({ count: 'COUNT(*)' }).from(this.table);
+    let countQuery = this.database.select({ count: sql<number>`count(*)` }).from(this.table);
     
     if (findOptions.where) {
       const whereClause = this.buildWhereClause(findOptions.where);
@@ -219,7 +224,7 @@ export class DrizzleRepository<T, ID = string | number> extends BaseRepository<T
       countQuery.execute()
     ]);
     
-    const total = countResult[0]?.count || 0;
+    const total = Number(countResult[0]?.count ?? 0);
     const validatedData = data.map(item => this.validate(item));
     const totalPages = Math.ceil(total / limit);
     
@@ -293,15 +298,12 @@ export class DrizzleRepository<T, ID = string | number> extends BaseRepository<T
   
   // Build Drizzle-specific order by clause
   protected buildOrderByClause(orderBy: SortOptions | SortOptions[]): any[] {
-    if (Array.isArray(orderBy)) {
-      return orderBy.map(sort => {
-        const column = this.getColumn(sort.field);
-        return sort.direction === 'desc' ? { column, direction: 'desc' } : column;
-      });
-    }
-    
-    const column = this.getColumn(orderBy.field);
-    return orderBy.direction === 'desc' ? [{ column, direction: 'desc' }] : [column];
+    const d = getDrizzleOps();
+    const toOrder = (sort: SortOptions) => {
+      const column = this.getColumn(sort.field);
+      return sort.direction === 'desc' ? d.desc(column) : d.asc(column);
+    };
+    return Array.isArray(orderBy) ? orderBy.map(toOrder) : [toOrder(orderBy)];
   }
   
   // Helper methods

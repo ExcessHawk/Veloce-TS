@@ -127,33 +127,31 @@ export class TypeORMTransactionManager extends BaseTransactionManager {
       return this.handleNestedTransaction(existingTransaction, target, args, originalMethod);
     }
     
-    // Start new TypeORM transaction
+    // Start new TypeORM transaction.
+    // Use createTransactionContext (no QueryRunner) for tracking only —
+    // dataSource.transaction() owns the actual DB transaction lifecycle.
     return await this.executeInTransaction(async (manager) => {
-      // Create transaction context for tracking
-      const transactionContext = await this.begin(metadata);
-      
+      const transactionContext = this.createTransactionContext(metadata);
+
       if (context) {
         this.setRequestTransaction(context, transactionContext);
       }
-      
+
       try {
-        // Inject the transaction manager into repositories if needed
         const result = await this.injectTransactionManager(target, args, originalMethod, manager);
-        
+
         if (transactionContext.rollbackOnly) {
           throw new Error('Transaction marked for rollback');
         }
-        
+
         return result;
       } catch (error) {
-        // Mark transaction for rollback
         this.setRollbackOnly(transactionContext);
         throw error;
       } finally {
         if (context) {
           this.clearRequestTransaction(context);
         }
-        // Note: commit/rollback is handled by TypeORM's transaction method
         this.removeTransactionContext(transactionContext);
       }
     }, metadata);

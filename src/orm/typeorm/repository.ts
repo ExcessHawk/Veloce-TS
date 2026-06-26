@@ -1,5 +1,19 @@
 import { z } from 'zod';
 import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository';
+
+// TypeORM operator cache — loaded on first use via getTypeORMOps()
+let _typeormOps: any = null;
+function getTypeORMOps() {
+  if (!_typeormOps) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      _typeormOps = require('typeorm');
+    } catch {
+      throw new Error('typeorm must be installed to use TypeORMRepository: bun add typeorm');
+    }
+  }
+  return _typeormOps;
+}
 import { TypeORMRepositoryOptions, DataSourceLike, RepositoryLike, EntityManagerLike } from './types';
 
 /**
@@ -183,36 +197,35 @@ export class TypeORMRepository<T, ID = string | number> extends BaseRepository<T
   
   // Override base class methods for TypeORM-specific implementations
   protected buildWhereClause(where: FilterOptions): any {
+    const ops = getTypeORMOps();
     const typeormWhere: any = {};
-    
+
     for (const [key, value] of Object.entries(where)) {
       if (value === null || value === undefined) {
         typeormWhere[key] = null;
       } else if (typeof value === 'object' && !Array.isArray(value)) {
-        // Handle complex filters
         if ('gt' in value) {
-          typeormWhere[key] = { $gt: value.gt };
+          typeormWhere[key] = ops.MoreThan(value.gt);
         } else if ('gte' in value) {
-          typeormWhere[key] = { $gte: value.gte };
+          typeormWhere[key] = ops.MoreThanOrEqual(value.gte);
         } else if ('lt' in value) {
-          typeormWhere[key] = { $lt: value.lt };
+          typeormWhere[key] = ops.LessThan(value.lt);
         } else if ('lte' in value) {
-          typeormWhere[key] = { $lte: value.lte };
+          typeormWhere[key] = ops.LessThanOrEqual(value.lte);
         } else if ('like' in value) {
-          typeormWhere[key] = { $like: value.like };
+          typeormWhere[key] = ops.Like(value.like);
         } else if ('in' in value) {
-          typeormWhere[key] = { $in: value.in };
+          typeormWhere[key] = ops.In(value.in);
         } else {
           typeormWhere[key] = value;
         }
       } else if (Array.isArray(value)) {
-        // Handle array filters (in operator)
-        typeormWhere[key] = { $in: value };
+        typeormWhere[key] = ops.In(value);
       } else {
         typeormWhere[key] = value;
       }
     }
-    
+
     return typeormWhere;
   }
   

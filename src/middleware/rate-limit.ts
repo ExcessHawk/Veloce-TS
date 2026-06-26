@@ -39,9 +39,12 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
     }
   }, windowMs);
 
-  // Cleanup on process exit (if supported)
+  // Cleanup on process exit and common termination signals
   if (typeof process !== 'undefined' && process.on) {
-    process.on('exit', () => clearInterval(cleanupInterval));
+    const stop = () => clearInterval(cleanupInterval);
+    process.on('exit', stop);
+    process.on('SIGTERM', stop);
+    process.on('SIGINT', stop);
   }
 
   return async (c: Context, next) => {

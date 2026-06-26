@@ -128,8 +128,15 @@ export class RBACPlugin implements Plugin {
   private addManagementRoutes(app: VeloceTS): void {
     const routes = this.config.routes || {};
 
+    const requireAuth = async (c: Context, next: () => Promise<void>) => {
+      const user = getCurrentUser(c);
+      if (!user) throw new AuthenticationException('Authentication required');
+      await next();
+    };
+
     // Get all roles
     app.get(routes.roles || '/rbac/roles', {
+      middleware: [requireAuth],
       handler: (c: Context) => {
         const roles = this.rbac.getAllRoles();
         return c.json({
@@ -147,8 +154,9 @@ export class RBACPlugin implements Plugin {
 
     // Get role details
     app.get('/rbac/roles/:roleName', {
+      middleware: [requireAuth],
       handler: (c: Context) => {
-        const roleName = c.req.param('roleName');
+        const roleName = c.req.param('roleName') as string;
         const role = this.rbac.getRole(roleName);
         
         if (!role) {
@@ -171,9 +179,10 @@ export class RBACPlugin implements Plugin {
 
     // Get all permissions for a role
     app.get('/rbac/roles/:roleName/permissions', {
+      middleware: [requireAuth],
       handler: (c: Context) => {
-        const roleName = c.req.param('roleName');
-        
+        const roleName = c.req.param('roleName') as string;
+
         if (!this.rbac.roleExists(roleName)) {
           return c.json({ error: 'Role not found' }, 404);
         }
@@ -190,6 +199,7 @@ export class RBACPlugin implements Plugin {
 
     // Check if user has permission
     app.post('/rbac/check-permission', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { roles, permission } = body;
@@ -211,6 +221,7 @@ export class RBACPlugin implements Plugin {
 
     // Check if user has roles
     app.post('/rbac/check-roles', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userRoles, requiredRoles, requireAll = false } = body;
@@ -235,6 +246,7 @@ export class RBACPlugin implements Plugin {
 
     // Get effective roles (including inherited)
     app.post('/rbac/effective-roles', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { roles } = body;
@@ -255,6 +267,7 @@ export class RBACPlugin implements Plugin {
 
     // Get user permissions from roles
     app.post('/rbac/user-permissions', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { roles } = body;

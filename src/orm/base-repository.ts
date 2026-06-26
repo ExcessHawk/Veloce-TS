@@ -102,11 +102,7 @@ export abstract class BaseRepository<T, ID = string | number> implements IBaseRe
   
   // Default implementations for bulk operations
   async createMany(data: Partial<T>[]): Promise<T[]> {
-    const results: T[] = [];
-    for (const item of data) {
-      results.push(await this.create(item));
-    }
-    return results;
+    return Promise.all(data.map(item => this.create(item)));
   }
   
   async updateMany(where: FilterOptions, data: Partial<T>): Promise<number> {
@@ -168,7 +164,8 @@ export abstract class BaseRepository<T, ID = string | number> implements IBaseRe
     };
   }
   
-  // Default count implementation
+  // ORM adapters MUST override this with a native COUNT query.
+  // This default loads all rows into memory — never acceptable in production.
   async count(where?: FilterOptions): Promise<number> {
     const items = await this.findMany({ where });
     return items.length;

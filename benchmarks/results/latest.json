@@ -1,179 +1,179 @@
 {
   "meta": {
-    "date": "2026-03-28T23:24:28.757Z",
-    "requests": 6000,
+    "date": "2026-06-26T05:03:57.490Z",
+    "requests": 5000,
     "concurrency": 50,
     "warmup": 500,
-    "bun": "1.3.5",
+    "bun": "1.3.14",
     "os": "win32"
   },
   "scenarios": {
     "hello": [
       {
         "name": "Veloce-TS v0.4.3",
-        "rps": 19252,
-        "avgMs": 1.43,
-        "p50Ms": 1.25,
-        "p95Ms": 2.76,
-        "p99Ms": 5.79,
+        "rps": 14893,
+        "avgMs": 2,
+        "p50Ms": 1.71,
+        "p95Ms": 4.07,
+        "p99Ms": 4.98,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Hono (raw)",
-        "rps": 30376,
-        "avgMs": 0.95,
-        "p50Ms": 0.84,
-        "p95Ms": 1.7,
-        "p99Ms": 2.62,
+        "rps": 14964,
+        "avgMs": 2.16,
+        "p50Ms": 1.84,
+        "p95Ms": 4.07,
+        "p99Ms": 4.89,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Express 4",
-        "rps": 14189,
-        "avgMs": 1.83,
-        "p50Ms": 1.67,
-        "p95Ms": 3.64,
-        "p99Ms": 5.05,
+        "rps": 6583,
+        "avgMs": 4.36,
+        "p50Ms": 3.91,
+        "p95Ms": 8.71,
+        "p99Ms": 15.86,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Fastify 5",
-        "rps": 16918,
-        "avgMs": 1.58,
-        "p50Ms": 1.38,
-        "p95Ms": 3.49,
-        "p99Ms": 5.45,
+        "rps": 9565,
+        "avgMs": 2.96,
+        "p50Ms": 2.72,
+        "p95Ms": 5.85,
+        "p99Ms": 7.43,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       }
     ],
     "params": [
       {
         "name": "Veloce-TS v0.4.3",
-        "rps": 22219,
-        "avgMs": 1.23,
-        "p50Ms": 1.12,
-        "p95Ms": 2.18,
-        "p99Ms": 3.02,
+        "rps": 14527,
+        "avgMs": 1.98,
+        "p50Ms": 1.67,
+        "p95Ms": 4.43,
+        "p99Ms": 6.6,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Hono (raw)",
-        "rps": 28479,
-        "avgMs": 1,
-        "p50Ms": 0.89,
-        "p95Ms": 1.75,
-        "p99Ms": 2.6,
+        "rps": 16484,
+        "avgMs": 1.94,
+        "p50Ms": 1.57,
+        "p95Ms": 3.67,
+        "p99Ms": 5,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Express 4",
-        "rps": 15084,
-        "avgMs": 1.73,
-        "p50Ms": 1.6,
-        "p95Ms": 3.21,
-        "p99Ms": 4.15,
+        "rps": 7398,
+        "avgMs": 3.7,
+        "p50Ms": 3.46,
+        "p95Ms": 7.33,
+        "p99Ms": 8.95,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Fastify 5",
-        "rps": 19375,
-        "avgMs": 1.36,
-        "p50Ms": 1.25,
-        "p95Ms": 2.52,
-        "p99Ms": 3.32,
+        "rps": 8627,
+        "avgMs": 3.31,
+        "p50Ms": 2.92,
+        "p95Ms": 6.67,
+        "p99Ms": 8.32,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       }
     ],
     "body": [
       {
         "name": "Veloce-TS v0.4.3",
-        "rps": 18788,
-        "avgMs": 1.4,
-        "p50Ms": 1.27,
-        "p95Ms": 2.52,
-        "p99Ms": 3.42,
+        "rps": 15896,
+        "avgMs": 1.85,
+        "p50Ms": 1.56,
+        "p95Ms": 4.18,
+        "p99Ms": 5.6,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Hono (raw)",
-        "rps": 23271,
-        "avgMs": 1.16,
-        "p50Ms": 1.05,
-        "p95Ms": 2.02,
-        "p99Ms": 2.69,
+        "rps": 13561,
+        "avgMs": 2.15,
+        "p50Ms": 1.81,
+        "p95Ms": 4.14,
+        "p99Ms": 5.98,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Express 4",
-        "rps": 10110,
-        "avgMs": 2.5,
-        "p50Ms": 2.42,
-        "p95Ms": 4.69,
-        "p99Ms": 5.89,
+        "rps": 5360,
+        "avgMs": 4.98,
+        "p50Ms": 4.69,
+        "p95Ms": 9.5,
+        "p99Ms": 11.53,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Fastify 5",
-        "rps": 13768,
-        "avgMs": 1.85,
-        "p50Ms": 1.72,
-        "p95Ms": 3.54,
-        "p99Ms": 4.62,
+        "rps": 6510,
+        "avgMs": 4.12,
+        "p50Ms": 3.77,
+        "p95Ms": 7.98,
+        "p99Ms": 13.19,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       }
     ],
     "validation": [
       {
         "name": "Veloce-TS v0.4.3",
-        "rps": 15988,
-        "avgMs": 1.64,
-        "p50Ms": 1.52,
-        "p95Ms": 2.98,
-        "p99Ms": 4.11,
+        "rps": 11819,
+        "avgMs": 2.5,
+        "p50Ms": 2.11,
+        "p95Ms": 5.72,
+        "p99Ms": 9.08,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Hono (raw)",
-        "rps": 19722,
-        "avgMs": 1.35,
-        "p50Ms": 1.24,
-        "p95Ms": 2.49,
-        "p99Ms": 3.27,
+        "rps": 11963,
+        "avgMs": 2.48,
+        "p50Ms": 2.12,
+        "p95Ms": 5.08,
+        "p99Ms": 6.61,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Express 4",
-        "rps": 9930,
-        "avgMs": 2.57,
-        "p50Ms": 2.47,
-        "p95Ms": 4.81,
-        "p99Ms": 6.26,
+        "rps": 5508,
+        "avgMs": 4.91,
+        "p50Ms": 4.58,
+        "p95Ms": 9.64,
+        "p99Ms": 11.59,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       },
       {
         "name": "Fastify 5",
-        "rps": 13265,
-        "avgMs": 1.95,
-        "p50Ms": 1.87,
-        "p95Ms": 3.62,
-        "p99Ms": 4.36,
+        "rps": 5904,
+        "avgMs": 4.83,
+        "p50Ms": 4.39,
+        "p95Ms": 10.45,
+        "p99Ms": 14.79,
         "errors": 0,
-        "total": 6000
+        "total": 5000
       }
     ]
   }

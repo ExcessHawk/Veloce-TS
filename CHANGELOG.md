@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.18] - 2026-06-25
+
+Full security & correctness audit across the framework core, auth layer, ORM integrations, and build pipeline. 375 tests passing, 0 failures.
+
+### Fixed
+
+**Auth / Security**
+- **RBAC plugin:** all 7 management routes (`/roles`, `/users/:id/roles`, etc.) now correctly require `requireAuth`. Previously they were publicly accessible.
+- **Permission plugin:** all 7 permission management routes now correctly require `requireAuth`. Same gap as RBAC.
+- **JWT blacklist:** replaced the `Set<string>` with `Map<string, number>` (token → expiry timestamp). Provides O(1) lookup and enables `cleanupBlacklist()` to auto-purge expired entries without scanning the entire set.
+- **OAuth plugin:** `login()` returned 401 on valid credentials due to an inverted conditional; fixed. PKCE code TTL was set to `Date.now()` (milliseconds) instead of `Date.now() / 1000` (seconds), causing immediate expiry.
+- **Auth plugin:** removed 5 `console.log()` debug calls leaking tokens and user data to stdout in production builds.
+- **Auth service:** `hashPassword()` was gated by an incorrect production guard that blocked legitimate use; removed.
+
+**Core**
+- **MetadataCompiler:** cache key changed from `"ClassName:methodName"` to a WeakMap-based numeric class identity (`targetId:methodName`). Fixes 36 test failures when running Bun's shared-process test runner: classes with the same name in different test files no longer share a cache slot, so each app instance compiles its own routes with its own DI/JWT context.
+- **MetadataRegistry:** `getRouteMethods()` now walks the full prototype chain. Inherited route methods from a base controller were previously invisible to the router compiler.
+- **Application:** `createAdapter()` is now `async` and properly `await`ed. `listen()` is awaited. Timeout middleware and cache configuration now propagate correctly to the adapter.
+- **CacheManager:** added `static reset()` to clear all stores and registered names — required for test isolation between app instances in the same process.
+
+**ORM**
+- **Base repository:** `createMany()` now uses `Promise.all()` for parallel execution instead of sequential `await` in a loop.
+- **Prisma repository:** fixed double insert in `create()` — the entity was being saved twice.
+- **Drizzle transaction manager:** `commit()` was called inside `finally` block, running even after a successful commit. Moved to the normal path only.
+- **TypeORM transaction manager:** `QueryRunner` was not released on error, leaking database connections.
+- **Drizzle repository:** static `import` of `drizzle-orm` at module top level replaced with lazy `require()` via `getDrizzleOps()`. Fixes build failure when `drizzle-orm` is not installed (optional peer dep).
+- **TypeORM repository:** same fix — static `import` of `typeorm` replaced with lazy `getTypeORMOps()`.
+
+**Build**
+- **`build.ts`:** added `external` array to both `Bun.build()` calls covering all optional peer deps (`drizzle-orm`, `typeorm`, `prisma`, `@prisma/client`, `reflect-metadata`, `graphql`, `ioredis`, `express`, `hono`). Without this, `bun run build` failed when any optional dep was absent.
+
+**Other**
+- **GraphQL plugin:** `JSON.parse()` on the `variables` field now wrapped in try-catch; previously threw an unhandled exception on malformed JSON.
+- **Session store:** auto-cleanup interval registered on construction; SIGTERM/SIGINT handlers stop it on shutdown (prevents hanging processes).
+- **Rate limit middleware:** SIGTERM/SIGINT cleanup for the cleanup interval — same pattern.
+- **Validator:** removed dead `resultCache` WeakMap that accumulated entries without any code path reading from it.
+
+### Added
+
+**Tests**
+- `tests/fixes.test.ts` — 45 integration tests covering all 24 corrected bugs above (JWT blacklist Map behavior, RBAC/Permission auth guards, CacheManager.reset(), prototype chain routing, parallel createMany, MetadataCompiler class identity, lazy ORM imports, GraphQL JSON parse errors, session cleanup, functional route timeout/cache).
+- `tests/cache.test.ts` — 40 tests for `parseTTL`, `MemoryCacheStore` (CRUD, TTL expiry, LRU eviction, pattern deletion), and `CacheManager` (reset, named stores, generateKey, convenience functions).
+- `tests/session.test.ts` — 17 tests for `MemorySessionStore` (CRUD, touch, expiry with real-time wait, multi-session independence).
+
+**Total test count: 375 pass, 0 fail** (was 273 before this release).
+
+**Benchmarks**
+- `benchmarks/internal.bench.ts` — 14 in-process micro-benchmarks measuring: JWT sign/verify/decode, Map-based blacklist lookup (77 M ops/s), MetadataCompiler cache-miss vs cache-hit (5× faster on hit), Zod `safeParse` valid/invalid, CacheManager get/set, DIContainer singleton resolution, and full Hono stack dispatch (GET simple, GET with param, POST with Zod body).
+- Results saved to `benchmarks/results/internal-2026-06-25.txt`.
+
 ## [0.4.10] - 2026-05-12
 
 ### Fixed
@@ -740,7 +790,9 @@ This release brings powerful performance optimization features to Veloce-TS:
 - CLI tooling
 - Testing utilities
 
-[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.18...HEAD
+[0.4.18]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.10...v0.4.18
+[0.4.10]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.9...v0.4.10
 [0.4.0]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AlfredoMejia3001/veloce-ts/releases/tag/v0.3.2

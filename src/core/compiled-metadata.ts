@@ -62,18 +62,16 @@ export class MetadataCompiler {
    */
   private static snapshot(route: RouteMetadata): string {
     const handler = (route as any).handler;
+    const targetId = route.target
+      ? (MetadataCompiler.handlerIds.get(route.target) ?? MetadataCompiler.assignHandlerId(route.target))
+      : null;
     return JSON.stringify({
+      targetId,
       method: route.method,
       path: route.path,
       params: route.parameters?.map(p => ({ i: p.index, t: p.type, n: p.name })),
       deps: route.dependencies?.map(d => ({ i: d.index })),
-      // Use a per-function symbol so two different handler functions with the
-      // same source text still produce different snapshots.
       handlerId: handler ? (MetadataCompiler.handlerIds.get(handler) ?? MetadataCompiler.assignHandlerId(handler)) : null,
-      // Middleware identity must be part of the snapshot: route guards (e.g. the
-      // RBAC guard) are injected by re-registering an existing route with extra
-      // middleware. Without this, a re-registration that only changes middleware
-      // would hit a stale cache entry and the guard would be silently dropped.
       mw: route.middleware?.map(m => MetadataCompiler.handlerIds.get(m) ?? MetadataCompiler.assignHandlerId(m)),
     });
   }
@@ -97,7 +95,10 @@ export class MetadataCompiler {
    * app instances registering the same path don't share compiled metadata.
    */
   static compile(route: RouteMetadata): CompiledRouteMetadata {
-    const cacheKey = `${route.target?.name ?? 'anon'}:${route.propertyKey}`;
+    const targetId = route.target
+      ? (MetadataCompiler.handlerIds.get(route.target) ?? MetadataCompiler.assignHandlerId(route.target))
+      : 0;
+    const cacheKey = `${targetId}:${route.propertyKey}`;
     const snap = this.snapshot(route);
 
     const cached = this.cache.get(cacheKey);
@@ -143,19 +144,14 @@ export class MetadataCompiler {
    * Converts FastAPI-style {param} to regex capture groups
    */
   private static compilePathRegex(path: string): RegExp {
-    // Escape special regex characters except for parameter placeholders
+    // Escape special regex chars first (paths have already been normalised to
+    // :param style by normalizePath(), so no {param} tokens remain here)
     let pattern = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    // Convert {param} to named capture groups
-    pattern = pattern.replace(/\\\{([^}]+)\\\}/g, '(?<$1>[^/]+)');
-    
+
     // Convert :param to named capture groups (Hono style)
     pattern = pattern.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '(?<$1>[^/]+)');
-    
-    // Anchor to start and end
-    pattern = `^${pattern}$`;
-    
-    return new RegExp(pattern);
+
+    return new RegExp(`^${pattern}$`);
   }
 
   /**

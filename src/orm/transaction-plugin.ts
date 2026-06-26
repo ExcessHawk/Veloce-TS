@@ -16,7 +16,7 @@ export interface TransactionPluginConfig {
 }
 
 /**
- * Transaction management plugin for FastAPI-TS
+ * Transaction management plugin for Veloce-TS
  */
 export class TransactionPlugin implements Plugin {
   name = 'transaction';

@@ -346,18 +346,20 @@ export class MetadataRegistry {
    * Get all route methods from a controller class
    */
   static getRouteMethods(target: Class): string[] {
-    const prototype = target.prototype;
+    const seen = new Set<string>();
     const methods: string[] = [];
 
-    // Get all property names from the prototype
-    const propertyNames = Object.getOwnPropertyNames(prototype);
-
-    for (const propertyName of propertyNames) {
-      if (propertyName === 'constructor') continue;
-      
-      if (this.hasRouteMetadata(prototype, propertyName)) {
-        methods.push(propertyName);
+    // Walk the full prototype chain so inherited route methods are included
+    let proto = target.prototype;
+    while (proto && proto !== Object.prototype) {
+      for (const name of Object.getOwnPropertyNames(proto)) {
+        if (name === 'constructor' || seen.has(name)) continue;
+        seen.add(name);
+        if (this.hasRouteMetadata(proto, name)) {
+          methods.push(name);
+        }
       }
+      proto = Object.getPrototypeOf(proto);
     }
 
     return methods;

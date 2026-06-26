@@ -18,6 +18,16 @@ export class WebSocketPlugin implements Plugin {
   }
 
   async install(app: VeloceTS): Promise<void> {
+    const isBun = typeof Bun !== 'undefined';
+    const isDeno = typeof (globalThis as any).Deno !== 'undefined';
+    if (!isBun && !isDeno) {
+      throw new Error(
+        'WebSocketPlugin requires Bun or Deno runtime. ' +
+        'Node.js WebSocket support is not yet implemented in Veloce-TS. ' +
+        'Run your app with Bun (https://bun.sh) or Deno.'
+      );
+    }
+
     const metadata = app.getMetadata();
     const websockets = metadata.getWebSockets();
     const container = app.getContainer();
@@ -76,8 +86,8 @@ export class WebSocketPlugin implements Plugin {
     } else if (typeof (globalThis as any).Deno !== 'undefined') {
       return this.handleDenoUpgrade(c, metadata);
     } else {
-      // Node.js or other runtimes
-      return this.handleNodeUpgrade(c, metadata);
+      // Should never reach here — install() throws on Node.js before routes are registered.
+      return c.text('WebSocket support requires Bun or Deno runtime', 501);
     }
   }
 
@@ -123,15 +133,6 @@ export class WebSocketPlugin implements Plugin {
     };
 
     return response;
-  }
-
-  /**
-   * Handle WebSocket upgrade for Node.js runtime
-   */
-  private handleNodeUpgrade(c: any, metadata: any): Response {
-    // For Node.js, we need to handle this differently
-    // This is a simplified version - in production, you'd use a library like 'ws'
-    return c.text('WebSocket support requires Bun or Deno runtime', 501);
   }
 
   /**

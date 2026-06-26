@@ -70,7 +70,7 @@ export class HonoAdapter implements Adapter {
       
       default:
         throw new Error(
-          `Unsupported runtime: ${this.runtime}. FastAPI-TS supports Bun, Node.js, Deno, and Cloudflare Workers.`
+          `Unsupported runtime: ${this.runtime}. Veloce-TS supports Bun, Node.js, Deno, and Cloudflare Workers.`
         );
     }
   }

@@ -201,7 +201,12 @@ export class InMemoryUserProvider implements UserProvider {
   }
 
   async hashPassword(password: string): Promise<string> {
-    // In a real implementation, use bcrypt or similar
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'InMemoryUserProvider is not safe for production. ' +
+        'Implement the UserProvider interface with a proper password hashing library (e.g. bcrypt).'
+      );
+    }
     return Buffer.from(password).toString('base64');
   }
 

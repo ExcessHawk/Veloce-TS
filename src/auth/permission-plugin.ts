@@ -1,14 +1,16 @@
 import { Plugin } from '../core/plugin.js';
 import { VeloceTS } from '../core/application.js';
-import { 
-  PermissionManager, 
-  OwnershipPolicy, 
-  TeamMembershipPolicy, 
+import {
+  PermissionManager,
+  OwnershipPolicy,
+  TeamMembershipPolicy,
   PublicResourcePolicy,
   ResourcePermission,
   Permission
 } from './permissions.js';
 import { createPermissionMiddleware, PermissionGuard } from './permission-decorators.js';
+import { getCurrentUser } from './decorators.js';
+import { AuthenticationException } from './exceptions.js';
 import { Context } from 'hono';
 import { z } from 'zod';
 
@@ -97,8 +99,15 @@ export class PermissionPlugin implements Plugin {
   private addManagementRoutes(app: VeloceTS): void {
     const routes = this.config.routes || {};
 
+    const requireAuth = async (c: Context, next: () => Promise<void>) => {
+      const user = getCurrentUser(c);
+      if (!user) throw new AuthenticationException('Authentication required');
+      await next();
+    };
+
     // Grant permission to user
     app.post(routes.grant || '/permissions/grant', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userId, resource, resourceId, permissions, expiresAt } = body;
@@ -139,6 +148,7 @@ export class PermissionPlugin implements Plugin {
 
     // Revoke permission from user
     app.delete(routes.revoke || '/permissions/revoke', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userId, resource, resourceId } = body;
@@ -161,6 +171,7 @@ export class PermissionPlugin implements Plugin {
 
     // Check user permission
     app.post(routes.check || '/permissions/check', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userId, action, resource, resourceId, attributes } = body;
@@ -200,12 +211,13 @@ export class PermissionPlugin implements Plugin {
 
     // Get user permissions for a resource
     app.get('/permissions/user/:userId/resource/:resource', {
+      middleware: [requireAuth],
       handler: (c: Context) => {
-        const userId = c.req.param('userId');
-        const resource = c.req.param('resource');
+        const userId = c.req.param('userId') as string;
+        const resource = c.req.param('resource') as string;
         const resourceId = c.req.query('resourceId');
 
-        const permissions = this.permissionManager.getUserPermissions(userId, resource, resourceId);
+        const permissions = this.permissionManager.getUserPermissions(userId, resource, resourceId as string);
 
         return c.json({
           success: true,
@@ -219,8 +231,9 @@ export class PermissionPlugin implements Plugin {
 
     // Get all resources user has permissions on
     app.get('/permissions/user/:userId/resources', {
+      middleware: [requireAuth],
       handler: (c: Context) => {
-        const userId = c.req.param('userId');
+        const userId = c.req.param('userId') as string;
         const resources = this.permissionManager.getUserResources(userId);
 
         return c.json({
@@ -233,6 +246,7 @@ export class PermissionPlugin implements Plugin {
 
     // Bulk permission check
     app.post('/permissions/bulk-check', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { checks } = body;
@@ -273,6 +287,7 @@ export class PermissionPlugin implements Plugin {
 
     // Filter resources based on permissions
     app.post('/permissions/filter-resources', {
+      middleware: [requireAuth],
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userId, action, resources } = body;
