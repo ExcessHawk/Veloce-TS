@@ -496,11 +496,32 @@ app.usePlugin(new OpenAPIPlugin({
   docsPath: '/docs',
 }));
 
-// GraphQL support
+// GraphQL support — pass resolver classes via the resolvers option
+import { Resolver, GQLQuery, GQLMutation, Arg } from 'veloce-ts/graphql';
+import { z } from 'zod';
+
+@Resolver('user')
+class UserResolver {
+  @GQLQuery('getUser')
+  async getUser(@Arg('id', z.string()) id: string) {
+    return { id, name: 'Alice' };
+  }
+
+  @GQLMutation('createUser')
+  async createUser(@Arg('name', z.string()) name: string) {
+    return { id: '1', name };
+  }
+}
+
 app.usePlugin(new GraphQLPlugin({
   path: '/graphql',
   playground: true,
+  resolvers: [UserResolver],   // pass all @Resolver classes here
 }));
+
+// Alternatively, register via app.include() before usePlugin():
+// app.include(UserResolver);
+// app.usePlugin(new GraphQLPlugin({ playground: true }));
 ```
 
 ## 🌐 Multi-Runtime Support

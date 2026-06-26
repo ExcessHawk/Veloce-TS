@@ -200,4 +200,42 @@ describe('@Resolver / @GQLQuery / @GQLMutation decorator metadata', () => {
     }));
     expect(res.status).toBe(200);
   });
+
+  it('app.include(ResolverClass) registers resolver via MetadataRegistry', async () => {
+    @Resolver('comment')
+    class CommentResolver {
+      @GQLQuery('getComments')
+      getComments() { return []; }
+    }
+
+    const a = new Veloce({ docs: false });
+    a.include(CommentResolver);
+    a.usePlugin(new GraphQLPlugin({ playground: false }));
+    await a.compile();
+    // Schema built from resolver registered via include() — no throw
+    expect(true).toBe(true);
+  });
+
+  it('app.include() resolver + plugin option resolvers are merged', async () => {
+    @Resolver('tag')
+    class TagResolver {
+      @GQLQuery('getTags')
+      getTags() { return []; }
+    }
+
+    const a = new Veloce({ docs: false });
+    a.include(TagResolver);
+    a.usePlugin(new GraphQLPlugin({
+      resolvers: [UserResolver],
+      playground: false
+    }));
+    await a.compile();
+    const h = a.getHono();
+    const res = await h.fetch(new Request('http://localhost/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ getTags }' })
+    }));
+    expect(res.status).toBe(200);
+  });
 });

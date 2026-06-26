@@ -53,12 +53,12 @@ export class PermissionManager {
    */
   revokePermission(userId: string, resource: string, resourceId?: string): void {
     const key = this.getPermissionKey(userId, resource);
+    if (!resourceId) {
+      this.resourcePermissions.delete(key);
+      return;
+    }
     const permissions = this.resourcePermissions.get(key) || [];
-    
-    const filtered = permissions.filter(p => 
-      resourceId ? p.resourceId !== resourceId : true
-    );
-    
+    const filtered = permissions.filter(p => p.resourceId !== resourceId);
     if (filtered.length === 0) {
       this.resourcePermissions.delete(key);
     } else {

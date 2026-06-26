@@ -14,6 +14,7 @@ import { createCorsMiddleware } from '../middleware/cors';
 import { createRateLimitMiddleware } from '../middleware/rate-limit';
 import { createCompressionMiddleware } from '../middleware/compression';
 import { getLogger } from '../logging';
+import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql';
 import type {
   VeloceTSConfig,
   Class,
@@ -150,6 +151,19 @@ export class VeloceTS {
    * ```
    */
   include(controller: Class): void {
+    // If this is a @Resolver class, register it into the GraphQL metadata registry
+    if (hasResolverMetadata(controller)) {
+      const resolverMeta = getResolverMetadata(controller);
+      if (resolverMeta) {
+        this.metadata.registerGraphQLResolver(resolverMeta);
+        const fields = getGQLFieldsMetadata(controller);
+        for (const field of fields) {
+          this.metadata.registerGraphQLField(field);
+        }
+      }
+      return;
+    }
+
     // If this is a WebSocket gateway, register it and stop — it has no HTTP routes
     if (MetadataRegistry.hasWebSocketMetadata(controller)) {
       const wsMetadata = MetadataRegistry.getWebSocketMetadata(controller);

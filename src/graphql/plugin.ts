@@ -65,7 +65,11 @@ export class GraphQLPlugin implements Plugin {
 
   async install(app: VeloceTS): Promise<void> {
     const container = app.getContainer();
-    const schemaBuilder = new GraphQLSchemaBuilder(this.options.resolvers, container);
+    // Merge explicit resolvers (plugin options) with any registered via app.include()
+    const fromRegistry = app.getMetadata().getGraphQLResolvers().map((m: any) => m.target);
+    const fromOptions = this.options.resolvers as any[];
+    const allResolvers = [...new Set([...fromOptions, ...fromRegistry])];
+    const schemaBuilder = new GraphQLSchemaBuilder(allResolvers, container);
     this.schema = schemaBuilder.build();
 
     // Register GraphQL endpoint
