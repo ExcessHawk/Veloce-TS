@@ -53,7 +53,7 @@ function updateChangelog(newVersion: string): void {
   );
   
   // Update comparison links
-  const repoUrl = 'https://github.com/AlfredoMejia3001/veloce-ts';
+  const repoUrl = 'https://github.com/ExcessHawk/veloce-ts';
   changelog = changelog.replace(
     /\[Unreleased\]: .+/,
     `[Unreleased]: ${repoUrl}/compare/v${newVersion}...HEAD\n[${newVersion}]: ${repoUrl}/releases/tag/v${newVersion}`

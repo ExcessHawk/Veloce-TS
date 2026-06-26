@@ -564,7 +564,7 @@ Directional priorities—not a release calendar. Items may ship in a different o
 
 **Completed in v0.4.18:** Security audit of auth routes, JWT blacklist correctness, MetadataCompiler cache isolation fix, ORM lazy-loading for optional peer deps, 375-test suite, internal micro-benchmarks.
 
-For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and proposals: [GitHub Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions).
+For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and proposals: [GitHub Discussions](https://github.com/ExcessHawk/veloce-ts/discussions).
 
 ## 📖 Documentation
 
@@ -608,7 +608,7 @@ For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and pr
 - 🔌 Plugin system and extensibility
 
 ### Alfredo Mejia - Project Founder
-**[@AlfredoMejia3001](https://github.com/AlfredoMejia3001)** - Project founder and maintainer
+**[@ExcessHawk](https://github.com/ExcessHawk)** - Project founder and maintainer
 
 ---
 
@@ -631,7 +631,7 @@ Built with ❤️ using:
 
 <div align="center">
 
-**[⭐ Star us on GitHub](https://github.com/AlfredoMejia3001/veloce-ts)** • **[📖 Read the Docs](https://docs.veloce-ts.com)** • **[💬 Join Discussions](https://github.com/AlfredoMejia3001/veloce-ts/discussions)**
+**[⭐ Star us on GitHub](https://github.com/ExcessHawk/veloce-ts)** • **[📖 Read the Docs](https://docs.veloce-ts.com)** • **[💬 Join Discussions](https://github.com/ExcessHawk/veloce-ts/discussions)**
 
 Made with ⚡ by the Veloce team
 

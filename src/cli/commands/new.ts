@@ -258,7 +258,7 @@ dist/
 async function generateReadme(projectPath: string, name: string, template: Template): Promise<void> {
   const readme = `# ${name}
 
-A modern TypeScript API built with [Veloce-TS](https://github.com/AlfredoMejia3001/veloce-ts) using the **${template}** template.
+A modern TypeScript API built with [Veloce-TS](https://github.com/ExcessHawk/veloce-ts) using the **${template}** template.
 
 ## Getting Started
 
@@ -305,7 +305,7 @@ ${name}/
 
 ## Learn More
 
-- [Veloce-TS GitHub](https://github.com/AlfredoMejia3001/veloce-ts)
+- [Veloce-TS GitHub](https://github.com/ExcessHawk/veloce-ts)
 - [TypeScript Documentation](https://www.typescriptlang.org/docs/)
 - [Bun Documentation](https://bun.sh/docs)
 

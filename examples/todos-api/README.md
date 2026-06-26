@@ -1,6 +1,6 @@
 # todos-api
 
-A modern TypeScript API built with [Veloce-TS](https://github.com/AlfredoMejia3001/veloce-ts) using the **fullstack** template.
+A modern TypeScript API built with [Veloce-TS](https://github.com/ExcessHawk/veloce-ts) using the **fullstack** template.
 
 ## Getting Started
 
@@ -47,7 +47,7 @@ todos-api/
 
 ## Learn More
 
-- [Veloce-TS GitHub](https://github.com/AlfredoMejia3001/veloce-ts)
+- [Veloce-TS GitHub](https://github.com/ExcessHawk/veloce-ts)
 - [TypeScript Documentation](https://www.typescriptlang.org/docs/)
 - [Bun Documentation](https://bun.sh/docs)
 
