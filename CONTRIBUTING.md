@@ -1,199 +1,221 @@
 # Contributing to veloce-ts
 
-Thank you for your interest in contributing to veloce-ts! This document provides guidelines for contributing to the project.
-
 ## Development Setup
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/AlfredoMejia3001/veloce-ts.git
+git clone https://github.com/ExcessHawk/veloce-ts.git
 cd veloce-ts
-```
-
-2. Install dependencies:
-```bash
 bun install
+bun test          # 413 tests, 0 failures
+bun run build     # ESM + CJS + type declarations
 ```
 
-3. Run tests:
-```bash
-bun test
+**Requirements:** Bun >= 1.0.0, TypeScript >= 5.0.
+
+---
+
+## Repository Layout
+
+```
+src/
+  core/            # Application bootstrap, router compiler, metadata registry
+  auth/            # JWT, RBAC, OAuth, sessions, permissions plugins
+  cache/           # CacheManager, MemoryCacheStore, RedisCacheStore
+  decorators/      # @Controller, @Get, @Body, @Cache, @Timeout, etc.
+  dependencies/    # DIContainer, registerDrizzle/Prisma/TypeORM helpers
+  errors/          # HTTP exceptions, error handler, RFC 9457 formatter
+  graphql/         # GraphQLPlugin (accepts pre-built schema)
+  middleware/       # CORS, rate-limit, compression, request-context
+  orm/             # BaseRepository, Drizzle/TypeORM/Prisma adapters
+  plugins/         # PluginManager, HealthCheckPlugin, OpenAPIPlugin
+  responses/       # JSONResponse, HTMLResponse, RedirectResponse, etc.
+  validation/      # ValidationEngine wrapping Zod
+  websocket/       # WebSocketPlugin, WebSocketManager (Bun/Deno only)
+  testing/         # TestClient helper
+
+tests/             # Unit / integration tests (bun test)
+examples/          # Working example apps (chat-api, todos-api, products-api)
+benchmarks/        # HTTP throughput (run.ts) + internal micro-benchmarks
 ```
 
-4. Build the project:
-```bash
-bun run build
+Key constraint: `drizzle-orm`, `typeorm`, `prisma`, `graphql`, `ioredis` are **optional peer deps** — never import them at module top level. Use lazy `require()` inside a getter function.
+
+---
+
+## Making Changes
+
+### Branch naming
+
+```
+feat/short-description
+fix/short-description
+docs/short-description
+test/short-description
 ```
 
-## Development Workflow
+### Workflow
 
-1. Create a new branch for your feature or bugfix:
 ```bash
-git checkout -b feature/your-feature-name
+git checkout -b feat/my-feature
+
+# Make changes in src/
+bun run build          # rebuild dist/ so examples and tests pick up changes
+bun test               # must stay at 0 failures
+bun run typecheck      # must stay at 0 errors
 ```
 
-2. Make your changes and ensure tests pass:
+### Commit messages — Conventional Commits
+
+```
+feat: add @Timeout decorator with configurable message
+fix: MetadataCompiler cache key collision across test files
+docs: add migration guide for 0.x → 1.0
+test: cover PermissionPlugin grant/revoke routes
+perf: replace Set blacklist with Map for O(1) expiry lookup
+chore: bump hono to 4.12.16
+```
+
+One subject line, imperative mood, ≤ 72 chars. Add a body if the _why_ is non-obvious.
+
+---
+
+## Writing Tests
+
+Tests live in `tests/`. Each file is self-contained — no shared state between files (Bun runs all files in the same process).
+
+**Pattern for decorator-based routes:**
+
+```typescript
+import 'reflect-metadata';
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { Veloce, Controller, Get, Param } from 'veloce-ts';
+import { CacheManager } from 'veloce-ts';
+
+let hono: ReturnType<typeof app.getHono>;
+
+beforeAll(async () => {
+  CacheManager.reset(); // isolate from other test files
+  @Controller('/items')
+  class ItemController {
+    @Get('/:id')
+    get(@Param('id') id: string) { return { id }; }
+  }
+  const app = new Veloce({ docs: false });
+  app.include(ItemController);
+  await app.compile();
+  hono = app.getHono();
+});
+
+it('returns item', async () => {
+  const res = await hono.fetch(new Request('http://localhost/items/42'));
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.id).toBe('42');
+});
+```
+
+Rules:
+- Always call `CacheManager.reset()` in `beforeAll` for tests that register controllers — prevents cache collision with other files running in the same Bun process.
+- Use unique controller class names or wrap in `beforeAll` scope to avoid `reflect-metadata` key collision.
+- No network calls, no real databases in `tests/`. Mock at the service boundary.
+- Example apps in `examples/*/tests/` are integration tests — they spin up real in-process apps.
+
+---
+
+## Adding a New Plugin
+
+1. Create `src/plugins/my-plugin.ts` implementing the `Plugin` interface:
+
+```typescript
+import type { VeloceTS } from '../core/application';
+
+export class MyPlugin {
+  readonly name = 'my-plugin';
+  readonly version = '1.0.0';
+
+  constructor(private config: MyPluginConfig) {}
+
+  async install(app: VeloceTS): Promise<void> {
+    const hono = app.getHono();
+    hono.get('/my-route', (c) => c.json({ ok: true }));
+  }
+}
+```
+
+2. Export from `src/plugins/index.ts` and `src/index.ts`.
+3. Add at least one test in `tests/plugins.test.ts` or a dedicated file.
+4. Document in README under "Plugin System".
+
+---
+
+## Adding a New Decorator
+
+1. Define the decorator in `src/decorators/` or the relevant subdirectory.
+2. Store metadata using `MetadataRegistry` — never raw `Reflect.defineMetadata` keys outside the registry.
+3. Read it back in `RouterCompiler` or wherever dispatch happens.
+4. Export from `src/decorators/index.ts` and `src/index.ts`.
+5. Add a test that verifies the metadata is stored AND that dispatch produces the expected HTTP behavior.
+
+---
+
+## Testing Locally in a Project
+
 ```bash
+# In this repo
+bun link
+
+# In your test project
+bun link veloce-ts
+```
+
+After any source change, rebuild before testing:
+
+```bash
+bun run build && bun link
+```
+
+---
+
+## PR Checklist
+
+Before opening a pull request:
+
+- [ ] `bun test` — 0 failures
+- [ ] `bun run typecheck` — 0 errors
+- [ ] `bun run build` — builds without warnings
+- [ ] New feature has at least one test
+- [ ] Breaking change has an entry in `CHANGELOG.md` under `[Unreleased]` and a migration note in `MIGRATION.md`
+- [ ] Public API additions are exported from `src/index.ts`
+- [ ] Optional peer dep usage goes through lazy `require()`, not static `import`
+
+---
+
+## Release Process (maintainers)
+
+```bash
+# 1. Verify everything passes
 bun test
 bun run typecheck
-```
 
-3. Commit your changes following [Conventional Commits](https://www.conventionalcommits.org/):
-```bash
-git commit -m "feat: add new feature"
-git commit -m "fix: resolve bug"
-git commit -m "docs: update documentation"
-```
+# 2. Bump version (choose one)
+bun run release:patch   # x.y.Z
+bun run release:minor   # x.Y.0
+bun run release:major   # X.0.0
 
-4. Push your branch and create a pull request:
-```bash
-git push origin feature/your-feature-name
-```
+# 3. Move [Unreleased] entries to the new version in CHANGELOG.md
+# 4. Build production bundle
+bun run build:prod
 
-## Commit Message Guidelines
+# 5. Publish
+npm publish
 
-We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `style:` - Code style changes (formatting, etc.)
-- `refactor:` - Code refactoring
-- `perf:` - Performance improvements
-- `test:` - Test additions or modifications
-- `chore:` - Build process or auxiliary tool changes
-
-## Release Process
-
-### For Maintainers
-
-We use semantic versioning (MAJOR.MINOR.PATCH):
-
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
-
-#### Creating a Release
-
-1. Ensure all tests pass:
-```bash
-bun test
-bun run typecheck
-```
-
-2. Run the release script:
-```bash
-# For a patch release (0.1.0 -> 0.1.1)
-bun run release:patch
-
-# For a minor release (0.1.0 -> 0.2.0)
-bun run release:minor
-
-# For a major release (0.1.0 -> 1.0.0)
-bun run release:major
-```
-
-3. The release script will:
-   - Update version in package.json
-   - Update CHANGELOG.md
-   - Run tests
-   - Build the project
-   - Create a git commit and tag
-
-4. Review the changes and push:
-```bash
+# 6. Tag and push
+git tag vX.Y.Z
 git push && git push --tags
 ```
 
-5. The GitHub Actions workflow will automatically:
-   - Create a GitHub release
-   - Publish to npm
+---
 
-#### Manual Release (if needed)
+## Questions
 
-If you need to publish manually:
-
-1. Build the production version:
-```bash
-bun run build:prod
-```
-
-2. Test the package:
-```bash
-bun run test:package
-```
-
-3. Publish to npm:
-```bash
-npm publish
-```
-
-## Testing
-
-### Running Tests
-
-```bash
-# Run all tests
-bun test
-
-# Run tests in watch mode
-bun test --watch
-
-# Run tests with coverage
-bun test --coverage
-```
-
-### Writing Tests
-
-- Place tests in the `tests/` directory
-- Use descriptive test names
-- Follow the existing test patterns
-- Ensure tests are isolated and don't depend on external state
-
-### Testing Package Installation
-
-Before releasing, test that the package can be installed correctly:
-
-```bash
-bun run test:package
-```
-
-This will:
-- Pack the current package
-- Create a temporary project
-- Install the packed package
-- Test ESM and CJS imports
-- Verify tree-shaking works
-
-## Code Style
-
-- Use TypeScript for all code
-- Follow the existing code style
-- Run type checking: `bun run typecheck`
-- Use meaningful variable and function names
-- Add JSDoc comments for public APIs
-
-## Documentation
-
-- Update README.md for user-facing changes
-- Update CHANGELOG.md for all changes
-- Add JSDoc comments for new APIs
-- Include code examples in documentation
-
-## Pull Request Process
-
-1. Ensure your code passes all tests and type checks
-2. Update documentation as needed
-3. Add entries to CHANGELOG.md under [Unreleased]
-4. Request review from maintainers
-5. Address any feedback
-6. Once approved, a maintainer will merge your PR
-
-## Questions?
-
-If you have questions, please:
-- Open an issue on GitHub
-- Check existing issues and discussions
-- Review the documentation
-
-Thank you for contributing to veloce-ts! 🚀
+Open an issue on [GitHub](https://github.com/ExcessHawk/veloce-ts/issues) or start a [Discussion](https://github.com/ExcessHawk/veloce-ts/discussions).

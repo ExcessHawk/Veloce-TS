@@ -243,7 +243,7 @@ app.listen(3000);
 <summary><b>WebSocket Support</b></summary>
 
 ```typescript
-import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce-ts';
+import { WebSocket, OnConnect, OnMessage, OnDisconnect, WebSocketConnection } from 'veloce-ts';
 import { z } from 'zod';
 
 const MessageSchema = z.object({
