@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "0.4.18",
+  "version": "1.0.0",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
@@ -154,7 +154,8 @@
     "bin",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "MIGRATION.md"
   ],
   "publishConfig": {
     "access": "public",

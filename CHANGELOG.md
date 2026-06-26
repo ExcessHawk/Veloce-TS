@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-26
+
+First stable release. Establishes a frozen public API with semver guarantees going forward.
+
+### Breaking Changes
+
+- **`FastAPITS` export removed.** Use `VeloceTS` or the `Veloce` alias instead.
+  ```typescript
+  // Before
+  import { FastAPITS } from 'veloce-ts';
+  // After
+  import { Veloce } from 'veloce-ts';
+  ```
+
+- **`WebSocketPlugin` throws on Node.js at install time** instead of silently returning 501 at request time. If you were catching the 501 response, catch the constructor error instead. WebSocket is supported on Bun and Deno only.
+  ```typescript
+  // Node.js — throws Error('WebSocketPlugin requires Bun or Deno runtime...')
+  app.usePlugin(new WebSocketPlugin({ ... }));
+  ```
+
+- **`@InjectDrizzleRepository` decorator removed.** It was a no-op stub. Remove any usages — the decorator did nothing at runtime.
+
+### Added
+
+- **`OAuthPlugin`, `PermissionPlugin`, `SessionPlugin`** now exported from the main `'veloce-ts'` barrel (previously only from `'veloce-ts/auth'`).
+- **`registerPrisma(app, client)`** — thin DI helper for Prisma, mirrors `registerDrizzle`. Exports `PRISMA_TOKEN`.
+- **`registerTypeORM(app, dataSource)`** — thin DI helper for TypeORM. Exports `TYPEORM_TOKEN`.
+
+### Fixed
+
+- **TypeScript errors** — 12 pre-existing errors resolved: route param casts in auth plugins, `PrismaDelegate` missing `createMany`, middleware spread type mismatch in `RouterCompiler`.
+- **RouterCompiler** dead `compiledRoutes` Map removed — it was write-only and shared the same class-name collision bug that was already fixed in `MetadataCompiler`.
+- **Branding** — "FastAPI-TS" replaced with "Veloce-TS" in all error messages and JSDoc across `src/adapters/hono.ts`, `src/orm/prisma/plugin.ts`, `src/orm/typeorm/plugin.ts`, `src/orm/typeorm/decorators.ts`, `src/orm/transaction-plugin.ts`.
+
+### Test coverage
+
+413 tests passing, 0 failures across 21 files. New files added:
+- `tests/websocket.test.ts` — 11 tests (decorator registration, plugin construction on Bun, upgrade route, auth guards)
+- `tests/graphql.test.ts` — 10 tests (plugin install, invalid JSON, GET/POST, playground, introspection)
+
 ## [0.4.18] - 2026-06-25
 
 Full security & correctness audit across the framework core, auth layer, ORM integrations, and build pipeline. 375 tests passing, 0 failures.
@@ -790,7 +830,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - CLI tooling
 - Testing utilities
 
-[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.18...HEAD
+[Unreleased]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.18...v1.0.0
 [0.4.18]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.10...v0.4.18
 [0.4.10]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.4.9...v0.4.10
 [0.4.0]: https://github.com/AlfredoMejia3001/veloce-ts/compare/v0.3.3...v0.4.0
