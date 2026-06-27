@@ -20,6 +20,9 @@ export {
 
 export { ErrorHandler, type CustomErrorHandler, type ErrorHandlerOptions } from './handler.js';
 
+export type { ExceptionFilter } from './exception-filter.js';
+export { Catch, FilterManager } from './exception-filter.js';
+
 export {
   PROBLEM_JSON_MEDIA_TYPE,
   DEFAULT_PROBLEM_TYPE_BASE,

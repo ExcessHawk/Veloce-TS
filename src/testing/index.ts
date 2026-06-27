@@ -11,3 +11,4 @@ export {
   setupTestApp,
   clearMocks,
 } from './helpers';
+export { isolate, compileTestApp } from './isolate';

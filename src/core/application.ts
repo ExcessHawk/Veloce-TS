@@ -10,6 +10,8 @@ import { RouterCompiler } from './router-compiler';
 import { ValidationEngine } from '../validation/validator';
 import { ErrorHandler, type CustomErrorHandler } from '../errors/handler';
 import { PluginManager, type Plugin } from './plugin';
+import { FilterManager, type ExceptionFilter } from '../errors/exception-filter';
+import { InterceptorManager, type Interceptor } from './interceptor-manager';
 import { createCorsMiddleware } from '../middleware/cors';
 import { createRateLimitMiddleware } from '../middleware/rate-limit';
 import { createCompressionMiddleware } from '../middleware/compression';
@@ -78,6 +80,11 @@ export class VeloceTS {
   private compiled: boolean = false;
   private globalMiddleware: Middleware[] = [];
   private groupPrefix: string = '';
+  private filterManager = new FilterManager();
+  private interceptorManager = new InterceptorManager();
+  private shutdownHandlers: Array<(signal: string) => Promise<void>> = [];
+  private _shutdownTimeout = 30_000;
+  private shutdownSignalsRegistered = false;
 
   constructor(config?: VeloceTSConfig) {
     this.config = {
@@ -106,7 +113,9 @@ export class VeloceTS {
       this.metadata,
       this.container,
       this.validator,
-      this.errorHandler
+      this.errorHandler,
+      this.filterManager,
+      this.interceptorManager
     );
 
     // Apply CORS configuration if provided
@@ -509,6 +518,68 @@ export class VeloceTS {
   }
 
   // ============================================================================
+  // Exception Filters
+  // ============================================================================
+
+  useFilter(filter: ExceptionFilter): this {
+    this.filterManager.register(filter);
+    return this;
+  }
+
+  getFilterManager(): FilterManager {
+    return this.filterManager;
+  }
+
+  // ============================================================================
+  // Interceptors
+  // ============================================================================
+
+  useInterceptor(interceptor: Interceptor): this {
+    this.interceptorManager.addGlobal(interceptor);
+    return this;
+  }
+
+  getInterceptorManager(): InterceptorManager {
+    return this.interceptorManager;
+  }
+
+  // ============================================================================
+  // Graceful Shutdown
+  // ============================================================================
+
+  onShutdown(handler: (signal: string) => Promise<void>): this {
+    this.shutdownHandlers.push(handler);
+    return this;
+  }
+
+  setShutdownTimeout(ms: number): this {
+    this._shutdownTimeout = ms;
+    return this;
+  }
+
+  private async runShutdownHandlers(signal: string): Promise<void> {
+    const handlers = [...this.shutdownHandlers].reverse();
+    for (const handler of handlers) {
+      try { await handler(signal); } catch { /* ignore individual handler errors */ }
+    }
+  }
+
+  private registerShutdownSignals(): void {
+    if (typeof process === 'undefined' || this.shutdownSignalsRegistered) return;
+    this.shutdownSignalsRegistered = true;
+    const shutdown = async (signal: string) => {
+      await Promise.race([
+        this.runShutdownHandlers(signal),
+        new Promise<void>((_, rej) =>
+          setTimeout(() => rej(new Error('Shutdown timeout')), this._shutdownTimeout)
+        ),
+      ]).catch(() => {}).finally(() => process.exit(0));
+    };
+    process.once('SIGTERM', () => shutdown('SIGTERM'));
+    process.once('SIGINT',  () => shutdown('SIGINT'));
+  }
+
+  // ============================================================================
   // Utility Methods
   // ============================================================================
 
@@ -593,6 +664,9 @@ export class VeloceTS {
 
     // Mark as compiled
     this.compiled = true;
+
+    // Register SIGTERM/SIGINT handlers for onShutdown callbacks
+    this.registerShutdownSignals();
   }
 
   private serverInstance: any = null;

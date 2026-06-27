@@ -14,6 +14,48 @@ import { ErrorHandler } from '../errors/handler';
 import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata';
 import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
 import { BadRequestException } from '../errors/exceptions';
+import type { FilterManager } from '../errors/exception-filter';
+import { InterceptorManager, getInterceptors, type ExecutionContext } from './interceptor-manager';
+import { isSSE, getStreamContentType } from '../decorators/stream';
+
+function isAsyncGenerator(v: unknown): v is AsyncGenerator {
+  return v != null && typeof (v as any)[Symbol.asyncIterator] === 'function';
+}
+
+function sseResponse(gen: AsyncGenerator): Response {
+  const stream = new ReadableStream({
+    async pull(controller) {
+      const { value, done } = await gen.next();
+      if (done) { controller.close(); return; }
+      const data = typeof value === 'string' ? value : JSON.stringify(value);
+      controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+    },
+    cancel() { gen.return?.(undefined); },
+  });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
+function streamResponse(gen: AsyncGenerator, contentType: string): Response {
+  const stream = new ReadableStream({
+    async pull(controller) {
+      const { value, done } = await gen.next();
+      if (done) { controller.close(); return; }
+      const chunk = typeof value === 'string'
+        ? new TextEncoder().encode(value)
+        : value instanceof Uint8Array ? value
+        : new TextEncoder().encode(JSON.stringify(value));
+      controller.enqueue(chunk);
+    },
+    cancel() { gen.return?.(undefined); },
+  });
+  return new Response(stream, { headers: { 'Content-Type': contentType } });
+}
 
 /**
  * RouterCompiler converts metadata from decorators and functional API
@@ -26,7 +68,9 @@ export class RouterCompiler {
     private metadata: MetadataRegistry,
     private container: DIContainer,
     private validator: ValidationEngine,
-    private errorHandler: ErrorHandler
+    private errorHandler: ErrorHandler,
+    private filterManager?: FilterManager,
+    private interceptorManager?: InterceptorManager
   ) {}
 
   /**
@@ -134,77 +178,112 @@ export class RouterCompiler {
         // 3. Merge parameters and dependencies into correct order
         const allArgs = this.mergeArguments(args, deps, route.parameters, route.maxArgumentIndex);
 
-        // 4. Execute the handler
-        let result: any;
+        // 4. Build the core execution function (wrapped by interceptors below)
+        const localInterceptors = (route as any).handler
+          ? []
+          : getInterceptors(route.target, route.propertyKey);
 
-        // Check if this is a functional route (has handler property)
-        if ((route as any).handler) {
-          // Functional API route - call handler directly
-          result = await (route as any).handler(c, ...allArgs);
-        } else {
-          // Decorator-based route - instantiate controller and call method
-          const instance = await this.container.resolve(route.target, {
-            scope: 'transient',
-            context: c
-          });
-          
-          if (typeof instance[route.propertyKey] !== 'function') {
-            throw new Error(`Method ${route.propertyKey} not found on controller ${route.target.name}`);
-          }
-          
-          result = await instance[route.propertyKey](...allArgs);
-        }
+        const execute = async (): Promise<Response> => {
+          try {
+            let result: any;
 
-        // Cache the result if caching is enabled
-        if (cacheConfig && cacheKey && cacheManager) {
-          // Check custom condition
-          if (!cacheConfig.condition || cacheConfig.condition(result)) {
-            const { parseTTL } = await import('../cache/types.js');
-            const ttl = parseTTL(cacheConfig.ttl);
-            await cacheManager.set(cacheKey, result, ttl, cacheConfig.store);
-          }
-        }
+            // Check if this is a functional route (has handler property)
+            if ((route as any).handler) {
+              result = await (route as any).handler(c, ...allArgs);
+            } else {
+              // Decorator-based route - instantiate controller and call method
+              const instance = await this.container.resolve(route.target, {
+                scope: 'transient',
+                context: c
+              });
 
-        // Handle cache invalidation if configured
-        const invalidatePatterns = (route as any).cacheInvalidate;
-        if (invalidatePatterns && Array.isArray(invalidatePatterns)) {
-          if (!cacheManager) {
-            const { CacheManager } = await import('../cache/manager.js');
-            cacheManager = CacheManager;
-          }
+              if (typeof instance[route.propertyKey] !== 'function') {
+                throw new Error(`Method ${route.propertyKey} not found on controller ${route.target.name}`);
+              }
 
-          const params = c.req.param();
-          for (const pattern of invalidatePatterns) {
-            // Replace placeholders with actual values
-            let resolvedPattern = pattern;
-            if (params) {
-              for (const [key, value] of Object.entries(params)) {
-                resolvedPattern = resolvedPattern.replace(`{${key}}`, String(value));
+              result = await instance[route.propertyKey](...allArgs);
+            }
+
+            // Cache the result if caching is enabled
+            if (cacheConfig && cacheKey && cacheManager) {
+              if (!cacheConfig.condition || cacheConfig.condition(result)) {
+                const { parseTTL } = await import('../cache/types.js');
+                const ttl = parseTTL(cacheConfig.ttl);
+                await cacheManager.set(cacheKey, result, ttl, cacheConfig.store);
               }
             }
-            await cacheManager.invalidate(resolvedPattern);
+
+            // Handle cache invalidation if configured
+            const invalidatePatterns = (route as any).cacheInvalidate;
+            if (invalidatePatterns && Array.isArray(invalidatePatterns)) {
+              if (!cacheManager) {
+                const { CacheManager } = await import('../cache/manager.js');
+                cacheManager = CacheManager;
+              }
+              const params = c.req.param();
+              for (const pattern of invalidatePatterns) {
+                let resolvedPattern = pattern;
+                if (params) {
+                  for (const [key, value] of Object.entries(params)) {
+                    resolvedPattern = resolvedPattern.replace(`{${key}}`, String(value));
+                  }
+                }
+                await cacheManager.invalidate(resolvedPattern);
+              }
+            }
+
+            // 5a. SSE / Stream — return streaming response directly (skip serializer)
+            if (isAsyncGenerator(result)) {
+              if (isSSE(route.target, route.propertyKey)) {
+                return sseResponse(result);
+              }
+              const streamCT = getStreamContentType(route.target, route.propertyKey);
+              if (streamCT) {
+                return streamResponse(result, streamCT);
+              }
+            }
+
+            // 5b. Validate / strip response with @ResponseSchema if present
+            if ((route as any).responseSchema) {
+              try {
+                result = await (route as any).responseSchema.parseAsync(result);
+              } catch {
+                // Silently ignore output schema mismatches
+              }
+            }
+
+            // 5c. Apply @HttpCode status before serialising
+            if ((route as any).statusCode) {
+              c.status((route as any).statusCode as any);
+            }
+
+            // 5d. Serialize and return the response
+            return this.serializeResponse(c, result);
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            // Try exception filters first
+            if (this.filterManager) {
+              const filtered = await this.filterManager.handle(error, c);
+              if (filtered) return filtered;
+            }
+            // Fall back to default error handler
+            return await this.handleError(c, error);
           }
-        }
+        };
 
-        // 5a. Validate / strip response with @ResponseSchema if present
-        if ((route as any).responseSchema) {
-          try {
-            result = await (route as any).responseSchema.parseAsync(result);
-          } catch {
-            // Silently ignore schema mismatches on the output side so a
-            // misconfigured response schema does not break a working endpoint.
-          }
-        }
+        // 4b. Wrap with interceptor chain
+        const execCtx: ExecutionContext = {
+          request: c.req.raw,
+          handlerName: route.propertyKey,
+          controllerName: route.target?.name ?? 'FunctionalRoute',
+        };
 
-        // 5b. Apply @HttpCode status before serialising
-        if ((route as any).statusCode) {
-          c.status((route as any).statusCode as any);
+        if (this.interceptorManager) {
+          return this.interceptorManager.execute(localInterceptors, execute, execCtx);
         }
-
-        // 5c. Serialize and return the response
-        return this.serializeResponse(c, result);
+        return execute();
       } catch (error) {
-        // 6. Handle errors and pass to error handler
+        // Outer catch: errors from parameter extraction / dependency resolution
         return await this.handleError(c, error);
       }
     };

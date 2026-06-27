@@ -411,21 +411,16 @@ async function generateGraphQLTemplate(projectPath: string): Promise<void> {
   await mkdir(join(projectPath, 'src', 'resolvers'), { recursive: true });
 
   const mainFile = `import 'reflect-metadata';
-import { Veloce } from 'veloce-ts';
-import { GraphQLPlugin } from 'veloce-ts/plugins';
+import { Veloce, GraphQLPlugin } from 'veloce-ts';
 import { UserResolver } from './resolvers/user.resolver';
 
-const app = new Veloce({
-  title: 'My GraphQL API',
-  version: '1.0.0',
-});
+const app = new Veloce({ title: 'My GraphQL API', version: '1.0.0' });
 
-// Enable GraphQL
 app.usePlugin(new GraphQLPlugin({
   resolvers: [UserResolver],
+  playground: true,
 }));
 
-// Compile routes
 await app.compile();
 
 app.listen(3000, () => {
@@ -436,36 +431,28 @@ app.listen(3000, () => {
 
   await writeFile(join(projectPath, 'src', 'index.ts'), mainFile);
 
-  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce-ts/graphql';
+  const resolverFile = `import { Resolver, GQLQuery, GQLMutation, Arg } from 'veloce-ts/graphql';
 import { z } from 'zod';
 
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().email(),
-});
-
-type User = z.infer<typeof UserSchema>;
-
-@Resolver()
+@Resolver('user')
 export class UserResolver {
-  private users: User[] = [];
+  private users: Array<{ id: string; name: string; email: string }> = [];
 
-  @Query()
-  async users(): Promise<User[]> {
+  @GQLQuery('getUsers')
+  async getUsers() {
     return this.users;
   }
 
-  @Query()
-  async user(@Arg('id', z.string()) id: string): Promise<User | null> {
-    return this.users.find(u => u.id === id) || null;
+  @GQLQuery('getUser')
+  async getUser(@Arg('id', z.string()) id: string) {
+    return this.users.find(u => u.id === id) ?? null;
   }
 
-  @Mutation()
+  @GQLMutation('createUser')
   async createUser(
     @Arg('name', z.string()) name: string,
     @Arg('email', z.string().email()) email: string
-  ): Promise<User> {
+  ) {
     const user = { id: Date.now().toString(), name, email };
     this.users.push(user);
     return user;
@@ -657,36 +644,28 @@ export class UserController {
   await writeFile(join(projectPath, 'src', 'controllers', 'user.controller.ts'), controllerFile);
 
   // Generate GraphQL resolver
-  const resolverFile = `import { Resolver, Query, Mutation, Arg } from 'veloce-ts/graphql';
+  const resolverFile = `import { Resolver, GQLQuery, GQLMutation, Arg } from 'veloce-ts/graphql';
 import { z } from 'zod';
 
-const UserSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().email(),
-});
-
-type User = z.infer<typeof UserSchema>;
-
-@Resolver()
+@Resolver('user')
 export class UserResolver {
-  private users: User[] = [];
+  private users: Array<{ id: string; name: string; email: string }> = [];
 
-  @Query()
-  async users(): Promise<User[]> {
+  @GQLQuery('getUsers')
+  async getUsers() {
     return this.users;
   }
 
-  @Query()
-  async user(@Arg('id', z.string()) id: string): Promise<User | null> {
-    return this.users.find(u => u.id === id) || null;
+  @GQLQuery('getUser')
+  async getUser(@Arg('id', z.string()) id: string) {
+    return this.users.find(u => u.id === id) ?? null;
   }
 
-  @Mutation()
+  @GQLMutation('createUser')
   async createUser(
     @Arg('name', z.string()) name: string,
     @Arg('email', z.string().email()) email: string
-  ): Promise<User> {
+  ) {
     const user = { id: Date.now().toString(), name, email };
     this.users.push(user);
     return user;

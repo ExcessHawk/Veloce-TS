@@ -1,4 +1,4 @@
-// OpenAPI Generator - Generates OpenAPI 3.0 specification from metadata
+// OpenAPI Generator - Generates OpenAPI 3.1 specification from metadata
 import type { 
   OpenAPISpec, 
   RouteMetadata, 
@@ -11,7 +11,7 @@ import type { ZodSchema } from 'zod';
 import { ZodToJsonSchemaConverter } from './zod-to-json-schema';
 
 /**
- * OpenAPIGenerator generates OpenAPI 3.0 specification from route metadata
+ * OpenAPIGenerator generates OpenAPI 3.1 specification from route metadata
  */
 export class OpenAPIGenerator {
   private options: Required<OpenAPIOptions>;
@@ -56,13 +56,14 @@ export class OpenAPIGenerator {
   }
 
   /**
-   * Generate complete OpenAPI 3.0 specification
+   * Generate complete OpenAPI 3.1 specification
    */
   generate(): OpenAPISpec {
     const routes = this.metadata.getRoutes();
 
     const spec: OpenAPISpec = {
-      openapi: '3.0.0',
+      openapi: '3.1.0',
+      jsonSchemaDialect: 'https://spec.openapis.org/oas/3.1/dialect/base',
       info: {
         title: this.options.title,
         version: this.options.version,

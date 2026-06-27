@@ -1,55 +1,35 @@
-/**
- * Veloce-TS benchmark server
- * Runs on port 3001
- */
 import 'reflect-metadata';
-import { VeloceTS, Controller, Get, Post, Param, Body, HttpCode, Ctx } from '../../src/index';
+import { Veloce, Controller, Get, Post, Body, Param } from '../../src/index';
 import { z } from 'zod';
 
-const PORT = Number(process.env.BENCH_PORT ?? 3001);
+const BenchmarkBody = z.object({ name: z.string(), value: z.number() });
 
-// ── Schemas ──────────────────────────────────────────────────────────────────
-
-const UserBodySchema = z.object({
-  name: z.string().min(1),
-  email: z.string().email(),
-  age: z.number().int().positive(),
-});
-
-// ── Controllers ───────────────────────────────────────────────────────────────
-
-@Controller()
-class BenchController {
-  // Scenario 1: Hello World
+@Controller('/')
+class BenchmarkController {
   @Get('/hello')
   hello() {
     return { message: 'Hello, World!' };
   }
 
-  // Scenario 2: Route params
-  @Get('/users/:id')
-  getUser(@Param('id') id: string) {
-    return { id, name: `User ${id}` };
+  @Get('/json')
+  json() {
+    const obj: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i++) obj[`field${i}`] = i;
+    return obj;
   }
 
-  // Scenario 3: JSON body echo (use Ctx to read raw body to stay fair with others)
-  @Post('/echo')
-  async echo(@Ctx() c: any) {
-    const body = await c.req.json();
-    return body;
+  @Get('/params/:id')
+  params(@Param('id') id: string) {
+    return { id, timestamp: Date.now() };
   }
 
-  // Scenario 4: Zod validation (Veloce-TS handles this automatically via @Body)
-  @HttpCode(201)
   @Post('/validate')
-  validate(@Body(UserBodySchema) body: z.infer<typeof UserBodySchema>) {
-    return { ok: true, name: body.name };
+  validate(@Body(BenchmarkBody) body: z.infer<typeof BenchmarkBody>) {
+    return { received: body };
   }
 }
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
-
-const app = new VeloceTS({ docs: false, title: 'Bench' });
-app.include(BenchController);
-await app.listen(PORT);
-console.log(`[veloce-ts] listening on :${PORT}`);
+const app = new Veloce({ docs: false });
+app.include(BenchmarkController);
+await app.compile();
+app.listen(3000, () => console.log('veloce-ts benchmark server on :3000'));

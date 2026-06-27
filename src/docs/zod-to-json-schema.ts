@@ -1,7 +1,40 @@
-// Zod to JSON Schema converter with support for reusable schemas
+// Zod to JSON Schema converter with support for reusable schemas (OpenAPI 3.1)
 import type { ZodSchema } from 'zod';
 import type { OpenAPISpec } from '../types';
 import { zodToJsonSchema as baseZodToJsonSchema } from 'zod-to-json-schema';
+
+/**
+ * Recursively normalize a JSON Schema object from OpenAPI 3.0 to 3.1 format.
+ * Key change: `nullable: true` is not valid in 3.1 — replaced with type arrays.
+ */
+function normalizeFor31(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(normalizeFor31);
+
+  const result: any = {};
+
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === 'nullable') continue; // drop; handled below
+    result[key] = typeof value === 'object' && value !== null ? normalizeFor31(value) : value;
+  }
+
+  // Convert nullable:true to type array
+  if ((schema as any).nullable === true) {
+    const base = result.type;
+    if (base && typeof base === 'string') {
+      result.type = [base, 'null'];
+    } else if (Array.isArray(base)) {
+      if (!base.includes('null')) result.type = [...base, 'null'];
+    } else {
+      // No simple type — wrap with oneOf
+      const { ...rest } = result;
+      delete rest.nullable;
+      return { oneOf: [rest, { type: 'null' }] };
+    }
+  }
+
+  return result;
+}
 
 /**
  * Schema cache to track schemas that should be reusable components
@@ -54,7 +87,8 @@ export class ZodToJsonSchemaConverter {
       delete (jsonSchema as any).$schema;
     }
 
-    return jsonSchema;
+    // Normalize to OpenAPI 3.1 (replace nullable:true with type arrays)
+    return normalizeFor31(jsonSchema);
   }
 
   /**
@@ -155,7 +189,7 @@ export function zodToJsonSchema(schema: ZodSchema, spec?: OpenAPISpec): any {
       delete (jsonSchema as any).$schema;
     }
 
-    return jsonSchema;
+    return normalizeFor31(jsonSchema);
   } catch (error) {
     console.warn('Failed to convert Zod schema to JSON Schema:', error);
     return { type: 'object' };

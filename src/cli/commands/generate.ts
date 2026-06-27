@@ -1,7 +1,49 @@
 import { Command } from 'commander';
 import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { existsSync } from 'fs';
+
+// ── Scaffolding helpers ──────────────────────────────────────────────────────
+
+function toPascalCase(str: string): string {
+  return str
+    .replace(/[-_\s](.)/g, (_, c: string) => c.toUpperCase())
+    .replace(/^(.)/, (_, c: string) => c.toUpperCase());
+}
+
+function toKebabCase(str: string): string {
+  return str
+    .replace(/([a-z])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-');
+}
+
+function normalizeName(input: string) {
+  const kebab = toKebabCase(input);
+  const pascal = toPascalCase(kebab);
+  const camel = pascal.charAt(0).toLowerCase() + pascal.slice(1);
+  return { pascal, kebab, camel };
+}
+
+function resolveSrcDir(): string {
+  const src = join(process.cwd(), 'src');
+  return existsSync(src) ? src : process.cwd();
+}
+
+async function writeGenerated(filePath: string, content: string, dryRun: boolean): Promise<void> {
+  if (dryRun) {
+    console.log(`[dry-run] Would write: ${filePath}`);
+    console.log(content);
+    return;
+  }
+  await mkdir(dirname(filePath), { recursive: true });
+  if (existsSync(filePath)) {
+    console.error(`File already exists: ${filePath}`);
+    process.exit(1);
+  }
+  await writeFile(filePath, content);
+  console.log(`Created: ${filePath}`);
+}
 
 export function registerGenerateCommand(program: Command): void {
   const generateCommand = program
@@ -26,6 +68,294 @@ export function registerGenerateCommand(program: Command): void {
     .option('-o, --output <dir>', 'Output directory', 'src/client')
     .action(async (options: { input: string; output: string }) => {
       await generateClient(options);
+    });
+
+  // ── Scaffolding subcommands ─────────────────────────────────────────────────
+
+  generateCommand
+    .command('controller <name>')
+    .description('Generate a REST controller')
+    .option('--flat', 'Place file in src/ instead of src/controllers/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'controllers');
+      const filePath = join(dir, `${kebab}.controller.ts`);
+      const content = `import { Controller, Get, Post, Put, Delete, Body, Param } from 'veloce-ts';
+import { z } from 'zod';
+
+const Create${pascal}Dto = z.object({
+  // TODO: define your fields
+  name: z.string(),
+});
+
+type Create${pascal}Input = z.infer<typeof Create${pascal}Dto>;
+
+@Controller('/${kebab}s')
+export class ${pascal}Controller {
+  @Get('/')
+  async findAll() {
+    return [];
+  }
+
+  @Get('/:id')
+  async findOne(@Param('id') id: string) {
+    return { id };
+  }
+
+  @Post('/')
+  async create(@Body(Create${pascal}Dto) body: Create${pascal}Input) {
+    return body;
+  }
+
+  @Put('/:id')
+  async update(@Param('id') id: string, @Body(Create${pascal}Dto.partial()) body: Partial<Create${pascal}Input>) {
+    return { id, ...body };
+  }
+
+  @Delete('/:id')
+  async remove(@Param('id') id: string) {
+    return { id };
+  }
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+    });
+
+  generateCommand
+    .command('service <name>')
+    .description('Generate a service class')
+    .option('--flat', 'Place file in src/ instead of src/services/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'services');
+      const filePath = join(dir, `${kebab}.service.ts`);
+      const content = `export class ${pascal}Service {
+  async findAll() {
+    return [];
+  }
+
+  async findOne(id: string) {
+    return { id };
+  }
+
+  async create(data: Record<string, unknown>) {
+    return data;
+  }
+
+  async update(id: string, data: Record<string, unknown>) {
+    return { id, ...data };
+  }
+
+  async remove(id: string) {
+    return { id };
+  }
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+    });
+
+  generateCommand
+    .command('module <name>')
+    .description('Generate a module (controller + service + dto + barrel)')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { dryRun?: boolean }) => {
+      const { pascal, kebab } = normalizeName(name);
+      const src = resolveSrcDir();
+      const moduleDir = join(src, 'modules', kebab);
+      const controllerContent = `import { Controller, Get, Post, Put, Delete, Body, Param } from 'veloce-ts';
+import { Create${pascal}Dto, type Create${pascal}Input } from './${kebab}.dto';
+import { ${pascal}Service } from './${kebab}.service';
+
+@Controller('/${kebab}s')
+export class ${pascal}Controller {
+  private service = new ${pascal}Service();
+
+  @Get('/')
+  async findAll() {
+    return this.service.findAll();
+  }
+
+  @Get('/:id')
+  async findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Post('/')
+  async create(@Body(Create${pascal}Dto) body: Create${pascal}Input) {
+    return this.service.create(body as Record<string, unknown>);
+  }
+
+  @Put('/:id')
+  async update(@Param('id') id: string, @Body(Create${pascal}Dto.partial()) body: Partial<Create${pascal}Input>) {
+    return this.service.update(id, body as Record<string, unknown>);
+  }
+
+  @Delete('/:id')
+  async remove(@Param('id') id: string) {
+    return this.service.remove(id);
+  }
+}
+`;
+      const serviceContent = `export class ${pascal}Service {
+  async findAll() {
+    return [];
+  }
+
+  async findOne(id: string) {
+    return { id };
+  }
+
+  async create(data: Record<string, unknown>) {
+    return data;
+  }
+
+  async update(id: string, data: Record<string, unknown>) {
+    return { id, ...data };
+  }
+
+  async remove(id: string) {
+    return { id };
+  }
+}
+`;
+      const dtoContent = `import { z } from 'zod';
+
+export const Create${pascal}Dto = z.object({
+  // TODO: define your fields
+  name: z.string(),
+});
+
+export const Update${pascal}Dto = Create${pascal}Dto.partial();
+
+export type Create${pascal}Input = z.infer<typeof Create${pascal}Dto>;
+export type Update${pascal}Input = z.infer<typeof Update${pascal}Dto>;
+`;
+      const barrelContent = `export { ${pascal}Controller } from './${kebab}.controller';
+export { ${pascal}Service } from './${kebab}.service';
+export * from './${kebab}.dto';
+`;
+      await writeGenerated(join(moduleDir, `${kebab}.controller.ts`), controllerContent, opts.dryRun ?? false);
+      await writeGenerated(join(moduleDir, `${kebab}.service.ts`), serviceContent, opts.dryRun ?? false);
+      await writeGenerated(join(moduleDir, `${kebab}.dto.ts`), dtoContent, opts.dryRun ?? false);
+      await writeGenerated(join(moduleDir, `${kebab}.module.ts`), barrelContent, opts.dryRun ?? false);
+      if (!opts.dryRun) {
+        console.log(`\nModule created at src/modules/${kebab}/`);
+        console.log(`Register in your app:\n  import { ${pascal}Controller } from './modules/${kebab}/${kebab}.module';\n  app.include(${pascal}Controller);`);
+      }
+    });
+
+  generateCommand
+    .command('resolver <name>')
+    .description('Generate a GraphQL resolver')
+    .option('--flat', 'Place file in src/ instead of src/resolvers/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab, camel } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'resolvers');
+      const filePath = join(dir, `${kebab}.resolver.ts`);
+      const content = `import { Resolver, GQLQuery, GQLMutation, Arg } from 'veloce-ts/graphql';
+import { z } from 'zod';
+
+@Resolver('${camel}')
+export class ${pascal}Resolver {
+  private items: Array<{ id: string; name: string }> = [];
+
+  @GQLQuery('get${pascal}s')
+  async getAll() {
+    return this.items;
+  }
+
+  @GQLQuery('get${pascal}')
+  async getOne(@Arg('id', z.string()) id: string) {
+    return this.items.find(i => i.id === id) ?? null;
+  }
+
+  @GQLMutation('create${pascal}')
+  async create(@Arg('name', z.string()) name: string) {
+    const item = { id: Date.now().toString(), name };
+    this.items.push(item);
+    return item;
+  }
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+    });
+
+  generateCommand
+    .command('dto <name>')
+    .description('Generate a Zod DTO schema')
+    .option('--flat', 'Place file in src/ instead of src/dto/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'dto');
+      const filePath = join(dir, `${kebab}.dto.ts`);
+      const content = `import { z } from 'zod';
+
+export const Create${pascal}Dto = z.object({
+  // TODO: define your fields
+  name: z.string(),
+});
+
+export const Update${pascal}Dto = Create${pascal}Dto.partial();
+
+export type Create${pascal}Input = z.infer<typeof Create${pascal}Dto>;
+export type Update${pascal}Input = z.infer<typeof Update${pascal}Dto>;
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+    });
+
+  generateCommand
+    .command('middleware <name>')
+    .description('Generate a Hono middleware function')
+    .option('--flat', 'Place file in src/ instead of src/middleware/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal: _pascal, kebab, camel } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'middleware');
+      const filePath = join(dir, `${kebab}.middleware.ts`);
+      const content = `import type { Context, Next } from 'hono';
+
+export async function ${camel}Middleware(c: Context, next: Next): Promise<void> {
+  // TODO: implement middleware logic
+  await next();
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+    });
+
+  generateCommand
+    .command('plugin <name>')
+    .description('Generate a veloce-ts plugin class')
+    .option('--flat', 'Place file in src/ instead of src/plugins/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab, camel } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'plugins');
+      const filePath = join(dir, `${kebab}.plugin.ts`);
+      const content = `import type { Plugin } from 'veloce-ts';
+import type { VeloceTS } from 'veloce-ts';
+
+export class ${pascal}Plugin implements Plugin {
+  name = '${camel}';
+  version = '1.0.0';
+
+  async install(app: VeloceTS): Promise<void> {
+    // TODO: implement plugin logic
+    // app.getContainer().register(...)
+    // app.getHono().use(...)
+  }
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
     });
 }
 

@@ -174,6 +174,8 @@ export interface OpenAPIOptions {
 
 export interface OpenAPISpec {
   openapi: string;
+  /** OpenAPI 3.1: JSON Schema dialect URI */
+  jsonSchemaDialect?: string;
   info: {
     title: string;
     version: string;

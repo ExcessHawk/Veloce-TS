@@ -116,3 +116,25 @@ export * from './context/request-context';
 
 // Cache exports
 export * from './cache';
+
+// Event bus exports
+export { EventBus, globalEvents } from './events';
+
+// Extra decorator exports
+export {
+  Throttle, getThrottle, type ThrottleOptions,
+  ApiVersion, getApiVersion,
+  ResponseHeader, getResponseHeaders,
+  Redirect, getRedirect, type RedirectMeta,
+} from './decorators/extras';
+
+// Exception filter exports
+export type { ExceptionFilter } from './errors/exception-filter';
+export { Catch, FilterManager } from './errors/exception-filter';
+
+// Interceptor exports
+export type { Interceptor, ExecutionContext } from './core/interceptor-manager';
+export { UseInterceptor, getInterceptors, InterceptorManager } from './core/interceptor-manager';
+
+// Streaming decorator exports
+export { SSE, Stream, isSSE, getStreamContentType } from './decorators/stream';

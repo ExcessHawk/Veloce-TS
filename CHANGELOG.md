@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-27
+
+### Added
+
+- **CLI code generation** (`veloce generate`): scaffold controllers, services, modules, resolvers, DTOs, middleware, and plugins with a single command. `veloce new <name>` creates a full project with correct tsconfig and dependencies.
+  ```bash
+  veloce generate module school      # controller + service + dto + barrel
+  veloce generate controller users   # @Controller with full CRUD stubs
+  veloce generate resolver product   # @Resolver with @GQLQuery/@GQLMutation
+  veloce generate plugin cache       # Plugin interface implementation
+  ```
+
+- **Graceful shutdown** (`app.onShutdown()`): register async cleanup handlers executed on SIGTERM/SIGINT in reverse order, with a configurable timeout (default 30 s).
+  ```typescript
+  app.onShutdown(async () => { await db.end(); });
+  app.setShutdownTimeout(10_000);
+  ```
+
+- **Exception filters** (`@Catch`, `app.useFilter()`): centralised error handling per error class — no more try/catch in every controller.
+  ```typescript
+  @Catch(DrizzleError)
+  class DBFilter implements ExceptionFilter {
+    catch(err: DrizzleError, c: Context) { return c.json({ error: 'DB error' }, 500); }
+  }
+  app.useFilter(new DBFilter());
+  ```
+
+- **Interceptors** (`@UseInterceptor`, `app.useInterceptor()`): AOP middleware around handlers — logging, caching, retries, transforms.
+  ```typescript
+  app.useInterceptor(new LoggingInterceptor());
+  @UseInterceptor(CacheInterceptor)
+  @Get('/users') async getUsers() { ... }
+  ```
+
+- **Streaming responses** (`@SSE()`, `@Stream(contentType)`): return `AsyncGenerator` from any handler for SSE or raw byte streams.
+  ```typescript
+  @Get('/events') @SSE()
+  async* stream() { yield { data: 'ping' }; }
+
+  @Get('/export.csv') @Stream('text/csv')
+  async* csv() { yield 'id,name\n'; yield* rows; }
+  ```
+
+- **Event bus** (`EventBus`, `globalEvents`): lightweight in-process pub/sub with `on`, `once`, `off`, async `emit`, and `emitSync`.
+  ```typescript
+  globalEvents.on('user.created', async ({ userId }) => { ... });
+  await globalEvents.emit('user.created', { userId });
+  ```
+
+- **Extra decorators**:
+  - `@Throttle(limit, windowMs)` — per-endpoint rate limit override
+  - `@ApiVersion('v2')` — prefix route with version segment
+  - `@ResponseHeader(name, value)` — set response header declaratively
+  - `@Redirect(url, status?)` — 301/302/307/308 redirect
+  - `@Deprecated(message?)` — marks route in OpenAPI + emits warning
+
+- **Test isolation utilities** (`veloce-ts/testing`): `isolate()` resets shared singleton state between bun test files; `compileTestApp(app)` compiles and returns the Hono instance in one call.
+
+- **OpenAPI 3.1** output: `openapi: '3.1.0'`, `jsonSchemaDialect` field, `nullable: true` replaced with JSON Schema 2020-12 type arrays (`{ type: ['string', 'null'] }`), full `oneOf` fallback for complex unions.
+
+- **Benchmarks suite** (`benchmarks/`): `bun run benchmark` runs autocannon against veloce-ts, Hono, and Fastify across hello/json/params/validation routes and prints a comparison table.
+
+### Fixed
+
+- GraphQL templates in `veloce new` used `@Query`/`@Mutation` (wrong) — corrected to `@GQLQuery`/`@GQLMutation` with proper `veloce-ts/graphql` imports.
+
 ## [1.0.1] - 2026-06-26
 
 ### Fixed

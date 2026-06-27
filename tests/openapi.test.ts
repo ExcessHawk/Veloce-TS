@@ -27,7 +27,7 @@ describe('OpenAPIGenerator', () => {
     app = new VeloceTS({ title: 'Test API', version: '2.0.0' });
   });
 
-  it('generates a valid openapi 3.0.0 spec', async () => {
+  it('generates a valid openapi 3.1.0 spec', async () => {
     app.get('/ping', { handler: async () => ({ ok: true }), docs: { summary: 'Ping' } });
     await app.compile();
 
@@ -36,7 +36,7 @@ describe('OpenAPIGenerator', () => {
       version: '2.0.0',
     });
     const spec = gen.generate();
-    expect(spec.openapi).toBe('3.0.0');
+    expect(spec.openapi).toBe('3.1.0');
     expect(spec.info.title).toBe('Test API');
     expect(spec.info.version).toBe('2.0.0');
   });
@@ -121,7 +121,7 @@ describe('OpenAPIPlugin', () => {
     );
     expect(res.status).toBe(200);
     const spec = await res.json();
-    expect(spec.openapi).toBe('3.0.0');
+    expect(spec.openapi).toBe('3.1.0');
     expect(spec.info.title).toBe('Plugin Test');
   });
 
