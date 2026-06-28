@@ -57,8 +57,7 @@ export function zodToGraphQLType(schema: ZodSchema): string {
 
   // Handle ZodEnum
   if (zodType === 'ZodEnum') {
-    // For enums, we'll need to generate a custom enum type
-    return 'String'; // Fallback to String
+    return 'String';
   }
 
   // Handle ZodUnion

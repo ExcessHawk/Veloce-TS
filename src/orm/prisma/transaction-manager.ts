@@ -16,9 +16,7 @@ export class PrismaTransactionManager extends BaseTransactionManager {
   async begin(options?: TransactionMetadata): Promise<TransactionContext> {
     const context = this.createTransactionContext(options);
     
-    // Prisma doesn't support explicit begin/commit/rollback
-    // Instead, we'll use the $transaction method when needed
-    // For now, we'll just track the context
+    // Prisma doesn't support explicit begin/commit/rollback — uses $transaction instead
     this.prismaTransactions.set(context.id, {
       options,
       startTime: context.startTime

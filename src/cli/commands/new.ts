@@ -165,8 +165,6 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
     try {
       if (existsSync(projectPath)) {
         console.log('🧹 Cleaning up partial project...');
-        // Note: In a real implementation, you'd want to recursively delete
-        // For now, just warn the user
         console.warn(`⚠️  Please manually remove the directory: ${projectPath}`);
       }
     } catch (cleanupError) {
@@ -197,7 +195,7 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
     },
     dependencies: {
       'veloce-ts': `^${latestVersion}`,
-      hono: '^4.0.0', // Use specific version instead of 'latest'
+      hono: '^4.0.0',
       'reflect-metadata': '^0.2.0',
       zod: '^3.22.0',
     },

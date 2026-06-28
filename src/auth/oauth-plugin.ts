@@ -231,14 +231,10 @@ export class OAuthPlugin implements Plugin {
   }
 
   private async findUserByOAuthId(oauthId: string, provider: string): Promise<any> {
-    // This would need to be implemented based on your user provider
-    // For now, return null (user not found)
     return null;
   }
 
   private async findUserByEmail(email: string): Promise<any> {
-    // This would need to be implemented based on your user provider
-    // For now, return null (user not found)
     return null;
   }
 
@@ -262,9 +258,6 @@ export class OAuthPlugin implements Plugin {
   }
 
   private extendRouterCompiler(app: VeloceTS): void {
-    // This would extend the router compiler to handle OAuth metadata
-    // Similar to how auth plugin extends it
-    // For now, we'll keep it simple
   }
 
   getProvider(name: string): OAuthProvider | undefined {

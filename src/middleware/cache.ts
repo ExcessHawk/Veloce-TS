@@ -77,7 +77,6 @@ export function createCacheMiddleware(options: CacheMiddlewareOptions): Middlewa
       { key: customKey, prefix, includeQuery }
     ) + headerSuffix;
 
-    // Try to get from cache
     const cacheStore = store || CacheManager.getDefaultStore();
     const cached = await cacheStore.get(cacheKey);
 

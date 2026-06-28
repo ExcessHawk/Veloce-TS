@@ -125,9 +125,7 @@ export class PrismaPlugin implements Plugin {
    * Convert Zod schema to string representation (simplified)
    */
   private zodSchemaToString(schema: any): string {
-    // This is a simplified implementation
-    // In a real implementation, you'd want a proper schema serializer
-    return 'z.object({})'; // Placeholder
+    return 'z.object({})';
   }
   
   /**

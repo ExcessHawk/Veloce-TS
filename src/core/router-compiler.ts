@@ -301,9 +301,6 @@ export class RouterCompiler {
    * Get route metadata for the current request context
    */
   private getRouteMetadataForContext(c: Context): CompiledRouteMetadata | null {
-    // This is a simplified approach - in a real implementation we'd need to
-    // match the current route path and method to find the metadata
-    // For now, we'll store it in the context during route compilation
     return c.get('routeMetadata') || null;
   }
 

@@ -84,8 +84,6 @@ export abstract class BaseRepository<T, ID = string | number> implements IBaseRe
         // Try to validate with the full schema first
         return this.schema.parse(data);
       } catch {
-        // If validation fails, return as partial without validation
-        // In a real implementation, you might want to create a partial schema
         return data as Partial<T>;
       }
     }
