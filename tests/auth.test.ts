@@ -285,3 +285,65 @@ describe('AuthService', () => {
     await expect(authService.refresh(tokens.refreshToken)).rejects.toThrow();
   });
 });
+
+// ─── Refresh token uniqueness (jti) ──────────────────────────────────────────
+
+describe('JWTProvider refresh token uniqueness', () => {
+  const provider = new JWTProvider({ secret: SECRET, expiresIn: '1h', refreshExpiresIn: '7d' });
+
+  it('two refresh tokens for the same user in the same second are distinct', () => {
+    // Without a jti the payload is {sub,type,iat,exp,iss,aud}, so tokens minted
+    // within the same second were byte-identical — colliding in a DB unique
+    // index and making revocation of one affect the other session.
+    const a = provider.generateTokens({ sub: 'same-user' });
+    const b = provider.generateTokens({ sub: 'same-user' });
+    expect(a.refreshToken).not.toBe(b.refreshToken);
+  });
+
+  it('refresh token carries a unique jti claim', () => {
+    const { refreshToken } = provider.generateTokens({ sub: 'u1' });
+    const payload = provider.decodeToken(refreshToken);
+    expect(typeof payload?.jti).toBe('string');
+    expect((payload!.jti as string).length).toBeGreaterThan(10);
+  });
+
+  it('revoking one session does not revoke a second concurrent session', async () => {
+    const first = provider.generateTokens({ sub: 'multi-device' });
+    const second = provider.generateTokens({ sub: 'multi-device' });
+
+    await provider.blacklistToken(first.refreshToken);
+
+    expect(await provider.isBlacklisted(first.refreshToken)).toBe(true);
+    expect(await provider.isBlacklisted(second.refreshToken)).toBe(false);
+    await expect(provider.verifyRefreshToken(second.refreshToken)).resolves.toBeDefined();
+  });
+
+  it('access tokens also get a unique jti by default', () => {
+    const a = provider.generateTokens({ sub: 'u1' });
+    const b = provider.generateTokens({ sub: 'u1' });
+    const jtiA = provider.decodeToken(a.accessToken)?.jti;
+    const jtiB = provider.decodeToken(b.accessToken)?.jti;
+    expect(typeof jtiA).toBe('string');
+    expect(jtiA).not.toBe(jtiB);
+    // access and refresh ids are distinct from each other too
+    expect(jtiA).not.toBe(provider.decodeToken(a.refreshToken)?.jti);
+  });
+
+  it('a caller-supplied jti overrides the generated one', () => {
+    const { accessToken } = provider.generateTokens({ sub: 'u1', jti: 'my-own-id' });
+    expect(provider.decodeToken(accessToken)?.jti).toBe('my-own-id');
+  });
+
+  it('rotation issues fresh ids instead of reusing the old refresh token jti', async () => {
+    const original = provider.generateTokens({ sub: 'rotate-me' });
+    const oldRefreshJti = provider.decodeToken(original.refreshToken)?.jti;
+
+    const rotated = await provider.refreshAccessToken(original.refreshToken);
+
+    // Both rotated tokens are identifiable, and neither reuses the old id —
+    // so a jti-keyed revocation registry can tell the sessions apart.
+    expect(typeof provider.decodeToken(rotated.accessToken)?.jti).toBe('string');
+    expect(provider.decodeToken(rotated.accessToken)?.jti).not.toBe(oldRefreshJti);
+    expect(provider.decodeToken(rotated.refreshToken)?.jti).not.toBe(oldRefreshJti);
+  });
+});

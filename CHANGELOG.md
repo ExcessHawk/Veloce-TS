@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-07-26
+
+### Fixed
+
+- **Refresh tokens were not unique.** The payload was only `{sub, type, iat, exp, iss, aud}`, so two refresh tokens minted for the same user within the same second were byte-identical. That collides in a database unique index, and because both sessions held literally the same string, revoking or rotating one silently invalidated the other. Every token now carries a `jti` (`randomUUID()`).
+- **Access tokens now carry a `jti` too**, so an application keeping a revoked-token registry keyed by `jti` can also match tokens issued by `refreshAccessToken()`, not just those from an explicit login. A caller-supplied `jti` in the payload still takes precedence.
+- **`refreshAccessToken()` no longer copies the old refresh token's `jti`** into the rotated pair — a per-token identifier must not outlive the token it belongs to.
+
+
 ## [2.0.0] - 2026-07-26
 
 ### Security
@@ -974,7 +983,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v1.2.0...v2.0.0
 [1.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.18...v1.0.0
 [0.4.18]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.10...v0.4.18

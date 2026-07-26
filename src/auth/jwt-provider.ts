@@ -2,6 +2,7 @@
 // work under Bun but throw `SyntaxError: Named export 'sign' not found` under
 // real Node's ESM loader, so take the default export and destructure instead.
 import jsonwebtoken from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { TokenBlacklist, MemoryTokenBlacklist } from './token-blacklist.js';
 
@@ -84,6 +85,11 @@ export class JWTProvider {
     
     const accessPayload: TokenPayload = {
       sub: payload.sub,
+      // Default unique id per access token. Placed before the spread so a
+      // caller-supplied `jti` still wins. Having one by default lets apps keep
+      // a revoked-token registry keyed by `jti` that also covers tokens minted
+      // by refreshAccessToken(), not just those from an explicit login.
+      jti: randomUUID(),
       ...payload,
       iat: now,
       exp: now + expiresIn,
@@ -95,9 +101,15 @@ export class JWTProvider {
       algorithm: this.config.algorithm || 'HS256',
     });
 
+    // `jti` makes every refresh token unique. Without it the payload is just
+    // {sub, type, iat, exp, iss, aud}, so two tokens minted for the same user
+    // within the same second are byte-identical: they collide in a database
+    // unique index, and rotating/revoking one silently affects the other
+    // session because both are literally the same string.
     const refreshPayload: TokenPayload = {
       sub: payload.sub,
       type: 'refresh',
+      jti: randomUUID(),
       iat: now,
       exp: now + this.parseExpiration(this.config.refreshExpiresIn || '7d'),
       iss: this.config.issuer,
@@ -188,8 +200,10 @@ export class JWTProvider {
       sub: payload.sub,
       // Copy other claims except system ones
       ...Object.fromEntries(
-        Object.entries(payload).filter(([key]) => 
-          !['iat', 'exp', 'iss', 'aud', 'type'].includes(key)
+        // `jti` is per-token: carrying the old refresh token's id into the new
+        // pair would leak a stale identifier into the access token.
+        Object.entries(payload).filter(([key]) =>
+          !['iat', 'exp', 'iss', 'aud', 'type', 'jti'].includes(key)
         )
       ),
     });
