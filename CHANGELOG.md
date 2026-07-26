@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-07-26
+
+### Fixed
+
+- **Importing `veloce-ts` kept a Node process alive.** `CacheManager` built its default `MemoryCacheStore` eagerly at class-definition time, and that store starts a cleanup `setInterval` — so merely importing the framework was enough to stop a short-lived script (a CLI, a codegen task) from ever exiting on its own. The default store is now created on first use, and `reset()`/`destroy()` leave it uncreated until something needs it again. Long-running servers are unaffected.
+
+
 ## [2.0.1] - 2026-07-26
 
 ### Fixed
@@ -983,7 +990,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v1.2.0...v2.0.0
 [1.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.18...v1.0.0

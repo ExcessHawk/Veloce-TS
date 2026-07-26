@@ -10,7 +10,19 @@ import { MemoryCacheStore } from './memory-store';
  * Global cache manager
  */
 export class CacheManager {
-  private static defaultStore: CacheStore = new MemoryCacheStore();
+  // Created lazily. An eagerly-constructed MemoryCacheStore starts its cleanup
+  // setInterval at import time, which keeps the event loop alive — merely
+  // importing veloce-ts was enough to stop a short-lived Node script (a CLI, a
+  // codegen task) from ever exiting on its own.
+  private static defaultStoreInstance: CacheStore | null = null;
+
+  /** The default store, created on first use. */
+  private static get defaultStore(): CacheStore {
+    if (!this.defaultStoreInstance) {
+      this.defaultStoreInstance = new MemoryCacheStore();
+    }
+    return this.defaultStoreInstance;
+  }
   private static stores: Map<string, CacheStore> = new Map();
 
   /**
@@ -20,11 +32,12 @@ export class CacheManager {
    * timer (and keeps the event loop alive so the process never exits).
    */
   static reset(): void {
-    this.destroyStore(this.defaultStore);
+    this.destroyStore(this.defaultStoreInstance);
     for (const store of this.stores.values()) {
       this.destroyStore(store);
     }
-    this.defaultStore = new MemoryCacheStore();
+    // Left null on purpose: the next access recreates it lazily.
+    this.defaultStoreInstance = null;
     this.stores.clear();
   }
 
@@ -34,7 +47,8 @@ export class CacheManager {
    * process alive.
    */
   static destroy(): void {
-    this.destroyStore(this.defaultStore);
+    this.destroyStore(this.defaultStoreInstance);
+    this.defaultStoreInstance = null;
     for (const store of this.stores.values()) {
       this.destroyStore(store);
     }
@@ -42,8 +56,8 @@ export class CacheManager {
   }
 
   /** Invoke a store's optional destroy() hook, ignoring stores without one. */
-  private static destroyStore(store: CacheStore | undefined): void {
-    const destroyable = store as { destroy?: () => void } | undefined;
+  private static destroyStore(store: CacheStore | null | undefined): void {
+    const destroyable = store as { destroy?: () => void } | null | undefined;
     if (destroyable && typeof destroyable.destroy === 'function') {
       destroyable.destroy();
     }
@@ -53,7 +67,7 @@ export class CacheManager {
    * Set the default cache store
    */
   static setDefaultStore(store: CacheStore): void {
-    this.defaultStore = store;
+    this.defaultStoreInstance = store;
   }
 
   /**

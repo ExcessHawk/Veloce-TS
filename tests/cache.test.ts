@@ -195,6 +195,25 @@ describe('CacheManager – store lifecycle', () => {
     expect(CacheManager.getDefaultStore()).not.toBe(first);
   });
 
+  it('does not create the default store until it is actually used', () => {
+    // An eagerly-constructed MemoryCacheStore starts a cleanup setInterval at
+    // import time, which kept the event loop alive — importing veloce-ts was
+    // enough to stop a short-lived Node script from exiting.
+    CacheManager.destroy();
+    expect((CacheManager as any).defaultStoreInstance).toBeNull();
+
+    // Reading the store on demand creates it
+    const store = CacheManager.getDefaultStore();
+    expect(store).toBeInstanceOf(MemoryCacheStore);
+    expect((CacheManager as any).defaultStoreInstance).not.toBeNull();
+  });
+
+  it('reset() leaves the default store uncreated until next use', () => {
+    CacheManager.getDefaultStore();           // force creation
+    CacheManager.reset();
+    expect((CacheManager as any).defaultStoreInstance).toBeNull();
+  });
+
   it('destroy() releases named stores as well and clears the registry', () => {
     CacheManager.reset();
     const named = new MemoryCacheStore({ cleanupInterval: 60_000 });
