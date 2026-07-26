@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NotImplementedError } from './errors';
 
 // Base interfaces for repository pattern
 export interface PaginationOptions {
@@ -103,33 +104,22 @@ export abstract class BaseRepository<T, ID = string | number> implements IBaseRe
     return Promise.all(data.map(item => this.create(item)));
   }
   
-  async updateMany(where: FilterOptions, data: Partial<T>): Promise<number> {
-    const items = await this.findMany({ where });
-    let updated = 0;
-    
-    for (const item of items) {
-      const id = (item as any).id;
-      if (id) {
-        await this.update(id, data);
-        updated++;
-      }
-    }
-    
-    return updated;
+  /**
+   * ORM adapters MUST override this with a native bulk UPDATE.
+   * There is intentionally no default: the previous fallback fetched every
+   * matching row and updated them one by one (a silent full scan + N queries).
+   */
+  async updateMany(_where: FilterOptions, _data: Partial<T>): Promise<number> {
+    throw new NotImplementedError('updateMany()');
   }
-  
-  async deleteMany(where: FilterOptions): Promise<number> {
-    const items = await this.findMany({ where });
-    let deleted = 0;
-    
-    for (const item of items) {
-      const id = (item as any).id;
-      if (id && await this.delete(id)) {
-        deleted++;
-      }
-    }
-    
-    return deleted;
+
+  /**
+   * ORM adapters MUST override this with a native bulk DELETE.
+   * There is intentionally no default: the previous fallback fetched every
+   * matching row and deleted them one by one (a silent full scan + N queries).
+   */
+  async deleteMany(_where: FilterOptions): Promise<number> {
+    throw new NotImplementedError('deleteMany()');
   }
   
   // Default pagination implementation
@@ -162,11 +152,15 @@ export abstract class BaseRepository<T, ID = string | number> implements IBaseRe
     };
   }
   
-  // ORM adapters MUST override this with a native COUNT query.
-  // This default loads all rows into memory — never acceptable in production.
-  async count(where?: FilterOptions): Promise<number> {
-    const items = await this.findMany({ where });
-    return items.length;
+  /**
+   * ORM adapters MUST override this with a native COUNT query.
+   * There is intentionally no default: the previous fallback loaded every
+   * matching row into memory just to measure the array length.
+   * Note: the default findPaginated() implementation relies on count(),
+   * so a custom repository must override count() to use pagination.
+   */
+  async count(_where?: FilterOptions): Promise<number> {
+    throw new NotImplementedError('count()');
   }
   
   // Default exists implementation

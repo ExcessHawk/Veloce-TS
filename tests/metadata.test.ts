@@ -85,23 +85,7 @@ describe('MetadataRegistry', () => {
 // ─── MetadataCompiler ─────────────────────────────────────────────────────────
 
 describe('MetadataCompiler', () => {
-  it('compiles path regex matching :param style', () => {
-    const compiled = MetadataCompiler.compile({
-      target: ItemController,
-      propertyKey: 'getOne',
-      method: 'GET',
-      path: '/items/:id',
-      middleware: [],
-      parameters: [],
-      dependencies: [],
-      responses: [],
-    });
-    expect(compiled.pathRegex).toBeDefined();
-    expect(compiled.pathRegex!.test('/items/123')).toBe(true);
-    expect(compiled.pathRegex!.test('/items/')).toBe(false);
-  });
-
-  it('hasDependencies is true when dependencies array is non-empty', () => {
+  it('produces dense dependency array from sparse metadata', () => {
     const compiled = MetadataCompiler.compile({
       target: ItemController,
       propertyKey: 'list',
@@ -109,13 +93,14 @@ describe('MetadataCompiler', () => {
       path: '/items',
       middleware: [],
       parameters: [],
-      dependencies: [{ index: 0, provider: class MyService {}, scope: 'singleton' }],
+      dependencies: [undefined as any, { index: 1, provider: class MyService {}, scope: 'singleton' }],
       responses: [],
     });
-    expect(compiled.hasDependencies).toBe(true);
+    expect(compiled.dependenciesDense).toHaveLength(1);
+    expect(compiled.dependenciesDense[0].index).toBe(1);
   });
 
-  it('hasDependencies is false when no dependencies', () => {
+  it('dense arrays are empty when no parameters or dependencies', () => {
     const compiled = MetadataCompiler.compile({
       target: ItemController,
       propertyKey: 'list',
@@ -126,21 +111,27 @@ describe('MetadataCompiler', () => {
       dependencies: [],
       responses: [],
     });
-    expect(compiled.hasDependencies).toBe(false);
+    expect(compiled.parametersDense).toHaveLength(0);
+    expect(compiled.dependenciesDense).toHaveLength(0);
   });
 
-  it('hasBody is true when body parameter present', () => {
+  it('parameters are densified and sorted by argument index', () => {
     const compiled = MetadataCompiler.compile({
       target: ItemController,
       propertyKey: 'create',
       method: 'POST',
       path: '/items',
       middleware: [],
-      parameters: [{ index: 0, type: 'body', schema: z.object({ name: z.string() }), required: true }],
+      parameters: [
+        { index: 2, type: 'query', name: 'q', required: false },
+        undefined as any,
+        { index: 0, type: 'body', schema: z.object({ name: z.string() }), required: true },
+      ],
       dependencies: [],
       responses: [],
     });
-    expect(compiled.hasBody).toBe(true);
+    expect(compiled.parametersDense.map(p => p.index)).toEqual([0, 2]);
+    expect(compiled.parametersDense[0].type).toBe('body');
   });
 
   it('maxArgumentIndex is the highest index across params and deps', () => {
@@ -167,7 +158,7 @@ describe('MetadataCompiler', () => {
     ];
     const compiled = MetadataCompiler.compileAll(routes);
     expect(compiled).toHaveLength(2);
-    expect(compiled[0].pathRegex).toBeDefined();
-    expect(compiled[1].pathRegex).toBeDefined();
+    expect(compiled[0].maxArgumentIndex).toBe(-1);
+    expect(compiled[1].parametersDense).toHaveLength(0);
   });
 });

@@ -1,23 +1,23 @@
 # Veloce-TS Benchmarks
 
-Benchmarks comparing veloce-ts against Hono, Elysia, and Fastify.
+Benchmarks comparing veloce-ts against Hono, Express, and Fastify. One in-process harness (`run.ts`) — no external load-testing tool required.
 
 ## Requirements
 
 - Bun >= 1.0.0
-- `autocannon` for HTTP benchmarks: `bun add -g autocannon`
 
 ## Run all benchmarks
 
 ```bash
-bun run benchmarks/run-all.ts
+bun run benchmarks/run.ts
+# or, equivalently:
+bun run benchmark   # package.json script
 ```
 
-## Run individual
+## Run a single scenario
 
 ```bash
-bun benchmarks/servers/veloce.ts &
-autocannon -c 100 -d 10 http://localhost:3000/hello
+bun run benchmarks/run.ts --scenario hello
 ```
 
 ## Cases

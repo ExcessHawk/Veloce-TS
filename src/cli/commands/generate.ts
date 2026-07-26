@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
+import { OpenAPIGenerator } from '../../docs';
+import type { OpenAPISpec } from '../../types';
 
 // ── Scaffolding helpers ──────────────────────────────────────────────────────
 
@@ -382,9 +384,18 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
       process.exit(1);
     }
 
-    // Generate OpenAPI spec from metadata
+    // Reuse the framework's own OpenAPIGenerator (Zod-aware, reusable
+    // component schemas, security requirements, etc.) instead of a
+    // hand-rolled minimal builder — this keeps `veloce generate openapi`
+    // byte-for-byte consistent with what the OpenAPIPlugin serves at runtime.
     const metadata = app.getMetadata();
-    const spec = generateOpenAPISpec(metadata, app);
+    const config = typeof app.getConfig === 'function' ? app.getConfig() : {};
+    const generator = new OpenAPIGenerator(metadata, {
+      title: config?.title,
+      version: config?.version,
+      description: config?.description,
+    });
+    const spec = generator.generate();
 
     // Write to file
     const outputPath = join(process.cwd(), options.output);
@@ -395,87 +406,6 @@ async function generateOpenAPI(options: { output: string }): Promise<void> {
     console.error('Failed to generate OpenAPI spec:', error);
     process.exit(1);
   }
-}
-
-function generateOpenAPISpec(metadata: any, app: any): any {
-  const routes = metadata.getRoutes();
-
-  const spec = {
-    openapi: '3.0.0',
-    info: {
-      title: app.config?.title || 'Veloce API',
-      version: app.config?.version || '1.0.0',
-      description: app.config?.description || 'API built with Veloce',
-    },
-    paths: {} as Record<string, any>,
-    components: {
-      schemas: {},
-    },
-  };
-
-  // Build paths from routes
-  for (const route of routes) {
-    const path = route.path;
-    const method = route.method.toLowerCase();
-
-    if (!spec.paths[path]) {
-      spec.paths[path] = {};
-    }
-
-    spec.paths[path][method] = {
-      summary: route.docs?.summary || `${method.toUpperCase()} ${path}`,
-      description: route.docs?.description,
-      tags: route.docs?.tags || [],
-      parameters: extractParameters(route),
-      requestBody: extractRequestBody(route),
-      responses: {
-        '200': {
-          description: 'Successful response',
-          content: {
-            'application/json': {
-              schema: { type: 'object' },
-            },
-          },
-        },
-      },
-    };
-  }
-
-  return spec;
-}
-
-function extractParameters(route: any): any[] {
-  const params: any[] = [];
-
-  for (const param of route.parameters || []) {
-    if (param.type === 'query' || param.type === 'param' || param.type === 'header') {
-      params.push({
-        name: param.name || 'unknown',
-        in: param.type === 'param' ? 'path' : param.type,
-        required: param.required || false,
-        schema: { type: 'string' },
-      });
-    }
-  }
-
-  return params;
-}
-
-function extractRequestBody(route: any): any | undefined {
-  const bodyParam = route.parameters?.find((p: any) => p.type === 'body');
-
-  if (!bodyParam) {
-    return undefined;
-  }
-
-  return {
-    required: true,
-    content: {
-      'application/json': {
-        schema: { type: 'object' },
-      },
-    },
-  };
 }
 
 async function generateClient(options: { input: string; output: string }): Promise<void> {
@@ -492,23 +422,21 @@ async function generateClient(options: { input: string; output: string }): Promi
 
     // Read OpenAPI spec
     const specFile = await Bun.file(specPath).text();
-    const spec = JSON.parse(specFile);
+    const spec = JSON.parse(specFile) as OpenAPISpec;
 
     // Create output directory
     const outputDir = join(process.cwd(), options.output);
     await mkdir(outputDir, { recursive: true });
 
-    // Generate client code
-    const clientCode = generateClientCode(spec);
-
-    // Write client file
-    const clientPath = join(outputDir, 'client.ts');
-    await writeFile(clientPath, clientCode);
-
-    // Generate types file
+    // Generate types file first — client method signatures reference it.
     const typesCode = generateTypesCode(spec);
     const typesPath = join(outputDir, 'types.ts');
     await writeFile(typesPath, typesCode);
+
+    // Generate client code
+    const clientCode = generateClientCode(spec);
+    const clientPath = join(outputDir, 'client.ts');
+    await writeFile(clientPath, clientCode);
 
     console.log(`✓ TypeScript client generated in ${options.output}`);
     console.log(`  - ${options.output}/client.ts`);
@@ -519,8 +447,129 @@ async function generateClient(options: { input: string; output: string }): Promi
   }
 }
 
-function generateClientCode(spec: any): string {
-  const baseUrl = spec.servers?.[0]?.url || 'http://localhost:3000';
+// ── JSON Schema → TypeScript type mapping ───────────────────────────────────
+//
+// Basic but real mapping from an OpenAPI/JSON-Schema fragment to a TypeScript
+// type expression string. Anything the mapper doesn't recognize falls back to
+// `unknown` (never `any`) so callers still get a compiler error if they treat
+// the value carelessly, instead of silently losing type safety.
+
+interface TypeMapOptions {
+  /** Prefix applied to `$ref` component names, e.g. 'Types.' from client.ts. */
+  refPrefix?: string;
+}
+
+/** Extract the component name from a `#/components/schemas/Name` ref. */
+function refComponentName(ref: string): string {
+  const segments = ref.split('/');
+  return segments[segments.length - 1] || 'unknown';
+}
+
+/** Quote an object property key only when it isn't a valid TS identifier. */
+function propKey(name: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
+/** Wrap a type expression in parens if it's a top-level union/intersection. */
+function parenIfCompound(type: string): string {
+  return /\s[|&]\s/.test(type) ? `(${type})` : type;
+}
+
+/**
+ * Convert a JSON-Schema/OpenAPI schema fragment into a TypeScript type
+ * expression. Handles: $ref, oneOf/anyOf (union), allOf (intersection),
+ * enum (literal union), object/array/string/number/boolean/null, and nested
+ * combinations of the above. Anything unrecognized becomes `unknown`.
+ */
+export function jsonSchemaToTs(schema: any, options: TypeMapOptions = {}): string {
+  if (!schema || typeof schema !== 'object') return 'unknown';
+
+  if (typeof schema.$ref === 'string') {
+    return `${options.refPrefix ?? ''}${refComponentName(schema.$ref)}`;
+  }
+
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
+    return schema.oneOf.map((s: any) => jsonSchemaToTs(s, options)).join(' | ');
+  }
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
+    return schema.anyOf.map((s: any) => jsonSchemaToTs(s, options)).join(' | ');
+  }
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    return schema.allOf.map((s: any) => jsonSchemaToTs(s, options)).join(' & ');
+  }
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+    return schema.enum
+      .map((v: any) => (typeof v === 'string' ? JSON.stringify(v) : String(v)))
+      .join(' | ');
+  }
+
+  const declaredType = schema.type;
+  const types: string[] = Array.isArray(declaredType)
+    ? declaredType
+    : declaredType
+      ? [declaredType]
+      : [];
+
+  if (types.length > 1) {
+    return types.map((t) => primitiveOrContainer(t, schema, options)).join(' | ');
+  }
+  if (types.length === 1) {
+    return primitiveOrContainer(types[0], schema, options);
+  }
+
+  // No explicit `type` — infer from shape (common with loosely-typed specs).
+  if (schema.properties) return objectLiteral(schema, options);
+  if (schema.items) return `${parenIfCompound(jsonSchemaToTs(schema.items, options))}[]`;
+
+  return 'unknown';
+}
+
+function primitiveOrContainer(type: string, schema: any, options: TypeMapOptions): string {
+  switch (type) {
+    case 'string':
+      return 'string';
+    case 'number':
+    case 'integer':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'null':
+      return 'null';
+    case 'array': {
+      const itemType = schema.items ? jsonSchemaToTs(schema.items, options) : 'unknown';
+      return `${parenIfCompound(itemType)}[]`;
+    }
+    case 'object':
+      return objectLiteral(schema, options);
+    default:
+      return 'unknown';
+  }
+}
+
+function objectLiteral(schema: any, options: TypeMapOptions): string {
+  if (!schema.properties) {
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+      return `Record<string, ${jsonSchemaToTs(schema.additionalProperties, options)}>`;
+    }
+    return 'Record<string, unknown>';
+  }
+
+  const required: string[] = Array.isArray(schema.required) ? schema.required : [];
+  const props = Object.entries(schema.properties)
+    .map(([name, propSchema]) => {
+      const optional = !required.includes(name);
+      return `${propKey(name)}${optional ? '?' : ''}: ${jsonSchemaToTs(propSchema, options)}`;
+    })
+    .join('; ');
+
+  return props ? `{ ${props} }` : 'Record<string, unknown>';
+}
+
+// ── Client code generation ──────────────────────────────────────────────────
+
+export function generateClientCode(spec: OpenAPISpec): string {
+  const baseUrl = (spec as any).servers?.[0]?.url || 'http://localhost:3000';
 
   let code = `// Generated TypeScript client for ${spec.info.title}
 // Version: ${spec.info.version}
@@ -534,8 +583,8 @@ export class APIClient {
     method: string,
     path: string,
     options?: {
-      params?: Record<string, any>;
-      body?: any;
+      params?: Record<string, unknown>;
+      body?: unknown;
       headers?: Record<string, string>;
     }
   ): Promise<T> {
@@ -543,7 +592,7 @@ export class APIClient {
 
     if (options?.params) {
       Object.entries(options.params).forEach(([key, value]) => {
-        url.searchParams.append(key, String(value));
+        if (value !== undefined) url.searchParams.append(key, String(value));
       });
     }
 
@@ -553,11 +602,15 @@ export class APIClient {
         'Content-Type': 'application/json',
         ...options?.headers,
       },
-      body: options?.body ? JSON.stringify(options.body) : undefined,
+      body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
 
     if (!response.ok) {
       throw new Error(\`API request failed: \${response.statusText}\`);
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
     }
 
     return response.json();
@@ -567,10 +620,8 @@ export class APIClient {
 
   // Generate methods for each endpoint
   for (const [path, methods] of Object.entries(spec.paths || {})) {
-    for (const [method, operation] of Object.entries(methods as any)) {
-      const methodName = generateMethodName(method, path, operation);
-      const methodCode = generateMethodCode(method, path, operation);
-      code += methodCode + '\n';
+    for (const [method, operation] of Object.entries(methods as Record<string, any>)) {
+      code += generateMethodCode(method, path, operation) + '\n';
     }
   }
 
@@ -579,7 +630,7 @@ export class APIClient {
   return code;
 }
 
-function generateMethodName(method: string, path: string, operation: any): string {
+export function generateMethodName(method: string, path: string, operation: any): string {
   // Use operationId if available, otherwise generate from path
   if (operation.operationId) {
     return operation.operationId;
@@ -590,35 +641,65 @@ function generateMethodName(method: string, path: string, operation: any): strin
     .replace(/\{|\}/g, '')
     .replace(/\//g, '_')
     .replace(/^_/, '')
-    .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    .replace(/_([a-z])/g, (_: string, letter: string) => letter.toUpperCase());
 
   return `${method}${cleanPath.charAt(0).toUpperCase() + cleanPath.slice(1)}`;
+}
+
+/** Resolve the TS type of a `requestBody`'s JSON content, or 'unknown'. */
+function requestBodyType(operation: any): string {
+  const schema = operation.requestBody?.content?.['application/json']?.schema;
+  if (!schema) return 'unknown';
+  return jsonSchemaToTs(schema, { refPrefix: 'Types.' });
+}
+
+/**
+ * Resolve the TS type of the primary 2xx JSON response.
+ * A 204 (No Content) yields `void`; a missing/undocumented body is `unknown`.
+ */
+function responseBodyType(operation: any): string {
+  const responses: Record<string, any> = operation.responses || {};
+  const successKeys = Object.keys(responses)
+    .filter((k) => /^2\d\d$/.test(k))
+    .sort();
+
+  for (const key of successKeys) {
+    if (key === '204') return 'void';
+    const schema = responses[key]?.content?.['application/json']?.schema;
+    if (schema) return jsonSchemaToTs(schema, { refPrefix: 'Types.' });
+  }
+
+  return 'unknown';
 }
 
 function generateMethodCode(method: string, path: string, operation: any): string {
   const methodName = generateMethodName(method, path, operation);
   const hasBody = method === 'post' || method === 'put' || method === 'patch';
-  const hasParams = operation.parameters?.some((p: any) => p.in === 'query');
-  const hasPathParams = operation.parameters?.some((p: any) => p.in === 'path');
+  const allParams: any[] = operation.parameters || [];
+  const pathParams = allParams.filter((p) => p.in === 'path');
+  const queryParams = allParams.filter((p) => p.in === 'query');
 
-  let params: string[] = [];
-  let pathParamNames: string[] = [];
+  const params: string[] = [];
+  const pathParamNames: string[] = pathParams.map((p) => p.name);
+  params.push(...pathParams.map((p) => `${p.name}: string`));
 
-  if (hasPathParams) {
-    const pathParams = operation.parameters.filter((p: any) => p.in === 'path');
-    pathParamNames = pathParams.map((p: any) => p.name);
-    params.push(...pathParams.map((p: any) => `${p.name}: string`));
-  }
-
+  const bodyType = hasBody ? requestBodyType(operation) : undefined;
   if (hasBody) {
-    params.push('body: any');
+    params.push(`body: ${bodyType}`);
   }
 
-  if (hasParams) {
-    params.push('params?: Record<string, any>');
+  if (queryParams.length > 0) {
+    const allOptional = queryParams.every((p) => !p.required);
+    const queryProps = queryParams
+      .map((p) => {
+        const propType = jsonSchemaToTs(p.schema ?? { type: 'string' }, { refPrefix: 'Types.' });
+        return `${propKey(p.name)}${p.required ? '' : '?'}: ${propType}`;
+      })
+      .join('; ');
+    params.push(`params${allOptional ? '?' : ''}: { ${queryProps} }`);
   }
 
-  const paramsStr = params.length > 0 ? params.join(', ') : '';
+  const paramsStr = params.join(', ');
 
   // Replace path parameters
   let finalPath = path;
@@ -626,56 +707,43 @@ function generateMethodCode(method: string, path: string, operation: any): strin
     finalPath = finalPath.replace(`{${paramName}}`, `\${${paramName}}`);
   }
 
-  return `  async ${methodName}(${paramsStr}): Promise<any> {
-    return this.request('${method.toUpperCase()}', \`${finalPath}\`, {
+  const responseType = responseBodyType(operation);
+
+  return `  async ${methodName}(${paramsStr}): Promise<${responseType}> {
+    return this.request<${responseType}>('${method.toUpperCase()}', \`${finalPath}\`, {
       ${hasBody ? 'body,' : ''}
-      ${hasParams ? 'params,' : ''}
+      ${queryParams.length > 0 ? 'params,' : ''}
     });
   }
 `;
 }
 
-function generateTypesCode(spec: any): string {
+// ── Types file generation ────────────────────────────────────────────────────
+
+export function generateTypesCode(spec: OpenAPISpec): string {
   let code = `// Generated types for ${spec.info.title}
 // Version: ${spec.info.version}
 
 `;
 
-  // Generate types from schemas
-  if (spec.components?.schemas) {
-    for (const [name, schema] of Object.entries(spec.components.schemas)) {
+  const schemas = spec.components?.schemas || {};
+  for (const [name, schema] of Object.entries(schemas)) {
+    const s = schema as any;
+    if (s && typeof s === 'object' && s.type === 'object' && s.properties) {
+      // Object schemas become interfaces so consumers get per-property
+      // docs/autocomplete instead of an opaque type alias.
+      const required: string[] = Array.isArray(s.required) ? s.required : [];
       code += `export interface ${name} {\n`;
-      code += generateInterfaceProperties(schema as any);
+      for (const [propName, propSchema] of Object.entries(s.properties)) {
+        const optional = !required.includes(propName);
+        code += `  ${propKey(propName)}${optional ? '?' : ''}: ${jsonSchemaToTs(propSchema)};\n`;
+      }
       code += '}\n\n';
+    } else {
+      // Arrays, unions, enums, primitives, etc. — a type alias.
+      code += `export type ${name} = ${jsonSchemaToTs(s)};\n\n`;
     }
   }
 
   return code;
-}
-
-function generateInterfaceProperties(schema: any, indent: string = '  '): string {
-  let props = '';
-
-  if (schema.properties) {
-    for (const [propName, propSchema] of Object.entries(schema.properties)) {
-      const prop = propSchema as any;
-      const optional = !schema.required?.includes(propName);
-      const type = mapJsonSchemaType(prop);
-      props += `${indent}${propName}${optional ? '?' : ''}: ${type};\n`;
-    }
-  }
-
-  return props;
-}
-
-function mapJsonSchemaType(schema: any): string {
-  if (schema.type === 'string') return 'string';
-  if (schema.type === 'number' || schema.type === 'integer') return 'number';
-  if (schema.type === 'boolean') return 'boolean';
-  if (schema.type === 'array') {
-    const itemType = schema.items ? mapJsonSchemaType(schema.items) : 'any';
-    return `${itemType}[]`;
-  }
-  if (schema.type === 'object') return 'Record<string, any>';
-  return 'any';
 }

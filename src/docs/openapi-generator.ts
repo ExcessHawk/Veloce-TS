@@ -56,6 +56,42 @@ export class OpenAPIGenerator {
   }
 
   /**
+   * Derive a stable, deterministic component-name hint for a route's schema
+   * when no explicit name was provided, e.g. "UserControllerCreateBody".
+   * Uses the controller class name + handler method name + a `kind` suffix
+   * (Body, Response, Response201, ...). For the functional API, `target` is
+   * the internal `FunctionalRoute` marker and `propertyKey` is derived from
+   * the HTTP method + path, so the result is still stable across runs.
+   */
+  private static deriveSchemaName(route: RouteMetadata, kind: string): string {
+    const controllerName = (route.target as any)?.name || 'Route';
+    const methodName = route.propertyKey || '';
+    const methodPart = methodName.length > 0
+      ? methodName.charAt(0).toUpperCase() + methodName.slice(1)
+      : '';
+    return `${controllerName}${methodPart}${kind}`;
+  }
+
+  /**
+   * Look up a per-status-code example from RouteDocumentation.examples.responses,
+   * which may key by number or string.
+   */
+  private static findResponseExample(
+    examplesByStatus: Record<string | number, any> | undefined,
+    statusCode: number
+  ): any {
+    if (!examplesByStatus) return undefined;
+    if (Object.prototype.hasOwnProperty.call(examplesByStatus, statusCode)) {
+      return examplesByStatus[statusCode];
+    }
+    const key = statusCode.toString();
+    if (Object.prototype.hasOwnProperty.call(examplesByStatus, key)) {
+      return examplesByStatus[key];
+    }
+    return undefined;
+  }
+
+  /**
    * Generate complete OpenAPI 3.1 specification
    */
   generate(): OpenAPISpec {
@@ -187,12 +223,26 @@ export class OpenAPIGenerator {
       return null;
     }
 
+    // Default stays application/json; routes can opt into e.g. multipart/form-data
+    const contentType = route.docs?.requestContentType || 'application/json';
+    const nameHint = route.docs?.bodySchemaName || OpenAPIGenerator.deriveSchemaName(route, 'Body');
+
+    const mediaTypeObject: any = {
+      schema: this.zodToOpenAPISchema(bodyParam.schema, spec, nameHint)
+    };
+
+    // Wire request examples: named examples take priority over a single example
+    const examples = route.docs?.examples;
+    if (examples?.namedRequest) {
+      mediaTypeObject.examples = examples.namedRequest;
+    } else if (examples?.request !== undefined) {
+      mediaTypeObject.example = examples.request;
+    }
+
     return {
       required: bodyParam.required,
       content: {
-        'application/json': {
-          schema: this.zodToOpenAPISchema(bodyParam.schema, spec)
-        }
+        [contentType]: mediaTypeObject
       }
     };
   }
@@ -203,17 +253,25 @@ export class OpenAPIGenerator {
    */
   private extractResponses(route: RouteMetadata, spec: OpenAPISpec, successCode: number = 200): Record<string, any> {
     const responses: Record<string, any> = {};
+    const responseExamplesByStatus = route.docs?.examples?.responses;
 
     // Add documented responses (from @ApiResponse or @ResponseSchema)
     if (route.responses && route.responses.length > 0) {
       for (const response of route.responses) {
+        let content: any;
+        if (response.schema) {
+          const nameHint = OpenAPIGenerator.deriveSchemaName(route, `Response${response.statusCode}`);
+          const mediaTypeObject: any = {
+            schema: this.zodToOpenAPISchema(response.schema, spec, nameHint)
+          };
+          const example = OpenAPIGenerator.findResponseExample(responseExamplesByStatus, response.statusCode);
+          if (example !== undefined) mediaTypeObject.example = example;
+          content = { 'application/json': mediaTypeObject };
+        }
+
         responses[response.statusCode.toString()] = {
           description: response.description || this.getDefaultResponseDescription(response.statusCode),
-          content: response.schema ? {
-            'application/json': {
-              schema: this.zodToOpenAPISchema(response.schema, spec)
-            }
-          } : undefined
+          content
         };
       }
     }
@@ -222,14 +280,19 @@ export class OpenAPIGenerator {
     const successKey = successCode.toString();
     if (!responses[successKey]) {
       const responseSchema = (route as any).responseSchema;
+      const nameHint = OpenAPIGenerator.deriveSchemaName(route, 'Response');
+      const mediaTypeObject: any = {
+        schema: responseSchema
+          ? this.zodToOpenAPISchema(responseSchema, spec, nameHint)
+          : { type: 'object' }
+      };
+      const example = OpenAPIGenerator.findResponseExample(responseExamplesByStatus, successCode);
+      if (example !== undefined) mediaTypeObject.example = example;
+
       responses[successKey] = {
         description: this.getDefaultResponseDescription(successCode),
         content: {
-          'application/json': {
-            schema: responseSchema
-              ? this.zodToOpenAPISchema(responseSchema, spec)
-              : { type: 'object' }
-          }
+          'application/json': mediaTypeObject
         }
       };
     }
@@ -341,13 +404,15 @@ export class OpenAPIGenerator {
 
   /**
    * Convert Zod schema to OpenAPI schema
-   * Uses our custom converter that handles reusable schemas
+   * Uses our custom converter that handles reusable schemas.
+   * `nameHint` is only used when the schema ends up as a reusable component
+   * (see ZodToJsonSchemaConverter.resolveSchemaName for the full priority order).
    */
-  private zodToOpenAPISchema(schema: ZodSchema, spec: OpenAPISpec): any {
+  private zodToOpenAPISchema(schema: ZodSchema, spec: OpenAPISpec, nameHint?: string): any {
     if (!this.converter) {
       this.converter = new ZodToJsonSchemaConverter(spec);
     }
-    return this.converter.convert(schema);
+    return this.converter.convert(schema, nameHint ? { name: nameHint } : undefined);
   }
 
   /**

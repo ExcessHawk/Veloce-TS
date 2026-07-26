@@ -2,6 +2,7 @@
 // Generates both ESM and CJS outputs with optimizations
 
 import { rmSync, existsSync } from 'fs';
+import { writeFile } from 'fs/promises';
 import { join } from 'path';
 
 interface BuildOptions {
@@ -41,17 +42,37 @@ async function build(options: BuildOptions = {}) {
     './src/adapters/express.ts',
   ];
 
-  // Optional peer dependencies — not bundled; users install them separately
+  // Externalise every declared dependency — bundle only veloce-ts's own src/.
+  //
+  // Runtime `dependencies` are installed by the consumer's package manager, so
+  // bundling them would ship a second copy. That is not just bloat:
+  //   - `zod` identity breaks. The framework runs `instanceof`-style checks
+  //     against schemas the USER constructed with THEIR zod; a bundled copy is
+  //     a different class and those checks stop matching.
+  //   - third-party code gets re-transpiled by the bundler. `semver` (pulled in
+  //     via jsonwebtoken) builds its regexes by string concatenation at module
+  //     init, and bundling mangled that into an invalid RegExp that threw on
+  //     require under Node.
+  // Optional peers (drizzle/typeorm/prisma/graphql/ioredis/express) are listed
+  // too — they are lazily required at runtime and may legitimately be absent.
+  const pkg = JSON.parse(await Bun.file('./package.json').text());
   const external = [
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.peerDependencies ?? {}),
+    ...Object.keys(pkg.optionalDependencies ?? {}),
+    // Lazily required optional peers that are not declared as deps
     'drizzle-orm',
     'typeorm',
     'prisma',
     '@prisma/client',
-    'reflect-metadata',
     'graphql',
-    'ioredis',
     'express',
-    'hono',
+    // Node builtins referenced via bare specifiers
+    'node:fs',
+    'node:fs/promises',
+    'node:stream',
+    'node:crypto',
+    'node:path',
   ];
 
   // Build ESM
@@ -60,7 +81,12 @@ async function build(options: BuildOptions = {}) {
     entrypoints,
     outdir: './dist/esm',
     format: 'esm',
-    target: 'bun',
+    // 'node' target (rather than 'bun') avoids `import.meta.require` in the
+    // output, which is a Bun-only global and crashes under real Node when a
+    // bundled dependency needs a synchronous require() (e.g. commander's use
+    // of Node's `events`). Node-target ESM still runs fine under Bun, so this
+    // keeps a single ESM artifact usable by both runtimes.
+    target: 'node',
     minify: production || minify,
     sourcemap: production ? 'external' : 'inline',
     splitting: false, // Disable code splitting to avoid export conflicts
@@ -114,21 +140,40 @@ async function build(options: BuildOptions = {}) {
   }
   console.log(`✅ CJS build complete (${totalSize.toFixed(2)} KB total)\n`);
 
+  // The root package.json declares "type": "module" (needed so dist/esm's
+  // .js files are loaded as ESM). Without a marker of their own, dist/cjs's
+  // .js files would inherit that same "module" type from the nearest
+  // ancestor package.json, even though their content is plain CommonJS
+  // (`require`/`module.exports`) — Node would then try to parse them as ES
+  // modules and fail (or silently misbehave depending on the entry path).
+  // A minimal package.json here pins dist/cjs to "commonjs" so every
+  // consumer path (`require('veloce-ts')`, `createRequire()`, the CJS
+  // condition of "exports") resolves unambiguously.
+  await writeFile(join('./dist/cjs', 'package.json'), JSON.stringify({ type: 'commonjs' }, null, 2) + '\n');
+  console.log('📎 Wrote dist/cjs/package.json ({ "type": "commonjs" })\n');
+
   // Generate TypeScript declarations
   console.log('📝 Generating type declarations...');
   const tscResult = Bun.spawnSync(['bun', 'x', 'tsc', '--project', 'tsconfig.build.json']);
-  
+
   if (tscResult.exitCode !== 0) {
     console.error('❌ Type generation failed:');
+    // tsc reports diagnostics on stdout, not stderr — print both so nothing is lost.
+    const stdOutput = tscResult.stdout.toString();
     const errorOutput = tscResult.stderr.toString();
+    if (stdOutput) {
+      console.error(stdOutput);
+    }
     if (errorOutput) {
       console.error(errorOutput);
     }
     if (production) {
-      console.warn('⚠️  Type generation had errors, but continuing with publication...\n');
-      console.warn('   Note: Some type definitions may be incomplete\n');
+      // Published packages must never ship with broken/incomplete .d.ts files —
+      // fail the build so this can't silently reach npm.
+      console.error('❌ Production build requires clean type generation. Aborting.\n');
+      process.exit(1);
     } else {
-      console.warn('⚠️  Continuing despite type generation errors...\n');
+      console.warn('⚠️  Continuing despite type generation errors (dev build)...\n');
     }
   } else {
     console.log('✅ Type declarations generated\n');

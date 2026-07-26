@@ -31,8 +31,18 @@
  * expressApp.listen(3000);
  * ```
  */
-import type { Adapter } from './base';
+import type { Adapter, ServerInstance } from './base';
 import type { VeloceTS } from '../core/application';
+
+/**
+ * Minimal structural shape of an Express application — just what this
+ * adapter calls. Avoids a hard compile-time dependency on `@types/express`,
+ * which (like `express` itself) is an optional peer dependency.
+ */
+export interface ExpressApp {
+  use(handler: (req: any, res: any, next: (err?: unknown) => void) => void): void;
+  listen(port: number, callback?: () => void): { close(callback?: () => void): void };
+}
 
 /**
  * ExpressAdapter — bridges Veloce-TS to Express.js.
@@ -43,7 +53,7 @@ import type { VeloceTS } from '../core/application';
  */
 export class ExpressAdapter implements Adapter {
   name = 'express';
-  private expressApp: any;
+  private expressApp: ExpressApp;
 
   /**
    * @param veloceApp - A compiled (or not-yet-compiled) VeloceTS instance.
@@ -51,7 +61,7 @@ export class ExpressAdapter implements Adapter {
    *   Pass your own `express()` if you need to add middleware before the
    *   Veloce-TS bridge is attached.
    */
-  constructor(private veloceApp: VeloceTS, expressInstance?: any) {
+  constructor(private veloceApp: VeloceTS, expressInstance?: ExpressApp) {
     this.expressApp = expressInstance ?? ExpressAdapter.createExpressApp();
     this.setupBridge();
   }
@@ -62,22 +72,26 @@ export class ExpressAdapter implements Adapter {
 
   /**
    * Start listening on `port`.
-   * @returns The underlying `http.Server` instance.
+   * @returns A ServerInstance wrapping the underlying `http.Server`.
    */
-  listen(port: number, callback?: () => void): any {
-    return this.expressApp.listen(port, callback);
+  listen(port: number, callback?: () => void): ServerInstance {
+    const server = this.expressApp.listen(port, callback);
+    return {
+      port,
+      close: () => new Promise<void>(resolve => server.close(() => resolve())),
+    };
   }
 
   /**
    * Return the Express application so you can attach additional middleware
    * or mount it with `app.use('/prefix', adapter.getHandler())`.
    */
-  getHandler(): any {
+  getHandler(): ExpressApp {
     return this.expressApp;
   }
 
   /** Alias for `getHandler()`. */
-  getExpressApp(): any {
+  getExpressApp(): ExpressApp {
     return this.expressApp;
   }
 
@@ -89,7 +103,7 @@ export class ExpressAdapter implements Adapter {
    * Lazily load Express (works in ESM and CJS, Bun and Node).
    * Express is a peer dependency so we load it at runtime.
    */
-  private static createExpressApp(): any {
+  private static createExpressApp(): ExpressApp {
     // Use Function constructor to escape TypeScript's module-aware narrowing of
     // `require`.  This also ensures the bundler does not try to inline express.
     // eslint-disable-next-line no-new-func
@@ -172,6 +186,14 @@ export class ExpressAdapter implements Adapter {
 
   /**
    * Write a Web-standard `Response` back through Express `res`.
+   *
+   * Streams the body chunk-by-chunk instead of buffering it whole (via
+   * `.json()`/`.text()`/`.arrayBuffer()`). Buffering defeated SSE (`@SSE`)
+   * and `@Stream` responses — the client would wait for the generator to
+   * finish before receiving anything — and forced an avoidable
+   * serialize/reserialize round-trip on every JSON response. `res.write()`
+   * is backpressure-aware: it returns `false` when the socket buffer is
+   * full, so we wait for `drain` before writing the next chunk.
    */
   private async writeExpressResponse(res: any, response: Response): Promise<void> {
     res.status(response.status);
@@ -189,18 +211,21 @@ export class ExpressAdapter implements Adapter {
       return;
     }
 
-    const contentType = response.headers.get('content-type') ?? '';
-
-    if (contentType.includes('application/json')) {
-      const json = await response.json();
-      res.json(json);
-    } else if (contentType.startsWith('text/')) {
-      const text = await response.text();
-      res.send(text);
-    } else {
-      // Binary / streaming content — send as Buffer
-      const buffer = await response.arrayBuffer();
-      res.send(Buffer.from(buffer));
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          const canContinue = res.write(Buffer.from(value));
+          if (!canContinue) {
+            await new Promise<void>(resolve => res.once('drain', resolve));
+          }
+        }
+      }
+    } finally {
+      res.end();
+      reader.releaseLock();
     }
   }
 }

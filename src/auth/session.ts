@@ -162,20 +162,50 @@ export class RedisSessionStore implements SessionStore {
     }
   }
 
+  /**
+   * Cursor-based SCAN instead of KEYS — KEYS blocks the Redis event loop
+   * on large keyspaces. Falls back to KEYS if the client lacks scan().
+   */
+  private async scanKeys(): Promise<string[]> {
+    const pattern = this.prefix + '*';
+    if (typeof this.redis.scan !== 'function') {
+      return this.redis.keys(pattern);
+    }
+
+    const found: string[] = [];
+    let cursor: string | number = '0';
+    do {
+      const reply: any = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+      if (Array.isArray(reply)) {
+        cursor = reply[0];
+        found.push(...reply[1]);
+      } else {
+        cursor = reply.cursor;
+        found.push(...reply.keys);
+      }
+    } while (String(cursor) !== '0');
+
+    return found;
+  }
+
   async clear(): Promise<void> {
-    const keys = await this.redis.keys(this.prefix + '*');
-    if (keys.length > 0) {
-      await this.redis.del(...keys);
+    const keys = await this.scanKeys();
+    const BATCH = 500;
+    for (let i = 0; i < keys.length; i += BATCH) {
+      const chunk = keys.slice(i, i + BATCH);
+      if (chunk.length > 0) {
+        await this.redis.del(...chunk);
+      }
     }
   }
 
   async length(): Promise<number> {
-    const keys = await this.redis.keys(this.prefix + '*');
+    const keys = await this.scanKeys();
     return keys.length;
   }
 
   async all(): Promise<SessionData[]> {
-    const keys = await this.redis.keys(this.prefix + '*');
+    const keys = await this.scanKeys();
     const sessions: SessionData[] = [];
 
     for (const key of keys) {

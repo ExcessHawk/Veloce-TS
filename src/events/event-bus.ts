@@ -28,29 +28,53 @@ export class EventBus {
     return this;
   }
 
+  /**
+   * Invoke all listeners concurrently. A throwing listener does not prevent
+   * the others from running; collected errors are rethrown as AggregateError
+   * after every listener has settled. `once` listeners are removed even when
+   * they throw.
+   */
   async emit<T = unknown>(event: string, payload?: T): Promise<void> {
     const list = this.listeners.get(event) ?? [];
     const toRemove: EventHandler[] = [];
-    await Promise.all(
+    const results = await Promise.allSettled(
       list.map(async entry => {
-        await entry.handler(payload);
-        if (entry.once) toRemove.push(entry.handler);
+        try {
+          await entry.handler(payload);
+        } finally {
+          if (entry.once) toRemove.push(entry.handler);
+        }
       })
     );
     if (toRemove.length > 0) {
       this.listeners.set(event, list.filter(e => !toRemove.includes(e.handler)));
+    }
+    const errors = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map(r => r.reason);
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `${errors.length} listener(s) failed for event "${event}"`);
     }
   }
 
   emitSync<T = unknown>(event: string, payload?: T): void {
     const list = this.listeners.get(event) ?? [];
     const toRemove: EventHandler[] = [];
+    const errors: unknown[] = [];
     for (const entry of list) {
-      entry.handler(payload);
-      if (entry.once) toRemove.push(entry.handler);
+      try {
+        entry.handler(payload);
+      } catch (err) {
+        errors.push(err);
+      } finally {
+        if (entry.once) toRemove.push(entry.handler);
+      }
     }
     if (toRemove.length > 0) {
       this.listeners.set(event, list.filter(e => !toRemove.includes(e.handler)));
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `${errors.length} listener(s) failed for event "${event}"`);
     }
   }
 

@@ -18,7 +18,14 @@ import type {
   WebSocketHandlerMetadata,
   GraphQLResolverMetadata,
   GraphQLFieldMetadata,
-  AuthMetadata
+  AuthMetadata,
+  OAuthMetadata,
+  RoleMetadata,
+  PermissionMetadata,
+  MinimumRoleMetadata,
+  ResourcePermissionMetadata,
+  SessionMetadata,
+  CSRFMetadata
 } from '../types';
 
 // Metadata keys for reflect-metadata
@@ -497,18 +504,37 @@ export class MetadataRegistry {
     return Reflect.hasMetadata(GRAPHQL_FIELD_KEY, target, propertyKey);
   }
 
+  // ==========================================================================
+  // Route-attached metadata (auth, OAuth, RBAC, session, CSRF)
+  //
+  // Each of these is the same operation with a different reflect key and a
+  // different RouteMetadata field: store the metadata on the method, then
+  // mirror it onto the route metadata so RouterCompiler can read it without a
+  // second reflect lookup. defineRouteAttached() holds that shared body; the
+  // public methods below stay as-is so callers and decorators are unaffected.
+  // ==========================================================================
+
+  private static defineRouteAttached<K extends keyof RouteMetadata>(
+    key: symbol,
+    routeField: K,
+    target: any,
+    propertyKey: string,
+    metadata: RouteMetadata[K],
+  ): void {
+    Reflect.defineMetadata(key, metadata, target, propertyKey);
+
+    const routeMetadata = this.getRouteMetadata(target, propertyKey);
+    this.defineRoute(target, propertyKey, {
+      ...routeMetadata,
+      [routeField]: metadata,
+    } as Partial<RouteMetadata>);
+  }
+
   /**
    * Define authentication metadata (used by @Auth decorator)
    */
   static defineAuth(target: any, propertyKey: string, metadata: AuthMetadata): void {
-    Reflect.defineMetadata(AUTH_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include auth info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      auth: metadata
-    });
+    this.defineRouteAttached(AUTH_METADATA_KEY, 'auth', target, propertyKey, metadata);
   }
 
   /**
@@ -528,21 +554,14 @@ export class MetadataRegistry {
   /**
    * Define OAuth metadata (used by @OAuth decorator)
    */
-  static defineOAuth(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(OAUTH_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include OAuth info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      oauth: metadata
-    });
+  static defineOAuth(target: any, propertyKey: string, metadata: OAuthMetadata): void {
+    this.defineRouteAttached(OAUTH_METADATA_KEY, 'oauth', target, propertyKey, metadata);
   }
 
   /**
    * Get OAuth metadata from reflect-metadata
    */
-  static getOAuthMetadata(target: any, propertyKey: string): any {
+  static getOAuthMetadata(target: any, propertyKey: string): OAuthMetadata | undefined {
     return Reflect.getMetadata(OAUTH_METADATA_KEY, target, propertyKey);
   }
 
@@ -556,64 +575,15 @@ export class MetadataRegistry {
   /**
    * Define roles metadata (used by @Roles decorator)
    */
-  static defineRoles(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(ROLES_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include roles info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      roles: metadata
-    });
-  }
-
-  /**
-   * Define permissions metadata (used by @Permissions decorator)
-   */
-  static definePermissions(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(PERMISSIONS_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include permissions info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      permissions: metadata
-    });
-  }
-
-  /**
-   * Define minimum role metadata (used by @MinimumRole decorator)
-   */
-  static defineMinimumRole(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(MINIMUM_ROLE_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include minimum role info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      minimumRole: metadata
-    });
+  static defineRoles(target: any, propertyKey: string, metadata: RoleMetadata): void {
+    this.defineRouteAttached(ROLES_METADATA_KEY, 'roles', target, propertyKey, metadata);
   }
 
   /**
    * Get roles metadata from reflect-metadata
    */
-  static getRolesMetadata(target: any, propertyKey: string): any {
+  static getRolesMetadata(target: any, propertyKey: string): RoleMetadata | undefined {
     return Reflect.getMetadata(ROLES_METADATA_KEY, target, propertyKey);
-  }
-
-  /**
-   * Get permissions metadata from reflect-metadata
-   */
-  static getPermissionsMetadata(target: any, propertyKey: string): any {
-    return Reflect.getMetadata(PERMISSIONS_METADATA_KEY, target, propertyKey);
-  }
-
-  /**
-   * Get minimum role metadata from reflect-metadata
-   */
-  static getMinimumRoleMetadata(target: any, propertyKey: string): any {
-    return Reflect.getMetadata(MINIMUM_ROLE_METADATA_KEY, target, propertyKey);
   }
 
   /**
@@ -624,10 +594,38 @@ export class MetadataRegistry {
   }
 
   /**
+   * Define permissions metadata (used by @Permissions decorator)
+   */
+  static definePermissions(target: any, propertyKey: string, metadata: PermissionMetadata): void {
+    this.defineRouteAttached(PERMISSIONS_METADATA_KEY, 'permissions', target, propertyKey, metadata);
+  }
+
+  /**
+   * Get permissions metadata from reflect-metadata
+   */
+  static getPermissionsMetadata(target: any, propertyKey: string): PermissionMetadata | undefined {
+    return Reflect.getMetadata(PERMISSIONS_METADATA_KEY, target, propertyKey);
+  }
+
+  /**
    * Check if a method has permissions metadata
    */
   static hasPermissionsMetadata(target: any, propertyKey: string): boolean {
     return Reflect.hasMetadata(PERMISSIONS_METADATA_KEY, target, propertyKey);
+  }
+
+  /**
+   * Define minimum role metadata (used by @MinimumRole decorator)
+   */
+  static defineMinimumRole(target: any, propertyKey: string, metadata: MinimumRoleMetadata): void {
+    this.defineRouteAttached(MINIMUM_ROLE_METADATA_KEY, 'minimumRole', target, propertyKey, metadata);
+  }
+
+  /**
+   * Get minimum role metadata from reflect-metadata
+   */
+  static getMinimumRoleMetadata(target: any, propertyKey: string): MinimumRoleMetadata | undefined {
+    return Reflect.getMetadata(MINIMUM_ROLE_METADATA_KEY, target, propertyKey);
   }
 
   /**
@@ -640,21 +638,14 @@ export class MetadataRegistry {
   /**
    * Define resource permission metadata (used by @CanAccess decorator)
    */
-  static defineResourcePermission(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(RESOURCE_PERMISSION_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include resource permission info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      resourcePermission: metadata
-    });
+  static defineResourcePermission(target: any, propertyKey: string, metadata: ResourcePermissionMetadata): void {
+    this.defineRouteAttached(RESOURCE_PERMISSION_METADATA_KEY, 'resourcePermission', target, propertyKey, metadata);
   }
 
   /**
    * Get resource permission metadata from reflect-metadata
    */
-  static getResourcePermissionMetadata(target: any, propertyKey: string): any {
+  static getResourcePermissionMetadata(target: any, propertyKey: string): ResourcePermissionMetadata | undefined {
     return Reflect.getMetadata(RESOURCE_PERMISSION_METADATA_KEY, target, propertyKey);
   }
 
@@ -668,43 +659,15 @@ export class MetadataRegistry {
   /**
    * Define session metadata (used by @Session decorator)
    */
-  static defineSession(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(SESSION_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include session info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      session: metadata
-    });
-  }
-
-  /**
-   * Define CSRF metadata (used by @RequireCSRF decorator)
-   */
-  static defineCSRF(target: any, propertyKey: string, metadata: any): void {
-    Reflect.defineMetadata(CSRF_METADATA_KEY, metadata, target, propertyKey);
-
-    // Also update the route metadata to include CSRF info
-    const routeMetadata = this.getRouteMetadata(target, propertyKey);
-    this.defineRoute(target, propertyKey, {
-      ...routeMetadata,
-      csrf: metadata
-    });
+  static defineSession(target: any, propertyKey: string, metadata: SessionMetadata): void {
+    this.defineRouteAttached(SESSION_METADATA_KEY, 'session', target, propertyKey, metadata);
   }
 
   /**
    * Get session metadata from reflect-metadata
    */
-  static getSessionMetadata(target: any, propertyKey: string): any {
+  static getSessionMetadata(target: any, propertyKey: string): SessionMetadata | undefined {
     return Reflect.getMetadata(SESSION_METADATA_KEY, target, propertyKey);
-  }
-
-  /**
-   * Get CSRF metadata from reflect-metadata
-   */
-  static getCSRFMetadata(target: any, propertyKey: string): any {
-    return Reflect.getMetadata(CSRF_METADATA_KEY, target, propertyKey);
   }
 
   /**
@@ -712,6 +675,20 @@ export class MetadataRegistry {
    */
   static hasSessionMetadata(target: any, propertyKey: string): boolean {
     return Reflect.hasMetadata(SESSION_METADATA_KEY, target, propertyKey);
+  }
+
+  /**
+   * Define CSRF metadata (used by @RequireCSRF decorator)
+   */
+  static defineCSRF(target: any, propertyKey: string, metadata: CSRFMetadata): void {
+    this.defineRouteAttached(CSRF_METADATA_KEY, 'csrf', target, propertyKey, metadata);
+  }
+
+  /**
+   * Get CSRF metadata from reflect-metadata
+   */
+  static getCSRFMetadata(target: any, propertyKey: string): CSRFMetadata | undefined {
+    return Reflect.getMetadata(CSRF_METADATA_KEY, target, propertyKey);
   }
 
   /**

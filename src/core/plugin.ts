@@ -19,11 +19,23 @@ export interface Plugin {
   /** Optional list of plugin names this plugin depends on */
   dependencies?: string[];
   
-  /** 
+  /**
    * Install method called when the plugin is registered
    * @param app - The VeloceTS application instance
    */
   install(app: VeloceTS): void | Promise<void>;
+
+  /**
+   * Called after the server starts listening. Use it to start background
+   * work (timers, consumers) that needs the app fully running.
+   */
+  onStart?(app: VeloceTS): void | Promise<void>;
+
+  /**
+   * Called during graceful shutdown, in reverse install order. Use it to
+   * release resources the plugin opened (connections, timers, pools).
+   */
+  onStop?(app: VeloceTS): void | Promise<void>;
 }
 
 /**
@@ -51,6 +63,8 @@ export class PluginManager {
    * @param app - The VeloceTS application instance
    * @throws Error if plugin dependencies cannot be resolved
    */
+  private installOrder: string[] = [];
+
   async install(app: VeloceTS): Promise<void> {
     // Resolve installation order using topological sort
     const order = this.resolveInstallOrder();
@@ -60,6 +74,39 @@ export class PluginManager {
       const plugin = this.plugins.get(pluginName)!;
       await plugin.install(app);
       this.installed.add(pluginName);
+    }
+    this.installOrder = order;
+  }
+
+  /** Run onStart hooks in install order (after the server starts listening) */
+  async start(app: VeloceTS): Promise<void> {
+    for (const name of this.installOrder) {
+      const plugin = this.plugins.get(name)!;
+      if (plugin.onStart) {
+        await plugin.onStart(app);
+      }
+    }
+  }
+
+  /**
+   * Run onStop hooks in reverse install order during graceful shutdown.
+   * Errors are collected so one failing plugin cannot block the teardown
+   * of the others; they are rethrown as an AggregateError at the end.
+   */
+  async stop(app: VeloceTS): Promise<void> {
+    const errors: unknown[] = [];
+    for (const name of [...this.installOrder].reverse()) {
+      const plugin = this.plugins.get(name)!;
+      if (plugin.onStop) {
+        try {
+          await plugin.onStop(app);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `${errors.length} plugin(s) failed to stop`);
     }
   }
 

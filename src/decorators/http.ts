@@ -7,9 +7,13 @@ import { MetadataRegistry } from '../core/metadata';
 import type { HTTPMethod, Middleware, RateLimitOptions } from '../types';
 import type { ZodSchema } from 'zod';
 import { createRateLimitMiddleware } from '../middleware/rate-limit.js';
+import { createTimeoutMiddleware } from '../middleware/timeout.js';
 
 export interface ControllerOptions {
   middleware?: Middleware[];
+  /** Instantiation scope. 'singleton' (default) creates the controller once;
+   *  use 'request' or 'transient' for per-request state or request-scoped ctor deps. */
+  scope?: 'singleton' | 'request' | 'transient';
 }
 
 /**
@@ -45,7 +49,8 @@ export function Controller(prefix: string = '', options?: ControllerOptions): Cl
 
     MetadataRegistry.defineController(target, {
       prefix: normalizedPrefix,
-      middleware: options?.middleware || []
+      middleware: options?.middleware || [],
+      scope: options?.scope
     });
   };
 }
@@ -235,22 +240,7 @@ export function ResponseSchema(schema: ZodSchema, statusCode: number = 200): Met
  * ```
  */
 export function Timeout(ms: number, message?: string): MethodDecorator {
-  const timeoutMiddleware: Middleware = async (c, next) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(Object.assign(new Error(message ?? `Request timed out after ${ms}ms`), { name: 'TimeoutError', statusCode: 408 }));
-      }, ms);
-    });
-
-    try {
-      c.header('X-Timeout-Ms', String(ms));
-      await Promise.race([next(), timeoutPromise]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
-  };
+  const timeoutMiddleware = createTimeoutMiddleware(ms, message);
 
   return (target: any, propertyKey: string | symbol) => {
     // Prepend the timeout middleware so it wraps the full handler

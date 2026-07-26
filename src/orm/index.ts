@@ -2,6 +2,7 @@
  * @module veloce-ts/orm
  * @description Capa de abstracción sobre repositorios, paginación, transacciones y plugins (Drizzle, Prisma, TypeORM).
  */
+export * from './errors';
 export * from './base-repository';
 export * from './repository-factory';
 export * from './query-builder';

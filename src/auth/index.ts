@@ -3,6 +3,7 @@
  * @description JWT, sesiones, OAuth, RBAC/permisos, plugins y decoradores de identidad en rutas.
  */
 export * from './jwt-provider.js';
+export * from './token-blacklist.js';
 export * from './auth-service.js';
 export * from './decorators.js';
 export * from './exceptions.js';

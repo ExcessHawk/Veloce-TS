@@ -34,9 +34,24 @@ class PinoLogger implements Logger {
       return;
     }
 
-    this.logger = pinoLib({
+    const options: any = {
       level: config?.level || (isDev ? 'debug' : 'info'),
-    });
+    };
+
+    // Honor config.pretty via pino-pretty transport when available
+    if (config?.pretty) {
+      try {
+        require.resolve('pino-pretty');
+        options.transport = {
+          target: 'pino-pretty',
+          options: { colorize: true, translateTime: 'SYS:HH:MM:ss.l' },
+        };
+      } catch {
+        // pino-pretty not installed — fall back to plain JSON output
+      }
+    }
+
+    this.logger = pinoLib(options);
   }
 
   trace(message: string, context?: LogContext): void {

@@ -10,6 +10,7 @@ export {
 } from './cors';
 export { createRateLimitMiddleware } from './rate-limit';
 export { createCompressionMiddleware } from './compression';
+export { createTimeoutMiddleware } from './timeout';
 export { 
   createRequestContextMiddleware, 
   createSimpleRequestIdMiddleware,

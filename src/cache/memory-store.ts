@@ -37,7 +37,7 @@ export class MemoryCacheStore implements CacheStore {
 
   async get<T = any>(key: string): Promise<T | null> {
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       return null;
     }
@@ -47,6 +47,10 @@ export class MemoryCacheStore implements CacheStore {
       this.cache.delete(key);
       return null;
     }
+
+    // True LRU: re-insert on read so Map insertion order tracks recency
+    this.cache.delete(key);
+    this.cache.set(key, entry);
 
     return entry.data as T;
   }
@@ -144,21 +148,13 @@ export class MemoryCacheStore implements CacheStore {
   }
 
   /**
-   * Remove oldest entry (LRU eviction)
+   * Evict the least-recently-used entry — first key in Map insertion order,
+   * since get() re-inserts entries on every read.
    */
   private removeOldest(): void {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.createdAt < oldestTime) {
-        oldestTime = entry.createdAt;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
+    const lruKey = this.cache.keys().next().value;
+    if (lruKey !== undefined) {
+      this.cache.delete(lruKey);
     }
   }
 

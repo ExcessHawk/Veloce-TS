@@ -160,6 +160,54 @@ describe('MemoryCacheStore – max size eviction', () => {
     const stats = store.getStats();
     expect(stats.size).toBeLessThanOrEqual(2);
   });
+
+  it('evicts by least-recently-USED, not insertion order (true LRU)', async () => {
+    const store = new MemoryCacheStore({ maxSize: 2, cleanupInterval: 0 });
+    await store.set('a', 1);
+    await store.set('b', 2);
+
+    // Touch 'a' so 'b' becomes the least-recently-used entry.
+    // Under the previous FIFO-by-createdAt eviction, 'a' would have been
+    // dropped here despite being the more recently used key.
+    await store.get('a');
+
+    await store.set('c', 3); // triggers eviction
+    expect(await store.get('a')).toBe(1);
+    expect(await store.get('b')).toBeNull();
+    expect(await store.get('c')).toBe(3);
+  });
+});
+
+// ─── Store lifecycle / timer leaks ────────────────────────────────────────────
+
+describe('CacheManager – store lifecycle', () => {
+  it('reset() destroys the previous default store instead of leaking its cleanup timer', () => {
+    CacheManager.reset();
+    const first = CacheManager.getDefaultStore() as MemoryCacheStore;
+    let destroyed = false;
+    const originalDestroy = first.destroy.bind(first);
+    first.destroy = () => { destroyed = true; originalDestroy(); };
+
+    CacheManager.reset();
+
+    expect(destroyed).toBe(true);
+    // A fresh store replaces it, so the manager stays usable
+    expect(CacheManager.getDefaultStore()).not.toBe(first);
+  });
+
+  it('destroy() releases named stores as well and clears the registry', () => {
+    CacheManager.reset();
+    const named = new MemoryCacheStore({ cleanupInterval: 60_000 });
+    let destroyed = false;
+    const originalDestroy = named.destroy.bind(named);
+    named.destroy = () => { destroyed = true; originalDestroy(); };
+    CacheManager.registerStore('named', named);
+
+    CacheManager.destroy();
+
+    expect(destroyed).toBe(true);
+    expect(CacheManager.getStore('named')).toBeUndefined();
+  });
 });
 
 // ─── CacheManager ─────────────────────────────────────────────────────────────

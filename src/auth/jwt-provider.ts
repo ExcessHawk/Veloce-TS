@@ -1,5 +1,11 @@
-import { sign, verify, decode } from 'jsonwebtoken';
+// jsonwebtoken is CJS-only. Named ESM imports from it (`import { sign } ...`)
+// work under Bun but throw `SyntaxError: Named export 'sign' not found` under
+// real Node's ESM loader, so take the default export and destructure instead.
+import jsonwebtoken from 'jsonwebtoken';
 import { z } from 'zod';
+import { TokenBlacklist, MemoryTokenBlacklist } from './token-blacklist.js';
+
+const { sign, verify, decode } = jsonwebtoken;
 
 export interface JWTConfig {
   secret: string;
@@ -7,8 +13,15 @@ export interface JWTConfig {
   refreshSecret?: string;
   refreshExpiresIn?: string | number;
   algorithm?: 'HS256' | 'HS384' | 'HS512' | 'RS256' | 'RS384' | 'RS512';
+  /** PEM private key — required for RS256/RS384/RS512 signing */
+  privateKey?: string;
+  /** PEM public key — required for RS256/RS384/RS512 verification */
+  publicKey?: string;
   issuer?: string;
   audience?: string;
+  /** Token revocation store; defaults to in-memory (single instance).
+   *  Use RedisTokenBlacklist for multi-instance deployments. */
+  blacklist?: TokenBlacklist;
 }
 
 export interface TokenPayload {
@@ -27,13 +40,39 @@ export interface TokenPair {
 }
 
 export class JWTProvider {
-  // Map<token, exp_unix_seconds> — O(1) lookup, lazy expiry cleanup
-  private blacklistedTokens: Map<string, number> = new Map();
-  
+  private blacklist: TokenBlacklist;
+
   constructor(private config: JWTConfig) {
-    if (!config.secret) {
+    this.blacklist = config.blacklist || new MemoryTokenBlacklist();
+    if (this.isAsymmetric()) {
+      if (!config.privateKey || !config.publicKey) {
+        throw new Error(
+          `JWT algorithm ${config.algorithm} requires privateKey and publicKey`
+        );
+      }
+    } else if (!config.secret) {
       throw new Error('JWT secret is required');
     }
+  }
+
+  private isAsymmetric(): boolean {
+    return /^RS/.test(this.config.algorithm || 'HS256');
+  }
+
+  /** Key used to sign tokens (private key for RS*, shared secret for HS*) */
+  private signingKey(forRefresh = false): string {
+    if (this.isAsymmetric()) return this.config.privateKey!;
+    return forRefresh
+      ? this.config.refreshSecret || this.config.secret
+      : this.config.secret;
+  }
+
+  /** Key used to verify tokens (public key for RS*, shared secret for HS*) */
+  private verificationKey(forRefresh = false): string {
+    if (this.isAsymmetric()) return this.config.publicKey!;
+    return forRefresh
+      ? this.config.refreshSecret || this.config.secret
+      : this.config.secret;
   }
 
   /**
@@ -52,7 +91,7 @@ export class JWTProvider {
       aud: this.config.audience,
     };
 
-    const accessToken = sign(accessPayload, this.config.secret, {
+    const accessToken = sign(accessPayload, this.signingKey(), {
       algorithm: this.config.algorithm || 'HS256',
     });
 
@@ -65,13 +104,9 @@ export class JWTProvider {
       aud: this.config.audience,
     };
 
-    const refreshToken = sign(
-      refreshPayload,
-      this.config.refreshSecret || this.config.secret,
-      {
-        algorithm: this.config.algorithm || 'HS256',
-      }
-    );
+    const refreshToken = sign(refreshPayload, this.signingKey(true), {
+      algorithm: this.config.algorithm || 'HS256',
+    });
 
     return {
       accessToken,
@@ -83,17 +118,24 @@ export class JWTProvider {
   /**
    * Verify and decode access token
    */
-  verifyAccessToken(token: string): TokenPayload {
-    if (this.isBlacklisted(token)) {
+  async verifyAccessToken(token: string): Promise<TokenPayload> {
+    if (await this.isBlacklisted(token)) {
       throw new Error('Token has been revoked');
     }
 
     try {
-      const payload = verify(token, this.config.secret, {
+      const payload = verify(token, this.verificationKey(), {
         algorithms: [this.config.algorithm || 'HS256'],
         issuer: this.config.issuer,
         audience: this.config.audience,
       }) as TokenPayload;
+
+      // Reject refresh tokens presented as access tokens: with a shared
+      // refreshSecret they verify under the same key, so the type claim is
+      // the only thing separating a 7-day refresh token from an access token
+      if (payload.type === 'refresh') {
+        throw new Error('Refresh token cannot be used as access token');
+      }
 
       return payload;
     } catch (error) {
@@ -107,21 +149,17 @@ export class JWTProvider {
   /**
    * Verify and decode refresh token
    */
-  verifyRefreshToken(token: string): TokenPayload {
-    if (this.isBlacklisted(token)) {
+  async verifyRefreshToken(token: string): Promise<TokenPayload> {
+    if (await this.isBlacklisted(token)) {
       throw new Error('Refresh token has been revoked');
     }
 
     try {
-      const payload = verify(
-        token,
-        this.config.refreshSecret || this.config.secret,
-        {
-          algorithms: [this.config.algorithm || 'HS256'],
-          issuer: this.config.issuer,
-          audience: this.config.audience,
-        }
-      ) as TokenPayload;
+      const payload = verify(token, this.verificationKey(true), {
+        algorithms: [this.config.algorithm || 'HS256'],
+        issuer: this.config.issuer,
+        audience: this.config.audience,
+      }) as TokenPayload;
 
       if (payload.type !== 'refresh') {
         throw new Error('Invalid refresh token type');
@@ -139,11 +177,11 @@ export class JWTProvider {
   /**
    * Refresh access token using refresh token
    */
-  refreshAccessToken(refreshToken: string): TokenPair {
-    const payload = this.verifyRefreshToken(refreshToken);
-    
+  async refreshAccessToken(refreshToken: string): Promise<TokenPair> {
+    const payload = await this.verifyRefreshToken(refreshToken);
+
     // Blacklist the old refresh token
-    this.blacklistToken(refreshToken);
+    await this.blacklistToken(refreshToken);
     
     // Generate new token pair
     return this.generateTokens({
@@ -170,35 +208,26 @@ export class JWTProvider {
 
   /**
    * Blacklist a token (for logout).
-   * Stores the token's expiry so isBlacklisted() can lazily drop expired entries.
+   * Stores the token's expiry so the store can drop expired entries.
    */
-  blacklistToken(token: string): void {
+  async blacklistToken(token: string): Promise<void> {
     const payload = this.decodeToken(token);
     const exp = payload?.exp ?? (Math.floor(Date.now() / 1000) + 3600);
-    this.blacklistedTokens.set(token, exp);
+    await this.blacklist.add(token, exp);
   }
 
   /**
-   * Check if token is blacklisted. Lazily removes expired entries on hit.
+   * Check if token is blacklisted.
    */
-  isBlacklisted(token: string): boolean {
-    const exp = this.blacklistedTokens.get(token);
-    if (exp === undefined) return false;
-    if (exp < Math.floor(Date.now() / 1000)) {
-      this.blacklistedTokens.delete(token);
-      return false;
-    }
-    return true;
+  async isBlacklisted(token: string): Promise<boolean> {
+    return this.blacklist.has(token);
   }
 
   /**
    * Remove all expired tokens from the blacklist.
    */
-  cleanupBlacklist(): void {
-    const now = Math.floor(Date.now() / 1000);
-    for (const [token, exp] of this.blacklistedTokens) {
-      if (exp < now) this.blacklistedTokens.delete(token);
-    }
+  async cleanupBlacklist(): Promise<void> {
+    await this.blacklist.cleanup();
   }
 
   private parseExpiration(exp: string | number): number {

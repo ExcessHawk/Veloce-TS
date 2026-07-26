@@ -15,10 +15,38 @@ export class CacheManager {
 
   /**
    * Reset all stores to their initial state — use in tests between suites.
+   * Destroys the previous stores first: MemoryCacheStore holds a cleanup
+   * setInterval, and dropping the reference without destroying it leaks the
+   * timer (and keeps the event loop alive so the process never exits).
    */
   static reset(): void {
+    this.destroyStore(this.defaultStore);
+    for (const store of this.stores.values()) {
+      this.destroyStore(store);
+    }
     this.defaultStore = new MemoryCacheStore();
     this.stores.clear();
+  }
+
+  /**
+   * Release every store's resources (timers, connections) without replacing
+   * them — call on shutdown so pending cleanup intervals don't keep the
+   * process alive.
+   */
+  static destroy(): void {
+    this.destroyStore(this.defaultStore);
+    for (const store of this.stores.values()) {
+      this.destroyStore(store);
+    }
+    this.stores.clear();
+  }
+
+  /** Invoke a store's optional destroy() hook, ignoring stores without one. */
+  private static destroyStore(store: CacheStore | undefined): void {
+    const destroyable = store as { destroy?: () => void } | undefined;
+    if (destroyable && typeof destroyable.destroy === 'function') {
+      destroyable.destroy();
+    }
   }
 
   /**

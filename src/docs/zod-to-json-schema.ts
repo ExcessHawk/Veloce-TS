@@ -37,18 +37,20 @@ function normalizeFor31(schema: any): any {
 }
 
 /**
- * Schema cache to track schemas that should be reusable components
- */
-const schemaCache = new WeakMap<ZodSchema, string>();
-let schemaCounter = 0;
-
-/**
  * Convert Zod schema to JSON Schema format
  * Handles primitive types, objects, arrays, unions, and generates reusable schemas
+ *
+ * All naming state (schema-to-name cache, anonymous counter) is per converter
+ * instance, so repeated generator runs always produce identical names.
  */
 export class ZodToJsonSchemaConverter {
   private spec: OpenAPISpec;
+  /** Component names already emitted into the spec by this converter */
   private generatedSchemas: Set<string> = new Set();
+  /** Maps a Zod schema to the component name it was registered under */
+  private schemaNames = new WeakMap<ZodSchema, string>();
+  /** Fallback counter for fully anonymous schemas (per instance, deterministic per run) */
+  private anonymousCounter = 0;
 
   constructor(spec: OpenAPISpec) {
     this.spec = spec;
@@ -95,15 +97,15 @@ export class ZodToJsonSchemaConverter {
    * Convert schema to a reusable component and return a $ref
    */
   private convertToReusableSchema(schema: ZodSchema, name?: string): any {
-    // Check if we've already converted this schema
-    const cachedName = schemaCache.get(schema);
-    if (cachedName && this.generatedSchemas.has(cachedName)) {
+    // Check if we've already converted this schema in this instance
+    const cachedName = this.schemaNames.get(schema);
+    if (cachedName) {
       return { $ref: `#/components/schemas/${cachedName}` };
     }
 
-    // Generate a name for the schema
-    const schemaName = name || cachedName || this.generateSchemaName();
-    schemaCache.set(schema, schemaName);
+    // Resolve a meaningful, sanitized, deduplicated name for the schema
+    const schemaName = this.resolveSchemaName(schema, name);
+    this.schemaNames.set(schema, schemaName);
     this.generatedSchemas.add(schemaName);
 
     // Convert the schema
@@ -154,17 +156,60 @@ export class ZodToJsonSchemaConverter {
   }
 
   /**
-   * Generate a unique schema name
+   * Resolve a component name for a schema. Priority:
+   * 1. `.describe()` value when it is a plain identifier (e.g. `z.object(...).describe('User')`).
+   *    Prose descriptions ("A user record") are NOT used as names — they stay as
+   *    the schema `description` field only.
+   * 2. Name hint provided by the caller (route/DTO metadata, or a stable name
+   *    derived from controller + method + kind, e.g. "UserControllerCreateBody").
+   * 3. Anonymous fallback: Schema1, Schema2... (counter is per converter instance).
+   *
+   * The result is sanitized to [A-Za-z0-9_] and deduplicated deterministically
+   * (colliding names get suffixes _2, _3, ...).
    */
-  private generateSchemaName(): string {
-    return `Schema${++schemaCounter}`;
+  private resolveSchemaName(schema: ZodSchema, nameHint?: string): string {
+    const described = ZodToJsonSchemaConverter.identifierFromDescription(schema);
+    const base =
+      described ??
+      (nameHint ? ZodToJsonSchemaConverter.sanitizeName(nameHint) : undefined) ??
+      `Schema${++this.anonymousCounter}`;
+
+    // Deduplicate deterministically: Name, Name_2, Name_3, ...
+    let candidate = base;
+    let suffix = 2;
+    while (this.generatedSchemas.has(candidate)) {
+      candidate = `${base}_${suffix++}`;
+    }
+    return candidate;
   }
 
   /**
-   * Reset the schema counter (useful for testing)
+   * Return the `.describe()` text when it is usable as a component name,
+   * i.e. a single identifier like "User" or "CreateUserDto".
+   */
+  private static identifierFromDescription(schema: ZodSchema): string | undefined {
+    const description = (schema as any)?._def?.description;
+    if (typeof description === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(description)) {
+      return description;
+    }
+    return undefined;
+  }
+
+  /**
+   * Sanitize a name to [A-Za-z0-9_]; returns undefined when nothing remains.
+   */
+  private static sanitizeName(name: string): string | undefined {
+    const cleaned = name.replace(/[^A-Za-z0-9_]/g, '');
+    if (!cleaned) return undefined;
+    return /^[0-9]/.test(cleaned) ? `_${cleaned}` : cleaned;
+  }
+
+  /**
+   * @deprecated Naming state is now per converter instance, so there is no
+   * global counter to reset. Kept as a no-op for backward compatibility.
    */
   static resetCounter(): void {
-    schemaCounter = 0;
+    // no-op
   }
 }
 

@@ -1,14 +1,14 @@
 {
   "name": "veloce-ts",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
   "module": "./dist/esm/src/index.js",
   "types": "./dist/types/index.d.ts",
   "bin": {
-    "veloce-ts": "./bin/veloce.ts",
-    "veloce": "./bin/veloce.ts"
+    "veloce-ts": "./bin/veloce.mjs",
+    "veloce": "./bin/veloce.mjs"
   },
   "exports": {
     ".": {
@@ -74,8 +74,8 @@
     },
     "./adapters/*": {
       "types": "./dist/types/adapters/*.d.ts",
-      "import": "./dist/esm/adapters/*.js",
-      "require": "./dist/cjs/adapters/*.js"
+      "import": "./dist/esm/src/adapters/*.js",
+      "require": "./dist/cjs/src/adapters/*.js"
     },
     "./package.json": "./package.json"
   },
@@ -94,7 +94,7 @@
     "release:minor": "bun run scripts/release.ts minor",
     "release:patch": "bun run scripts/release.ts patch",
     "test:package": "bun run scripts/test-package.ts",
-    "benchmark": "bun run benchmarks/run-all.ts"
+    "benchmark": "bun run benchmarks/run.ts"
   },
   "keywords": [
     "veloce-ts",
@@ -182,6 +182,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/jsonwebtoken": "^9.0.10",
+    "graphql": "^17.0.2",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {

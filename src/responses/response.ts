@@ -253,10 +253,17 @@ export class FileResponse {
     }
   }
 
-  private async readFileNode(path: string): Promise<Blob> {
-    // Fallback for Node.js - would need fs module
-    // This is a placeholder that works with the type system
-    throw new Error('File reading in Node.js requires fs module - use Bun runtime or implement adapter');
+  private async readFileNode(path: string): Promise<ReadableStream> {
+    // Node/Deno fallback: stream the file instead of buffering it in memory
+    const { createReadStream } = await import('node:fs');
+    const { stat } = await import('node:fs/promises');
+    const { Readable } = await import('node:stream');
+
+    // Surface missing files as an error here so toHonoResponse returns 404
+    await stat(path);
+
+    const nodeStream = createReadStream(path);
+    return Readable.toWeb(nodeStream) as unknown as ReadableStream;
   }
 
   private guessContentType(path: string): string {

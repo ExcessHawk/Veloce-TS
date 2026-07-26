@@ -43,7 +43,16 @@ export class InterceptorManager {
     handler: () => Promise<Response>,
     ctx: ExecutionContext
   ): Promise<Response> {
-    const chain = [...this.globals, ...localInterceptors];
+    // Fast paths: avoid array allocation when there is nothing to chain
+    if (this.globals.length === 0 && localInterceptors.length === 0) {
+      return handler();
+    }
+    const chain =
+      this.globals.length === 0
+        ? localInterceptors
+        : localInterceptors.length === 0
+          ? this.globals
+          : [...this.globals, ...localInterceptors];
     let i = 0;
     const next = async (): Promise<Response> => {
       if (i >= chain.length) return handler();

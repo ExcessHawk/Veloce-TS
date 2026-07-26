@@ -49,7 +49,7 @@ export async function createApp(dbPath?: string): Promise<Veloce> {
     }
 
     try {
-      jwtProvider.verifyAccessToken(token);
+      await jwtProvider.verifyAccessToken(token);
     } catch {
       return c.json({ error: 'Invalid or expired token' }, 401);
     }
@@ -94,7 +94,7 @@ if (import.meta.main) {
   Bun.serve<ChatWsData>({
     hostname,
     port,
-    fetch(req, server) {
+    async fetch(req, server) {
       const url = new URL(req.url);
 
       if (url.pathname === '/ws/chat') {
@@ -112,7 +112,7 @@ if (import.meta.main) {
         }
 
         try {
-          const payload = jwtProvider.verifyAccessToken(token) as {
+          const payload = (await jwtProvider.verifyAccessToken(token)) as {
             sub: string;
             username?: string;
           };

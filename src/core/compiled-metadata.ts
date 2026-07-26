@@ -1,34 +1,25 @@
 /**
  * @module veloce-ts/core/compiled-metadata
- * @description {@link MetadataCompiler}: precomputa regex de path, orden de parámetros/dependencias y flags
- * (`hasBody`, etc.) a partir de {@link RouteMetadata} para acelerar el dispatch en {@link RouterCompiler}.
+ * @description {@link MetadataCompiler}: precomputa arrays densos de parámetros/dependencias y el índice
+ * máximo de argumento a partir de {@link RouteMetadata} para acelerar el dispatch en {@link RouterCompiler}.
  */
-import type { RouteMetadata, ParameterMetadata } from '../types';
+import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
 
 /**
- * Compiled route metadata with pre-computed values for performance
+ * Compiled route metadata with pre-computed values for performance.
+ * Every field here is consumed by the request hot path in RouterCompiler —
+ * do not add speculative precomputation that the handler never reads.
  */
 export interface CompiledRouteMetadata extends RouteMetadata {
-  // Pre-compiled path regex for matching
-  pathRegex?: RegExp;
-  
-  // Pre-resolved parameter order (indices sorted)
-  parameterOrder: number[];
-  
-  // Pre-resolved dependency order (indices sorted)
-  dependencyOrder: number[];
-  
-  // Maximum argument index (for array allocation)
+  /** Parameters with sparse/undefined entries filtered out, in index order */
+  parametersDense: ParameterMetadata[];
+
+  /** Dependencies with sparse/undefined entries filtered out, in index order */
+  dependenciesDense: DependencyMetadata[];
+
+  /** Maximum argument index (for exact args-array allocation) */
   maxArgumentIndex: number;
-  
-  // Flags for quick checks
-  hasBody: boolean;
-  hasQuery: boolean;
-  hasParams: boolean;
-  hasHeaders: boolean;
-  hasCookies: boolean;
-  hasDependencies: boolean;
-  
+
   // Handler for functional routes
   handler?: (c: any, ...args: any[]) => any;
 }
@@ -69,8 +60,8 @@ export class MetadataCompiler {
       targetId,
       method: route.method,
       path: route.path,
-      params: route.parameters?.map(p => ({ i: p.index, t: p.type, n: p.name })),
-      deps: route.dependencies?.map(d => ({ i: d.index })),
+      params: route.parameters?.map(p => (p ? { i: p.index, t: p.type, n: p.name } : null)),
+      deps: route.dependencies?.map(d => (d ? { i: d.index } : null)),
       handlerId: handler ? (MetadataCompiler.handlerIds.get(handler) ?? MetadataCompiler.assignHandlerId(handler)) : null,
       mw: route.middleware?.map(m => MetadataCompiler.handlerIds.get(m) ?? MetadataCompiler.assignHandlerId(m)),
     });
@@ -106,31 +97,21 @@ export class MetadataCompiler {
       return cached;
     }
 
-    // Pre-compile path regex for parameter extraction
-    const pathRegex = this.compilePathRegex(route.path);
-    
-    // Pre-resolve parameter order
-    const parameterOrder = this.resolveParameterOrder(route.parameters);
-    
-    // Pre-resolve dependency order
-    const dependencyOrder = this.resolveDependencyOrder(route.dependencies);
-    
+    // Dense, index-ordered copies so the hot path never re-checks sparse slots
+    const parametersDense = this.toDense(route.parameters);
+    const dependenciesDense = this.toDense(route.dependencies);
+
     // Calculate maximum argument index
     const maxArgumentIndex = this.calculateMaxArgumentIndex(
-      route.parameters,
-      route.dependencies
+      parametersDense,
+      dependenciesDense
     );
-    
-    // Pre-compute parameter type flags for quick checks
-    const flags = this.computeParameterFlags(route.parameters, route.dependencies);
-    
+
     const compiled: CompiledRouteMetadata = {
       ...route,
-      pathRegex,
-      parameterOrder,
-      dependencyOrder,
+      parametersDense,
+      dependenciesDense,
       maxArgumentIndex,
-      ...flags,
     };
 
     this.cache.set(cacheKey, compiled);
@@ -140,50 +121,16 @@ export class MetadataCompiler {
   }
 
   /**
-   * Compile path pattern into a regex for efficient matching
-   * Converts FastAPI-style {param} to regex capture groups
+   * Filter out sparse/undefined slots and sort by declared argument index,
+   * so the request-time loops can iterate without per-entry guards.
    */
-  private static compilePathRegex(path: string): RegExp {
-    // Escape special regex chars first (paths have already been normalised to
-    // :param style by normalizePath(), so no {param} tokens remain here)
-    let pattern = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    // Convert :param to named capture groups (Hono style)
-    pattern = pattern.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '(?<$1>[^/]+)');
-
-    return new RegExp(`^${pattern}$`);
-  }
-
-  /**
-   * Resolve the order of parameters by their indices
-   * Returns sorted array of indices for efficient iteration
-   */
-  private static resolveParameterOrder(parameters: ParameterMetadata[]): number[] {
-    if (!parameters || parameters.length === 0) {
+  private static toDense<T extends { index?: number }>(entries?: T[]): T[] {
+    if (!entries || entries.length === 0) {
       return [];
     }
-    
-    // Extract indices and sort them
-    return parameters
-      .map(p => p.index)
-      .filter(idx => idx !== undefined)
-      .sort((a, b) => a - b);
-  }
-
-  /**
-   * Resolve the order of dependencies by their indices
-   * Returns sorted array of indices for efficient iteration
-   */
-  private static resolveDependencyOrder(dependencies: any[]): number[] {
-    if (!dependencies || dependencies.length === 0) {
-      return [];
-    }
-    
-    // Extract indices and sort them
-    return dependencies
-      .map(d => d.index)
-      .filter(idx => idx !== undefined)
-      .sort((a, b) => a - b);
+    return entries
+      .filter((e): e is T => e !== undefined && e !== null && e.index !== undefined)
+      .sort((a, b) => (a.index as number) - (b.index as number));
   }
 
   /**
@@ -192,59 +139,18 @@ export class MetadataCompiler {
    */
   private static calculateMaxArgumentIndex(
     parameters: ParameterMetadata[],
-    dependencies: any[]
+    dependencies: DependencyMetadata[]
   ): number {
     let maxIndex = -1;
-    
-    if (parameters && parameters.length > 0) {
-      const maxParamIndex = Math.max(...parameters.map(p => p.index));
-      maxIndex = Math.max(maxIndex, maxParamIndex);
+
+    for (const p of parameters) {
+      if (p.index > maxIndex) maxIndex = p.index;
     }
-    
-    if (dependencies && dependencies.length > 0) {
-      const maxDepIndex = Math.max(...dependencies.map(d => d.index));
-      maxIndex = Math.max(maxIndex, maxDepIndex);
+    for (const d of dependencies) {
+      if (d.index > maxIndex) maxIndex = d.index;
     }
-    
+
     return maxIndex;
-  }
-
-  /**
-   * Pre-compute flags for parameter types to avoid repeated checks
-   * These flags enable quick conditional logic during request processing
-   */
-  private static computeParameterFlags(
-    parameters: ParameterMetadata[],
-    dependencies?: any[]
-  ): {
-    hasBody: boolean;
-    hasQuery: boolean;
-    hasParams: boolean;
-    hasHeaders: boolean;
-    hasCookies: boolean;
-    hasDependencies: boolean;
-  } {
-    const hasDependencies = !!(dependencies && dependencies.length > 0);
-
-    if (!parameters || parameters.length === 0) {
-      return {
-        hasBody: false,
-        hasQuery: false,
-        hasParams: false,
-        hasHeaders: false,
-        hasCookies: false,
-        hasDependencies
-      };
-    }
-    
-    return {
-      hasBody: parameters.some(p => p.type === 'body'),
-      hasQuery: parameters.some(p => p.type === 'query'),
-      hasParams: parameters.some(p => p.type === 'param'),
-      hasHeaders: parameters.some(p => p.type === 'header'),
-      hasCookies: parameters.some(p => p.type === 'cookie'),
-      hasDependencies
-    };
   }
 
   /**

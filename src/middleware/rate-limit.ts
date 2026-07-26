@@ -13,16 +13,31 @@ interface RateLimitRecord {
  * Tracks requests per IP/key and returns 429 when limit exceeded
  */
 export function createRateLimitMiddleware(options: RateLimitOptions): Middleware {
+  const trustProxy = options.trustProxy === true;
+
   const {
     windowMs = 60000, // 1 minute default
     max = 100, // 100 requests per window default
     keyGenerator = (c: Context) => {
-      // x-forwarded-for can be a comma-separated list; take the first (leftmost) IP
-      const forwarded = c.req.header('x-forwarded-for');
-      if (forwarded) {
-        return forwarded.split(',')[0].trim();
+      if (trustProxy) {
+        // Behind a trusted reverse proxy the forwarded headers are reliable.
+        // x-forwarded-for can be a comma-separated list; take the first (leftmost) IP
+        const forwarded = c.req.header('x-forwarded-for');
+        if (forwarded) {
+          return forwarded.split(',')[0].trim();
+        }
+        const realIp = c.req.header('x-real-ip');
+        if (realIp) {
+          return realIp;
+        }
       }
-      return c.req.header('x-real-ip') || 'unknown';
+      // Direct peer IP — not client-spoofable. Available under Bun via the
+      // server instance the adapter passes through as env.
+      const peer = (c.env as any)?.server?.requestIP?.(c.req.raw);
+      if (peer?.address) {
+        return peer.address;
+      }
+      return 'unknown';
     }
   } = options;
 

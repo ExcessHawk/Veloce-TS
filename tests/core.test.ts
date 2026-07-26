@@ -55,6 +55,30 @@ describe('Functional routing', () => {
     expect(json.name).toBe('Alfredo');
   });
 
+  it('functional API infers handler args from the declared schemas (P1-1)', async () => {
+    const BodySchema = z.object({ name: z.string(), age: z.number() });
+    const QuerySchema = z.object({ page: z.string() });
+
+    app.post('/typed', {
+      schema: { body: BodySchema, query: QuerySchema },
+      handler: async (c, body, query) => {
+        // Compile-time proof: no cast needed to access these fields.
+        // If inference regresses to `any`, this still passes at runtime but
+        // `bun run typecheck` on this file will start failing on the next
+        // two lines (TS7006 / property-does-not-exist).
+        const name: string = body.name;
+        const age: number = body.age;
+        const page: string = query.page;
+        return { name, age, page };
+      },
+    });
+
+    const res = await request(app, 'POST', '/typed?page=2', { name: 'Ada', age: 36 });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ name: 'Ada', age: 36, page: '2' });
+  });
+
   it('Unknown route returns 404', async () => {
     const res = await request(app, 'GET', '/nonexistent');
     expect(res.status).toBe(404);

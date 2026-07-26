@@ -76,11 +76,26 @@ export class HonoAdapter implements Adapter {
   }
 
   /**
-   * Get the Hono fetch handler
-   * This can be used directly in serverless environments or for custom server setups
+   * Get the Hono fetch handler, bound to the Hono instance.
+   *
+   * This is the deploy path for serverless / edge runtimes that don't accept
+   * an incoming-connection `listen()` — most notably **Cloudflare Workers**,
+   * which invoke a `fetch(request, env, ctx)` export per-request instead.
+   *
+   * @example Cloudflare Workers entrypoint
+   * ```ts
+   * // worker.ts
+   * const app = new VeloceTS({ title: 'My API' });
+   * app.get('/hello', { handler: () => ({ message: 'hi' }) });
+   * await app.compile();
+   *
+   * export default {
+   *   fetch: app.getFetchHandler(),
+   * };
+   * ```
    */
-  getHandler() {
-    return this.hono.fetch;
+  getHandler(): Hono['fetch'] {
+    return this.hono.fetch.bind(this.hono);
   }
 
   /**

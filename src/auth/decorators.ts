@@ -62,7 +62,7 @@ export function createAuthMiddleware(jwtProvider: JWTProvider) {
       const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
       try {
-        const payload = jwtProvider.verifyAccessToken(token);
+        const payload = await jwtProvider.verifyAccessToken(token);
         
         // Store auth info in context
         c.set('auth.user', payload);

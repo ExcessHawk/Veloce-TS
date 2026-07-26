@@ -1,12 +1,29 @@
 import 'reflect-metadata';
 import { describe, it, expect, beforeAll } from 'bun:test';
-import { Veloce, GraphQLPlugin } from 'veloce-ts';
-import { Resolver, GQLQuery, GQLMutation, Arg, getResolverMetadata, getFieldsMetadata } from 'veloce-ts/graphql';
+import { Veloce } from '../src/index';
+import {
+  GraphQLPlugin,
+  Resolver,
+  GQLQuery,
+  GQLMutation,
+  GQLSubscription,
+  Arg,
+  Returns,
+  getResolverMetadata,
+  getFieldsMetadata
+} from '../src/graphql';
 import { z } from 'zod';
 
 // graphql package is an optional peer dep — may not be installed.
-// Tests exercise what we can regardless: plugin installation, route registration,
-// error paths, and graceful degradation when graphql is absent.
+// Structural tests (installation, routes, error paths, SDL generation) run
+// regardless; end-to-end execution tests are skipped when graphql is absent.
+let hasGraphQL = false;
+try {
+  await import('graphql');
+  hasGraphQL = true;
+} catch {
+  // graphql not installed — execution suites below are skipped
+}
 
 // ── Resolver fixtures ────────────────────────────────────────────────────────
 
@@ -237,5 +254,205 @@ describe('@Resolver / @GQLQuery / @GQLMutation decorator metadata', () => {
       body: JSON.stringify({ query: '{ getTags }' })
     }));
     expect(res.status).toBe(200);
+  });
+});
+
+// ── End-to-end execution fixtures ────────────────────────────────────────────
+
+const AccountType = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().email(),
+  age: z.number().int().optional()
+});
+
+const RegisterInput = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  age: z.number().int().optional()
+});
+
+// Tracks that resolver methods are actually invoked during execution
+const invocations = { account: 0, registerAccount: 0 };
+
+@Resolver('account')
+class AccountResolver {
+  @GQLQuery('account')
+  @Returns(AccountType, { name: 'Account' })
+  async account(@Arg('id', z.string()) id: string) {
+    invocations.account++;
+    return { id, name: 'Ada Lovelace', email: 'ada@example.com', age: 36 };
+  }
+
+  @GQLQuery('accounts')
+  @Returns(z.array(AccountType), { name: 'Account' })
+  async accounts() {
+    return [
+      { id: '1', name: 'Ada Lovelace', email: 'ada@example.com' },
+      { id: '2', name: 'Alan Turing', email: 'alan@example.com' }
+    ];
+  }
+
+  @GQLMutation('registerAccount')
+  @Returns(AccountType, { name: 'Account' })
+  async registerAccount(@Arg('input', RegisterInput) input: z.infer<typeof RegisterInput>) {
+    invocations.registerAccount++;
+    return { id: 'new-1', name: input.name, email: input.email, age: input.age };
+  }
+
+  // Subscriptions: SDL only — execution requires a WS transport (out of scope)
+  @GQLSubscription('accountCreated')
+  @Returns(AccountType, { name: 'Account' })
+  async accountCreated() {
+    return null;
+  }
+
+  // No @Returns → falls back to the generic JSON scalar
+  @GQLQuery('accountStats')
+  async accountStats() {
+    return { total: 2, active: 1 };
+  }
+}
+
+describe('Schema SDL generation (typed returns and inputs)', () => {
+  let plugin: GraphQLPlugin;
+
+  beforeAll(async () => {
+    const a = new Veloce({ docs: false });
+    plugin = new GraphQLPlugin({ resolvers: [AccountResolver], playground: false, path: '/gql-sdl' });
+    a.usePlugin(plugin);
+    await a.compile();
+  });
+
+  it('emits object type from @Returns Zod schema', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('type Account {');
+    expect(typeDefs).toContain('id: String!');
+    expect(typeDefs).toContain('email: String!');
+    expect(typeDefs).toContain('age: Int');
+  });
+
+  it('query field uses the declared return type, not String', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('account(id: String!): Account!');
+    expect(typeDefs).not.toContain('account(id: String!): String');
+  });
+
+  it('list return type from z.array of object schema', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('accounts: [Account!]!');
+  });
+
+  it('emits input type from Zod object argument', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('input RegisterAccountInput {');
+    expect(typeDefs).toContain('registerAccount(input: RegisterAccountInput!): Account!');
+  });
+
+  it('undeclared return type falls back to JSON scalar', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('scalar JSON');
+    expect(typeDefs).toContain('accountStats: JSON');
+  });
+
+  it('subscription appears in SDL (execution intentionally not wired)', () => {
+    const typeDefs = plugin.getSchema()!.typeDefs;
+    expect(typeDefs).toContain('type Subscription {');
+    expect(typeDefs).toContain('accountCreated: Account!');
+  });
+});
+
+describe.skipIf(!hasGraphQL)('End-to-end GraphQL execution', () => {
+  let h: any;
+
+  const post = async (body: any) => {
+    const res = await h.fetch(new Request('http://localhost/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }));
+    expect(res.status).toBe(200);
+    return res.json();
+  };
+
+  beforeAll(async () => {
+    const a = new Veloce({ docs: false });
+    a.usePlugin(new GraphQLPlugin({ resolvers: [AccountResolver, UserResolver], playground: false }));
+    await a.compile();
+    h = a.getHono();
+  });
+
+  it('query returning an object type resolves real field data', async () => {
+    const body = await post({ query: '{ account(id: "42") { id name email age } }' });
+    expect(body.errors).toBeUndefined();
+    expect(body.data.account).toEqual({
+      id: '42',
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      age: 36
+    });
+  });
+
+  it('resolver method is actually invoked (non-null data)', async () => {
+    const before = invocations.account;
+    const body = await post({ query: '{ account(id: "7") { id } }' });
+    expect(body.data.account).not.toBeNull();
+    expect(body.data.account.id).toBe('7');
+    expect(invocations.account).toBe(before + 1);
+  });
+
+  it('list query returns all objects with selected fields', async () => {
+    const body = await post({ query: '{ accounts { id name } }' });
+    expect(body.errors).toBeUndefined();
+    expect(body.data.accounts).toHaveLength(2);
+    expect(body.data.accounts[0]).toEqual({ id: '1', name: 'Ada Lovelace' });
+  });
+
+  it('mutation with Zod-validated input returns the created object', async () => {
+    const before = invocations.registerAccount;
+    const body = await post({
+      query: `mutation Register($input: RegisterAccountInput!) {
+        registerAccount(input: $input) { id name email age }
+      }`,
+      variables: { input: { name: 'Grace Hopper', email: 'grace@example.com', age: 85 } }
+    });
+    expect(body.errors).toBeUndefined();
+    expect(body.data.registerAccount).toEqual({
+      id: 'new-1',
+      name: 'Grace Hopper',
+      email: 'grace@example.com',
+      age: 85
+    });
+    expect(invocations.registerAccount).toBe(before + 1);
+  });
+
+  it('mutation input failing Zod validation surfaces an error', async () => {
+    const body = await post({
+      query: `mutation Register($input: RegisterAccountInput!) {
+        registerAccount(input: $input) { id }
+      }`,
+      variables: { input: { name: 'X', email: 'not-an-email' } }
+    });
+    expect(body.errors).toBeDefined();
+    expect(body.errors.length).toBeGreaterThan(0);
+  });
+
+  it('scalar-arg resolver validated by Zod (invalid type rejected by GraphQL layer)', async () => {
+    const body = await post({ query: '{ account(id: 123) { id } }' });
+    expect(body.errors).toBeDefined();
+  });
+
+  it('JSON-fallback query returns the raw object through the JSON scalar', async () => {
+    const body = await post({ query: '{ accountStats }' });
+    expect(body.errors).toBeUndefined();
+    expect(body.data.accountStats).toEqual({ total: 2, active: 1 });
+  });
+
+  it('GET request executes a typed query', async () => {
+    const query = encodeURIComponent('{ account(id: "9") { id name } }');
+    const res = await h.fetch(new Request(`http://localhost/graphql?query=${query}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.account).toEqual({ id: '9', name: 'Ada Lovelace' });
   });
 });

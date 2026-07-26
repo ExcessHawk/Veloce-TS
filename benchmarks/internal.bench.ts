@@ -7,6 +7,18 @@
 import 'reflect-metadata';
 import { z } from 'zod';
 
+// ── Output capture ────────────────────────────────────────────────────────────
+// Every line is mirrored into `transcript` so the results file gets the actual
+// measurements. Previously only a 2-line header was written, leaving
+// benchmarks/results/internal-*.txt effectively empty.
+
+const transcript: string[] = [];
+
+function log(line = ''): void {
+  transcript.push(line);
+  console.log(line);
+}
+
 // ── Manual benchmark runner ───────────────────────────────────────────────────
 
 async function bench(
@@ -29,13 +41,13 @@ async function bench(
 
   const opsPerSec = Math.round(iterations / (ms / 1_000));
   const usPerOp   = ((ms / iterations) * 1_000).toFixed(3);
-  console.log(
+  log(
     `  ${name.padEnd(50)} ${opsPerSec.toLocaleString().padStart(13)} ops/s  (${usPerOp} µs/op)`,
   );
 }
 
 async function group(name: string, fn: () => Promise<void>): Promise<void> {
-  console.log(`\n── ${name} ${'─'.repeat(Math.max(0, 60 - name.length))}─`);
+  log(`\n── ${name} ${'─'.repeat(Math.max(0, 60 - name.length))}─`);
   await fn();
 }
 
@@ -107,9 +119,9 @@ const firstRoute = benchRoute;
 
 // ── Benchmarks ────────────────────────────────────────────────────────────────
 
-console.log('\n╔═══════════════════════════════════════════════════════════════╗');
-console.log('║          Veloce-TS Internal Micro-Benchmarks                  ║');
-console.log('╚═══════════════════════════════════════════════════════════════╝');
+log('\n╔═══════════════════════════════════════════════════════════════╗');
+log('║          Veloce-TS Internal Micro-Benchmarks                  ║');
+log('╚═══════════════════════════════════════════════════════════════╝');
 
 await group('JWT Operations', async () => {
   await bench('JWTProvider.generateTokens()', () =>
@@ -231,8 +243,21 @@ if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
 
 const date = new Date().toISOString().split('T')[0];
 const filename = join(resultsDir, `internal-${date}.txt`);
-// Capture was not set up for redirect — note the file location
-writeFileSync(filename, `# Veloce-TS Internal Benchmarks — ${new Date().toISOString()}\n# Re-run: bun benchmarks/internal.bench.ts\n`);
+writeFileSync(
+  filename,
+  [
+    `# Veloce-TS Internal Benchmarks — ${new Date().toISOString()}`,
+    `# Bun ${(Bun as any).version} · ${process.platform}`,
+    '# Re-run: bun benchmarks/internal.bench.ts',
+    '',
+    ...transcript,
+    '',
+  ].join('\n'),
+);
 
 console.log(`\n  Results: ${filename}`);
 console.log('  Done!\n');
+
+// Release cache cleanup intervals — without this the default MemoryCacheStore's
+// 60s setInterval keeps the event loop alive and the process never exits.
+CacheManager.destroy();

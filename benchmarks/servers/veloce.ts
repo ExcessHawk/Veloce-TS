@@ -2,7 +2,15 @@ import 'reflect-metadata';
 import { Veloce, Controller, Get, Post, Body, Param } from '../../src/index';
 import { z } from 'zod';
 
-const BenchmarkBody = z.object({ name: z.string(), value: z.number() });
+// Matches run.ts's SCENARIOS exactly, and express.ts's routes, so every
+// server in the comparison answers the same requests.
+const ValidateBody = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  age: z.number().int().positive(),
+});
+
+const PORT = Number(process.env.BENCH_PORT ?? 3001);
 
 @Controller('/')
 class BenchmarkController {
@@ -18,18 +26,23 @@ class BenchmarkController {
     return obj;
   }
 
-  @Get('/params/:id')
+  @Get('/users/:id')
   params(@Param('id') id: string) {
-    return { id, timestamp: Date.now() };
+    return { id, name: `User ${id}` };
+  }
+
+  @Post('/echo')
+  echo(@Body() body: unknown) {
+    return body;
   }
 
   @Post('/validate')
-  validate(@Body(BenchmarkBody) body: z.infer<typeof BenchmarkBody>) {
-    return { received: body };
+  validate(@Body(ValidateBody) body: z.infer<typeof ValidateBody>) {
+    return { ok: true, name: body.name };
   }
 }
 
 const app = new Veloce({ docs: false });
 app.include(BenchmarkController);
 await app.compile();
-app.listen(3000, () => console.log('veloce-ts benchmark server on :3000'));
+app.listen(PORT, () => console.log(`veloce-ts benchmark server on :${PORT}`));

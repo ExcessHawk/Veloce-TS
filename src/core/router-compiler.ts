@@ -13,10 +13,15 @@ import { ResponseSerializer } from '../responses/response';
 import { ErrorHandler } from '../errors/handler';
 import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata';
 import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
-import { BadRequestException } from '../errors/exceptions';
+import { BadRequestException, HTTPException } from '../errors/exceptions';
+import { getLogger } from '../logging/logger';
 import type { FilterManager } from '../errors/exception-filter';
 import { InterceptorManager, getInterceptors, type ExecutionContext } from './interceptor-manager';
 import { isSSE, getStreamContentType } from '../decorators/stream';
+import { CacheManager } from '../cache/manager';
+import { parseTTL } from '../cache/types';
+import { AuthenticationException } from '../auth/exceptions';
+import { getRequestId, getAbortSignal } from '../context/request-context';
 
 function isAsyncGenerator(v: unknown): v is AsyncGenerator {
   return v != null && typeof (v as any)[Symbol.asyncIterator] === 'function';
@@ -132,21 +137,32 @@ export class RouterCompiler {
    * Integrates parameter extraction, validation, dependency injection, error handling, and caching
    */
   public createHandler(route: CompiledRouteMetadata): (c: Context) => Promise<any> {
+    // Per-route constants — resolved once at compile time, not per request
+    const isFunctional = Boolean((route as any).handler);
+    const cacheConfig = (route as any).cache;
+    const invalidatePatterns = (route as any).cacheInvalidate;
+    const responseSchema = (route as any).responseSchema;
+    const statusCode = (route as any).statusCode;
+    const localInterceptors = isFunctional
+      ? []
+      : getInterceptors(route.target, route.propertyKey);
+    const sseRoute = isFunctional ? false : isSSE(route.target, route.propertyKey);
+    const streamCT = isFunctional
+      ? undefined
+      : getStreamContentType(route.target, route.propertyKey);
+    const controllerScope = isFunctional
+      ? undefined
+      : MetadataRegistry.getControllerMetadata(route.target)?.scope || 'singleton';
+
     return async (c: Context) => {
       try {
         // Store route metadata in context for auth checks
         c.set('routeMetadata', route);
-        
+
         // Check if route has caching enabled
-        const cacheConfig = (route as any).cache;
         let cacheKey: string | null = null;
-        let cacheManager: any = null;
 
         if (cacheConfig) {
-          const { CacheManager } = await import('../cache/manager.js');
-          const { parseTTL } = await import('../cache/types.js');
-          cacheManager = CacheManager;
-
           // Generate cache key
           const params = c.req.param();
           const query = cacheConfig.includeQuery ? c.req.query() : undefined;
@@ -169,31 +185,29 @@ export class RouterCompiler {
           c.header('X-Cache', 'MISS');
         }
         
-        // 1. Extract and validate parameters from the request
-        const args = await this.extractParameters(c, route.parameters);
+        // 1. Extract and validate parameters from the request (dense arrays
+        //    are precomputed at compile time — no sparse-slot guards needed)
+        const args = await this.extractParameters(c, route.parametersDense);
 
         // 2. Resolve dependencies with the DI container
-        const deps = await this.resolveDependencies(c, route.dependencies);
+        const deps = await this.resolveDependencies(c, route.dependenciesDense);
 
         // 3. Merge parameters and dependencies into correct order
-        const allArgs = this.mergeArguments(args, deps, route.parameters, route.maxArgumentIndex);
+        const allArgs = this.mergeArguments(args, deps, route.parametersDense, route.maxArgumentIndex);
 
         // 4. Build the core execution function (wrapped by interceptors below)
-        const localInterceptors = (route as any).handler
-          ? []
-          : getInterceptors(route.target, route.propertyKey);
-
         const execute = async (): Promise<Response> => {
           try {
             let result: any;
 
             // Check if this is a functional route (has handler property)
-            if ((route as any).handler) {
+            if (isFunctional) {
               result = await (route as any).handler(c, ...allArgs);
             } else {
-              // Decorator-based route - instantiate controller and call method
+              // Decorator-based route - resolve controller (singleton by default,
+              // configurable via @Controller('/x', { scope }) )
               const instance = await this.container.resolve(route.target, {
-                scope: 'transient',
+                scope: controllerScope,
                 context: c
               });
 
@@ -205,21 +219,15 @@ export class RouterCompiler {
             }
 
             // Cache the result if caching is enabled
-            if (cacheConfig && cacheKey && cacheManager) {
+            if (cacheConfig && cacheKey) {
               if (!cacheConfig.condition || cacheConfig.condition(result)) {
-                const { parseTTL } = await import('../cache/types.js');
                 const ttl = parseTTL(cacheConfig.ttl);
-                await cacheManager.set(cacheKey, result, ttl, cacheConfig.store);
+                await CacheManager.set(cacheKey, result, ttl, cacheConfig.store);
               }
             }
 
             // Handle cache invalidation if configured
-            const invalidatePatterns = (route as any).cacheInvalidate;
             if (invalidatePatterns && Array.isArray(invalidatePatterns)) {
-              if (!cacheManager) {
-                const { CacheManager } = await import('../cache/manager.js');
-                cacheManager = CacheManager;
-              }
               const params = c.req.param();
               for (const pattern of invalidatePatterns) {
                 let resolvedPattern = pattern;
@@ -228,33 +236,43 @@ export class RouterCompiler {
                     resolvedPattern = resolvedPattern.replace(`{${key}}`, String(value));
                   }
                 }
-                await cacheManager.invalidate(resolvedPattern);
+                await CacheManager.invalidate(resolvedPattern);
               }
             }
 
             // 5a. SSE / Stream — return streaming response directly (skip serializer)
             if (isAsyncGenerator(result)) {
-              if (isSSE(route.target, route.propertyKey)) {
+              if (sseRoute) {
                 return sseResponse(result);
               }
-              const streamCT = getStreamContentType(route.target, route.propertyKey);
               if (streamCT) {
                 return streamResponse(result, streamCT);
               }
             }
 
             // 5b. Validate / strip response with @ResponseSchema if present
-            if ((route as any).responseSchema) {
+            if (responseSchema) {
               try {
-                result = await (route as any).responseSchema.parseAsync(result);
-              } catch {
-                // Silently ignore output schema mismatches
+                result = await responseSchema.parseAsync(result);
+              } catch (validationError) {
+                // The handler produced output that violates its own contract —
+                // fail loudly server-side, return a generic 500 to the client
+                getLogger().error(
+                  'Response schema validation failed',
+                  validationError instanceof Error ? validationError : undefined,
+                  {
+                    method: route.method,
+                    path: route.path,
+                    handler: route.propertyKey,
+                  }
+                );
+                throw new HTTPException(500, 'Response validation failed');
               }
             }
 
             // 5c. Apply @HttpCode status before serialising
-            if ((route as any).statusCode) {
-              c.status((route as any).statusCode as any);
+            if (statusCode) {
+              c.status(statusCode as any);
             }
 
             // 5d. Serialize and return the response
@@ -337,9 +355,6 @@ export class RouterCompiler {
     const extracted: any[] = [];
 
     for (const param of params) {
-      // Skip undefined entries (sparse array handling)
-      if (!param) continue;
-      
       let value: any;
 
       switch (param.type) {
@@ -353,22 +368,12 @@ export class RouterCompiler {
           break;
 
         case 'query':
-          // Extract query parameters
+          // Extract query parameters; schema validation happens once in the
+          // generic validator pass below (throws ValidationException → 422)
           if (param.name) {
-            // Extract specific query parameter
             value = c.req.query(param.name);
           } else {
-            // Extract all query parameters
             value = c.req.query();
-          }
-          
-          // Validate with schema if provided
-          if (param.schema && value !== undefined) {
-            try {
-              value = param.schema.parse(value);
-            } catch (error) {
-              throw new BadRequestException(`Invalid query parameter: ${error}`);
-            }
           }
           break;
 
@@ -440,7 +445,6 @@ export class RouterCompiler {
           if (routeMetadata && this.isAuthRequired(routeMetadata)) {
             if (!value) {
               const authError = c.get('auth.error') || 'Authentication required';
-              const { AuthenticationException } = await import('../auth/exceptions.js');
               throw new AuthenticationException(authError);
             }
           }
@@ -495,13 +499,11 @@ export class RouterCompiler {
 
         case 'request-id':
           // Extract request ID from context
-          const { getRequestId } = await import('../context/request-context.js');
           value = getRequestId(c);
           break;
 
         case 'abort-signal':
           // Extract AbortSignal from context
-          const { getAbortSignal } = await import('../context/request-context.js');
           value = getAbortSignal(c);
           break;
 
@@ -538,23 +540,20 @@ export class RouterCompiler {
     paramMetadata: ParameterMetadata[],
     maxArgumentIndex?: number
   ): any[] {
-    // Filter out undefined entries first
-    const validParamMetadata = paramMetadata.filter(p => p !== undefined && p.index !== undefined);
-    
-    // Calculate indices safely
-    const paramIndices = validParamMetadata.map(p => p.index);
-    const maxParamIndex = paramIndices.length > 0 ? Math.max(...paramIndices) : -1;
-    
-    // Use pre-computed max index if available, otherwise calculate
-    let maxIndex = maxArgumentIndex !== undefined && maxArgumentIndex >= 0
-      ? maxArgumentIndex
-      : Math.max(
-          maxParamIndex,
-          parameters.length - 1,
-          dependencies.length - 1,
-          0
-        );
-    
+    // Use pre-computed max index when available; only recompute as fallback
+    let maxIndex: number;
+    if (maxArgumentIndex !== undefined && maxArgumentIndex >= 0) {
+      maxIndex = maxArgumentIndex;
+    } else {
+      let maxParamIndex = -1;
+      for (const p of paramMetadata) {
+        if (p !== undefined && p.index !== undefined && p.index > maxParamIndex) {
+          maxParamIndex = p.index;
+        }
+      }
+      maxIndex = Math.max(maxParamIndex, parameters.length - 1, dependencies.length - 1, 0);
+    }
+
     // Ensure maxIndex is valid
     if (!Number.isFinite(maxIndex) || maxIndex < 0) {
       maxIndex = 0;
@@ -586,9 +585,6 @@ export class RouterCompiler {
     const resolved: any[] = [];
 
     for (const dep of deps) {
-      // Skip undefined entries (sparse array handling)
-      if (!dep) continue;
-      
       try {
         // Resolve the dependency with the DI container
         // Pass the context for request-scoped dependencies

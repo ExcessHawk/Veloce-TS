@@ -15,12 +15,14 @@ import { InterceptorManager, type Interceptor } from './interceptor-manager';
 import { createCorsMiddleware } from '../middleware/cors';
 import { createRateLimitMiddleware } from '../middleware/rate-limit';
 import { createCompressionMiddleware } from '../middleware/compression';
+import { createTimeoutMiddleware } from '../middleware/timeout';
 import { getLogger } from '../logging';
 import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql';
 import type {
   VeloceTSConfig,
   Class,
   RouteConfig,
+  RouteSchemas,
   Middleware,
   CorsOptions,
   RateLimitOptions,
@@ -267,8 +269,8 @@ export class VeloceTS {
    * });
    * ```
    */
-  get(path: string, config: RouteConfig): void {
-    this.registerFunctionalRoute('GET', path, config);
+  get<S extends RouteSchemas>(path: string, config: RouteConfig<S>): void {
+    this.registerFunctionalRoute('GET', path, config as RouteConfig);
   }
 
   /**
@@ -295,29 +297,29 @@ export class VeloceTS {
    * });
    * ```
    */
-  post(path: string, config: RouteConfig): void {
-    this.registerFunctionalRoute('POST', path, config);
+  post<S extends RouteSchemas>(path: string, config: RouteConfig<S>): void {
+    this.registerFunctionalRoute('POST', path, config as RouteConfig);
   }
 
   /**
    * Register a PUT route
    */
-  put(path: string, config: RouteConfig): void {
-    this.registerFunctionalRoute('PUT', path, config);
+  put<S extends RouteSchemas>(path: string, config: RouteConfig<S>): void {
+    this.registerFunctionalRoute('PUT', path, config as RouteConfig);
   }
 
   /**
    * Register a DELETE route
    */
-  delete(path: string, config: RouteConfig): void {
-    this.registerFunctionalRoute('DELETE', path, config);
+  delete<S extends RouteSchemas>(path: string, config: RouteConfig<S>): void {
+    this.registerFunctionalRoute('DELETE', path, config as RouteConfig);
   }
 
   /**
    * Register a PATCH route
    */
-  patch(path: string, config: RouteConfig): void {
-    this.registerFunctionalRoute('PATCH', path, config);
+  patch<S extends RouteSchemas>(path: string, config: RouteConfig<S>): void {
+    this.registerFunctionalRoute('PATCH', path, config as RouteConfig);
   }
 
   /**
@@ -353,22 +355,7 @@ export class VeloceTS {
     // Build middleware list — prepend timeout wrapper when config.timeout is set
     const middleware: Middleware[] = [];
     if (config.timeout) {
-      const ms = config.timeout;
-      const timeoutMiddleware: Middleware = async (c, next) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            reject(Object.assign(new Error(`Request timed out after ${ms}ms`), { name: 'TimeoutError', statusCode: 408 }));
-          }, ms);
-        });
-        try {
-          c.header('X-Timeout-Ms', String(ms));
-          await Promise.race([next(), timeoutPromise]);
-        } finally {
-          if (timer !== undefined) clearTimeout(timer);
-        }
-      };
-      middleware.push(timeoutMiddleware);
+      middleware.push(createTimeoutMiddleware(config.timeout));
     }
     middleware.push(...(config.middleware || []));
 
@@ -558,22 +545,54 @@ export class VeloceTS {
   }
 
   private async runShutdownHandlers(signal: string): Promise<void> {
+    const logger = getLogger().child({ component: 'app' });
     const handlers = [...this.shutdownHandlers].reverse();
     for (const handler of handlers) {
-      try { await handler(signal); } catch { /* ignore individual handler errors */ }
+      try {
+        await handler(signal);
+      } catch (error) {
+        // One failing handler must not stop the rest, but never fail silently
+        logger.error('Shutdown handler failed', error as Error);
+      }
     }
   }
 
+  /**
+   * Single SIGTERM/SIGINT registration: close the server (stop accepting
+   * connections), then run onShutdown handlers under the shutdown timeout.
+   */
   private registerShutdownSignals(): void {
     if (typeof process === 'undefined' || this.shutdownSignalsRegistered) return;
     this.shutdownSignalsRegistered = true;
     const shutdown = async (signal: string) => {
+      const logger = getLogger().child({ component: 'app' });
+      logger.info(`Received ${signal}, starting graceful shutdown...`);
+
+      const work = async () => {
+        if (this.serverInstance && typeof this.serverInstance.close === 'function') {
+          try {
+            await Promise.resolve(this.serverInstance.close());
+            logger.info('Server closed gracefully');
+          } catch (error) {
+            logger.error('Error closing server during shutdown', error as Error);
+          }
+        }
+        await this.runShutdownHandlers(signal);
+        try {
+          await this.pluginManager.stop(this);
+        } catch (error) {
+          logger.error('Plugin teardown failed during shutdown', error as Error);
+        }
+      };
+
       await Promise.race([
-        this.runShutdownHandlers(signal),
+        work(),
         new Promise<void>((_, rej) =>
           setTimeout(() => rej(new Error('Shutdown timeout')), this._shutdownTimeout)
         ),
-      ]).catch(() => {}).finally(() => process.exit(0));
+      ]).catch(error => {
+        logger.error('Graceful shutdown did not complete', error as Error);
+      }).finally(() => process.exit(0));
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT',  () => shutdown('SIGINT'));
@@ -601,6 +620,37 @@ export class VeloceTS {
    */
   getHono(): Hono {
     return this.hono;
+  }
+
+  /**
+   * Get a `fetch(request, env, ctx)` handler bound to this app — the export
+   * shape serverless/edge runtimes expect instead of `listen()`. This is the
+   * deploy path for **Cloudflare Workers** (and any other fetch-per-request
+   * runtime): `listen()` throws there since Workers never accept an incoming
+   * TCP connection to bind a port to.
+   *
+   * Auto-compiles routes on first call, same as `listen()`.
+   *
+   * @example Cloudflare Workers entrypoint
+   * ```ts
+   * // worker.ts
+   * const app = new VeloceTS({ title: 'My API' });
+   * app.get('/hello', { handler: () => ({ message: 'hi' }) });
+   *
+   * export default {
+   *   fetch: await app.getFetchHandler(),
+   * };
+   * ```
+   *
+   * Works the same way locally with `Bun.serve({ fetch: await app.getFetchHandler() })`
+   * or Deno's `Deno.serve(await app.getFetchHandler())` if you want to bypass
+   * the `listen()` adapter selection entirely.
+   */
+  async getFetchHandler(): Promise<Hono['fetch']> {
+    if (!this.compiled) {
+      await this.compile();
+    }
+    return this.hono.fetch.bind(this.hono);
   }
 
   /**
@@ -670,7 +720,6 @@ export class VeloceTS {
   }
 
   private serverInstance: any = null;
-  private shutdownHandlersRegistered: boolean = false;
 
   /**
    * Start the server and listen on the specified port
@@ -689,49 +738,30 @@ export class VeloceTS {
     const adapter = await this.createAdapter();
     
     this.serverInstance = adapter.listen(port, callback);
-    
-    // Setup graceful shutdown handlers
-    this.setupGracefulShutdown();
-    
+
+    // Plugin onStart hooks run once the server is accepting connections
+    await this.pluginManager.start(this);
+
+    // Signal handlers are registered once in compile() via registerShutdownSignals()
     return this.serverInstance;
   }
 
   /**
-   * Setup graceful shutdown handlers
-   */
-  private setupGracefulShutdown(): void {
-    if (typeof process === 'undefined') return;
-    if (this.shutdownHandlersRegistered) return;
-    this.shutdownHandlersRegistered = true;
-
-    const shutdown = async (signal: string) => {
-      const logger = getLogger().child({ component: 'app' });
-      logger.info(`Received ${signal}, starting graceful shutdown...`);
-
-      if (this.serverInstance && typeof this.serverInstance.close === 'function') {
-        try {
-          await Promise.resolve(this.serverInstance.close());
-          logger.info('Server closed gracefully');
-        } catch (error) {
-          logger.error('Error during shutdown', error as Error);
-        }
-      }
-
-      process.exit(0);
-    };
-
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-  }
-
-  /**
    * Gracefully shutdown the server
+   */
+  /**
+   * Programmatic shutdown (as opposed to the SIGTERM/SIGINT path in
+   * registerShutdownSignals): closes the server, then runs onShutdown
+   * handlers and plugin onStop hooks — the same teardown a signal triggers,
+   * minus the shutdown timeout race and process.exit.
    */
   async shutdown(): Promise<void> {
     if (this.serverInstance && typeof this.serverInstance.close === 'function') {
       await Promise.resolve(this.serverInstance.close());
       this.serverInstance = null;
     }
+    await this.runShutdownHandlers('manual');
+    await this.pluginManager.stop(this);
   }
 
   /**
@@ -779,27 +809,27 @@ class RouteBuilder {
     private path: string
   ) {}
 
-  get(config: RouteConfig): RouteBuilder {
+  get<S extends RouteSchemas>(config: RouteConfig<S>): RouteBuilder {
     this.app.get(this.path, config);
     return this;
   }
 
-  post(config: RouteConfig): RouteBuilder {
+  post<S extends RouteSchemas>(config: RouteConfig<S>): RouteBuilder {
     this.app.post(this.path, config);
     return this;
   }
 
-  put(config: RouteConfig): RouteBuilder {
+  put<S extends RouteSchemas>(config: RouteConfig<S>): RouteBuilder {
     this.app.put(this.path, config);
     return this;
   }
 
-  delete(config: RouteConfig): RouteBuilder {
+  delete<S extends RouteSchemas>(config: RouteConfig<S>): RouteBuilder {
     this.app.delete(this.path, config);
     return this;
   }
 
-  patch(config: RouteConfig): RouteBuilder {
+  patch<S extends RouteSchemas>(config: RouteConfig<S>): RouteBuilder {
     this.app.patch(this.path, config);
     return this;
   }

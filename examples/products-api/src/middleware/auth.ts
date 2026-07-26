@@ -16,7 +16,7 @@ export const requireAuth = async (c: any, next: any): Promise<any> => {
   }
 
   try {
-    const payload = jwtProvider.verifyAccessToken(token);
+    const payload = await jwtProvider.verifyAccessToken(token);
     c.set('user', payload);
     await next();
   } catch {

@@ -531,7 +531,7 @@ app.usePlugin(new GraphQLPlugin({
 | **Bun** | ✅ Recommended | Best performance |
 | **Node.js** | ✅ Supported | v18+ required |
 | **Deno** | ✅ Supported | Use `npm:veloce` |
-| **Cloudflare Workers** | ✅ Supported | Edge-ready |
+| **Cloudflare Workers** | ✅ Supported | Edge-ready — deploy via `getFetchHandler()`, not `listen()` |
 
 > **WebSockets:** HTTP → WS upgrade is supported on **Bun** and **Deno**. On **Node.js** the built-in WebSocket plugin still returns **501** until a Node upgrade path lands (see **Current limitations** below).
 
@@ -542,6 +542,22 @@ const app = new Veloce();
 app.listen(3000);
 ```
 
+**Cloudflare Workers** don't accept an incoming connection to bind a port to — Workers invoke a `fetch(request, env, ctx)` export per request instead, so `listen()` throws there. Use `getFetchHandler()`:
+
+```typescript
+// worker.ts
+import { Veloce } from 'veloce-ts';
+
+const app = new Veloce({ title: 'My API' });
+app.get('/hello', { handler: () => ({ message: 'hi' }) });
+
+export default {
+  fetch: await app.getFetchHandler(),
+};
+```
+
+Deploy with `wrangler deploy`.
+
 ## ⚠️ Current limitations
 
 These are **known gaps today** so you can choose Veloce-TS with clear expectations:
@@ -549,9 +565,9 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 | Area | Limitation |
 |------|------------|
 | **WebSockets on Node.js** | `WebSocketPlugin` throws at startup on Node.js with a clear error message directing you to Bun/Deno. WebSocket upgrades are supported on **Bun** and **Deno** only; Node.js support requires a `ws`/HTTP upgrade bridge not yet implemented. |
-| **GraphQL** | The GraphQL plugin and decorators are **still maturing**. Treat them as **experimental** for production unless you have validated your use case. |
+| **GraphQL** | Resolver execution and typed object/input generation now work end-to-end (fixed after v1.2.0). Subscriptions are generated in the SDL but have no execution transport yet — implementing one requires a WebSocket bridge. |
 | **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
-| **Pre-1.0** | APIs may change between minor versions. Check the [CHANGELOG](CHANGELOG.md) before upgrading. |
+| **API stability** | Stable public API since v1.0.0 (semver). Check the [CHANGELOG](CHANGELOG.md) for what changed between releases. |
 
 ## 🔭 Planned updates (roadmap)
 
@@ -559,8 +575,9 @@ Directional priorities—not a release calendar. Items may ship in a different o
 
 1. **ORM choice** — Make **Drizzle, Prisma, and TypeORM** practical first-class options: clear patterns, docs, and (where it helps) small helpers so teams can **pick one ORM** without fighting the framework.
 2. **WebSockets on Node.js** — Remove the Node **501** path by integrating a real upgrade path (e.g. `ws` or runtime-appropriate APIs) so the same decorator API works on Node as on Bun/Deno.
-3. **CLI scaffolding** — Lightweight **code generation** (e.g. controller + route + test skeleton), similar in spirit to Feathers’ `generate service`, kept maintainable and optional.
-4. **GraphQL** — Improve stability and docs **after** REST, caching, WebSockets-on-Node, and ORM stories are in better shape (lower priority than the items above).
+3. **GraphQL** — Improve stability and docs **after** REST, caching, WebSockets-on-Node, and ORM stories are in better shape (lower priority than the items above).
+
+**Completed in v1.2.0:** CLI code generation (`veloce generate controller|service|module|resolver|dto|middleware|plugin`), graceful shutdown, exception filters, interceptors, streaming/SSE responses, event bus, OpenAPI 3.1.
 
 **Completed in v0.4.18:** Security audit of auth routes, JWT blacklist correctness, MetadataCompiler cache isolation fix, ORM lazy-loading for optional peer deps, 375-test suite, internal micro-benchmarks.
 
@@ -614,7 +631,7 @@ For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and pr
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. See our [Contributors Guide](CONTRIBUTORS.md) for more details.
+Contributions are welcome! Please feel free to submit a Pull Request. See our [Contributing Guide](CONTRIBUTING.md) for more details.
 
 ## 📄 License
 

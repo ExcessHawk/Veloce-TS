@@ -161,18 +161,26 @@ export abstract class BaseTransactionManager implements ITransactionManager {
       this.setRequestTransaction(context, transactionContext);
     }
     
+    let rolledBack = false;
     try {
       const result = await originalMethod.apply(target, args);
-      
+
       if (transactionContext.rollbackOnly) {
+        rolledBack = true;
         await this.rollback(transactionContext);
         throw new Error('Transaction marked for rollback');
       }
-      
+
       await this.commit(transactionContext);
       return result;
     } catch (error) {
-      await this.rollback(transactionContext);
+      // Avoid a double rollback: the rollbackOnly branch above already rolled
+      // back before throwing, and the transaction is gone from the store by
+      // the time we get here — rolling back again would mask the real error
+      // with a spurious "transaction not found".
+      if (!rolledBack) {
+        await this.rollback(transactionContext);
+      }
       throw error;
     } finally {
       if (context) {

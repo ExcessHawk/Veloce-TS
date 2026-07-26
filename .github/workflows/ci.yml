@@ -7,52 +7,187 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  # Core matrix: typecheck + unit tests + build across OSes and Bun versions.
+  # This is the primary gate — keep it fast and reliable.
   test:
+    name: test (${{ matrix.os }}, bun ${{ matrix.bun-version }})
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        bun-version: [latest]
-    
+        include:
+          - os: ubuntu-latest
+            bun-version: latest
+          # Pin a known-good Bun version alongside `latest` so a bad upstream
+          # Bun release doesn't take out the whole matrix silently — if only
+          # `latest` fails, that's a signal to investigate Bun itself rather
+          # than our code.
+          - os: ubuntu-latest
+            bun-version: '1.2.x'
+          - os: windows-latest
+            bun-version: latest
+          - os: macos-latest
+            bun-version: latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: ${{ matrix.bun-version }}
-      
+
       - name: Install dependencies
         run: bun install
-      
+
       - name: Type check
         run: bun run typecheck
-      
+
       - name: Run tests
-        run: bun test --run
-      
+        run: bun test tests/
+
       - name: Build
         run: bun run build
-      
-      - name: Test package installation
-        run: bun run test:package
-  
-  coverage:
+
+  # Verifies the published npm package: pack it, check dist/ layout, check
+  # every "exports" subpath resolves to a real file, and type-check a
+  # consumer file against dist/types. Kept separate from the `test` matrix
+  # so a packaging-only failure doesn't read as "the framework is broken on
+  # every OS" — it's specifically about what a `npm install veloce-ts`
+  # consumer would get.
+  package-validation:
+    name: package-validation
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
-      
+
       - name: Install dependencies
         run: bun install
-      
+
+      - name: Build (production)
+        run: bun run build:prod
+
+      - name: Test package installation
+        run: bun run test:package
+
+  # Confirms the built dist/esm and dist/cjs artifacts actually work under
+  # plain Node — not just Bun. Building still uses Bun (that's the project's
+  # toolchain); only the smoke test itself runs under Node.
+  node-smoke:
+    name: node-smoke (node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run build
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Smoke test dist/esm + dist/cjs under Node
+        run: node scripts/smoke-node.mjs
+
+      - name: CLI smoke test under Node
+        run: node bin/veloce.mjs --help
+
+  # Best-effort Deno smoke test for the ESM build. Not a supported runtime
+  # yet (see continue-on-error below and the inline notes), but this gives
+  # early signal without blocking merges on it.
+  deno-smoke:
+    name: deno-smoke (best-effort)
+    runs-on: ubuntu-latest
+    # Allow-failure: this framework imports 'reflect-metadata' (a bare npm
+    # specifier, left external/unbundled by build.ts) directly from
+    # dist/esm/src/index.js, and several other dependencies (hono, zod,
+    # jsonwebtoken, commander) are only validated against Node/Bun's module
+    # resolution and Node-compat surface. Deno's npm/Node compatibility layer
+    # has improved a lot, but bare-specifier resolution against a plain
+    # `node_modules` (no import map, no `npm:` prefix) and full parity for
+    # every Node builtin these deps touch is not guaranteed across Deno
+    # versions. Rather than block merges on a runtime this project doesn't
+    # otherwise target, this job is informational: it should stay green in
+    # practice, and a failure here is a prompt to investigate Deno support,
+    # not a merge blocker.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run build
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Smoke test dist/esm under Deno (allow-failure)
+        run: deno run --allow-read --allow-env --allow-net --node-modules-dir scripts/smoke-node.mjs
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
       - name: Run tests with coverage
-        run: bun test --coverage
+        run: bun test tests/ --coverage --coverage-reporter=text --coverage-reporter=lcov
+
+      # Ratchet set just below the current ~50% baseline: it blocks regressions
+      # now rather than failing on day one. Raise it as coverage climbs.
+      - name: Enforce coverage threshold (src/**, line coverage >= 50%)
+        run: bun run scripts/check-coverage.ts --threshold 50
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14

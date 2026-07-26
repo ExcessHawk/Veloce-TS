@@ -32,51 +32,129 @@ describe('JWTProvider', () => {
     expect(tokens.expiresIn).toBeGreaterThan(0);
   });
 
-  it('verifies access token and returns payload', () => {
+  it('verifies access token and returns payload', async () => {
     const tokens = provider.generateTokens({ sub: 'user1', username: 'alice' });
-    const payload = provider.verifyAccessToken(tokens.accessToken);
+    const payload = await provider.verifyAccessToken(tokens.accessToken);
     expect(payload.sub).toBe('user1');
     expect(payload.username).toBe('alice');
   });
 
-  it('throws InvalidToken when token is garbage', () => {
-    expect(() => provider.verifyAccessToken('not.a.jwt')).toThrow();
+  it('throws InvalidToken when token is garbage', async () => {
+    await expect(provider.verifyAccessToken('not.a.jwt')).rejects.toThrow();
   });
 
-  it('blacklisted token is rejected', () => {
+  it('blacklisted token is rejected', async () => {
     const tokens = provider.generateTokens({ sub: 'user1' });
-    provider.blacklistToken(tokens.accessToken);
-    expect(() => provider.verifyAccessToken(tokens.accessToken)).toThrow('Token has been revoked');
+    await provider.blacklistToken(tokens.accessToken);
+    await expect(provider.verifyAccessToken(tokens.accessToken)).rejects.toThrow(
+      'Token has been revoked'
+    );
   });
 
-  it('cleanupBlacklist removes expired tokens', () => {
+  it('cleanupBlacklist removes expired tokens', async () => {
     // Create a token with extremely short expiry
     const shortProvider = new JWTProvider({ secret: SECRET, expiresIn: '1s' });
     const tokens = shortProvider.generateTokens({ sub: 'x' });
-    shortProvider.blacklistToken(tokens.accessToken);
-    expect(shortProvider.isBlacklisted(tokens.accessToken)).toBe(true);
+    await shortProvider.blacklistToken(tokens.accessToken);
+    expect(await shortProvider.isBlacklisted(tokens.accessToken)).toBe(true);
 
     // Simulate expiry by manually cleaning up
-    shortProvider.cleanupBlacklist();
+    await shortProvider.cleanupBlacklist();
     // Token is expired so cleanup should remove it (if exp is in the past)
     // Since expiry is 1s we can't guarantee instant test execution, but the method should not throw
   });
 
-  it('refreshes access token using refresh token', () => {
+  it('refreshes access token using refresh token', async () => {
     const tokens = provider.generateTokens({ sub: 'user2', roles: ['admin'] });
-    const newTokens = provider.refreshAccessToken(tokens.refreshToken);
+    const newTokens = await provider.refreshAccessToken(tokens.refreshToken);
     expect(newTokens.accessToken).toBeTruthy();
     // Old refresh token should now be blacklisted
-    expect(provider.isBlacklisted(tokens.refreshToken)).toBe(true);
+    expect(await provider.isBlacklisted(tokens.refreshToken)).toBe(true);
   });
 
-  it('refresh token cannot be used as access token', () => {
+  it('refresh token cannot be used as access token', async () => {
     const tokens = provider.generateTokens({ sub: 'user2' });
-    // verifyAccessToken should reject refresh tokens (they have type: 'refresh')
-    // because the verifyRefreshToken checks type explicitly; verifyAccessToken
-    // would still accept it from signature perspective but the payload type differs
     const refreshPayload = provider.decodeToken(tokens.refreshToken);
     expect(refreshPayload?.type).toBe('refresh');
+    // Same signing key by default, so the type claim must be enforced
+    await expect(provider.verifyAccessToken(tokens.refreshToken)).rejects.toThrow(
+      'Refresh token cannot be used as access token'
+    );
+  });
+
+  it('supports custom TokenBlacklist store (async)', async () => {
+    const calls: string[] = [];
+    const store = {
+      entries: new Map<string, number>(),
+      async add(token: string, exp: number) {
+        calls.push('add');
+        this.entries.set(token, exp);
+      },
+      async has(token: string) {
+        calls.push('has');
+        return this.entries.has(token);
+      },
+      async cleanup() {},
+    };
+    const p = new JWTProvider({ secret: SECRET, blacklist: store });
+    const tokens = p.generateTokens({ sub: 'u' });
+    await p.blacklistToken(tokens.accessToken);
+    await expect(p.verifyAccessToken(tokens.accessToken)).rejects.toThrow('revoked');
+    expect(calls).toContain('add');
+    expect(calls).toContain('has');
+  });
+});
+
+// ─── RS256 asymmetric keys ───────────────────────────────────────────────────
+
+describe('JWTProvider RS256', () => {
+  const { generateKeyPairSync } = require('node:crypto');
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+
+  it('throws when RS256 configured without keys', () => {
+    expect(() => new JWTProvider({ secret: 'x', algorithm: 'RS256' })).toThrow(
+      'requires privateKey and publicKey'
+    );
+  });
+
+  it('signs and verifies with RSA key pair', async () => {
+    const p = new JWTProvider({
+      secret: '',
+      algorithm: 'RS256',
+      privateKey,
+      publicKey,
+    });
+    const tokens = p.generateTokens({ sub: 'rsa-user' });
+    const payload = await p.verifyAccessToken(tokens.accessToken);
+    expect(payload.sub).toBe('rsa-user');
+    const refreshPayload = await p.verifyRefreshToken(tokens.refreshToken);
+    expect(refreshPayload.sub).toBe('rsa-user');
+  });
+
+  it('rejects tokens signed with a different key pair', async () => {
+    const other = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    const signer = new JWTProvider({
+      secret: '',
+      algorithm: 'RS256',
+      privateKey: other.privateKey,
+      publicKey: other.publicKey,
+    });
+    const verifier = new JWTProvider({
+      secret: '',
+      algorithm: 'RS256',
+      privateKey,
+      publicKey,
+    });
+    const tokens = signer.generateTokens({ sub: 'evil' });
+    await expect(verifier.verifyAccessToken(tokens.accessToken)).rejects.toThrow();
   });
 });
 

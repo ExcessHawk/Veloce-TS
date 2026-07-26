@@ -1,5 +1,44 @@
 # Migration Guide
 
+## 1.2.x → 2.0.0
+
+Two breaking changes from the security/performance hardening pass.
+
+---
+
+### 1. `JWTProvider` methods are now `async`
+
+`verifyAccessToken`, `verifyRefreshToken`, `refreshAccessToken`, `blacklistToken`, `isBlacklisted`, and `cleanupBlacklist` now return `Promise`s instead of resolving synchronously. This was required to fix a security issue (see below) and to support pluggable, Redis-backed token revocation for multi-instance deployments.
+
+```typescript
+// Before
+const payload = jwtProvider.verifyAccessToken(token);
+jwtProvider.blacklistToken(token);
+
+// After
+const payload = await jwtProvider.verifyAccessToken(token);
+await jwtProvider.blacklistToken(token);
+```
+
+Also fixed alongside this change: `verifyAccessToken()` previously did not reject refresh tokens — with the default configuration (no separate `refreshSecret`), a stolen refresh token could be replayed as an access token. It now rejects any token whose payload has `type === 'refresh'`.
+
+New optional `JWTConfig` fields: `privateKey` / `publicKey` (required when `algorithm` is `RS256`/`RS384`/`RS512` — previously these algorithms were declared but silently signed with the shared `secret`), and `blacklist` (a `TokenBlacklist` implementation; defaults to `MemoryTokenBlacklist`, use `RedisTokenBlacklist` for multi-instance revocation).
+
+---
+
+### 2. Decorator-based controllers default to `singleton` scope, not `transient`
+
+Controllers previously got a **new instance on every request**. They are now resolved as `singleton` by default — the standard convention (matches NestJS) and a meaningful performance win, since transient resolution re-read constructor dependency metadata on every request.
+
+**If your controller stores per-request state in instance fields**, that state is now shared across concurrent requests — move it to a method-local variable, a request-scoped dependency (`@Depends(Thing, { scope: 'request' })`), or opt back into per-request instances explicitly:
+
+```typescript
+@Controller('/users', { scope: 'transient' }) // opt out of the new default
+class UserController { ... }
+```
+
+---
+
 ## 0.x → 1.0.0
 
 Three breaking changes. All have straightforward fixes.

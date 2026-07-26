@@ -2,49 +2,61 @@
 
 ---
 
-## Internal Micro-Benchmarks — v0.4.18
+## Internal Micro-Benchmarks — v1.2.0
 
 In-process measurements of framework internals. No network, no TCP — pure dispatch overhead.
 
-_Run: 2026-06-25 · Bun 1.x · `bun benchmarks/internal.bench.ts`_
+_Run: 2026-07-26 · Bun 1.3.14 · Windows 11 · `bun benchmarks/internal.bench.ts`_
 
-| Operation | Throughput | Latency |
-|---|---:|---:|
-| **JWT** | | |
-| `generateTokens()` | 31,640 ops/s | 31.6 µs |
-| `verifyAccessToken()` | 45,116 ops/s | 22.2 µs |
-| `decodeToken()` | 225,270 ops/s | 4.4 µs |
-| `isBlacklisted()` — Map.has() | 77,000,000 ops/s | 0.013 µs |
-| **MetadataCompiler** | | |
-| `compile()` — cache miss | 291,815 ops/s | 3.4 µs |
-| `compile()` — cache hit | 1,570,000 ops/s | 0.64 µs |
-| **Zod Validation** | | |
-| `safeParse()` valid | 1,640,000 ops/s | 0.6 µs |
-| `safeParse()` invalid | 387,769 ops/s | 2.6 µs |
-| **CacheManager (MemoryStore)** | | |
-| `get()` — cache hit | 2,660,000 ops/s | 0.38 µs |
-| `set()` | 2,090,000 ops/s | 0.48 µs |
-| **DIContainer** | | |
-| `resolve()` — singleton (cached) | 1,330,000 ops/s | 0.75 µs |
-| **In-process HTTP Dispatch** | | |
-| `GET /hello` | 97,545 ops/s | 10.25 µs |
-| `GET /users/:id` (param extract) | 85,422 ops/s | 11.7 µs |
-| `POST /validate` (Zod body) | 53,859 ops/s | 18.6 µs |
+The "v0.4.18" column is the previous published run, kept so the effect of the
+performance pass in this release is visible rather than quietly overwritten.
+
+| Operation | Throughput | Latency | vs v0.4.18 |
+|---|---:|---:|---:|
+| **JWT** | | | |
+| `generateTokens()` | 32,329 ops/s | 30.9 µs | +2% |
+| `verifyAccessToken()` | 51,137 ops/s | 19.6 µs | +13% |
+| `decodeToken()` | 251,377 ops/s | 4.0 µs | +12% |
+| `isBlacklisted()` | 18,135,490 ops/s | 0.055 µs | now async — see note |
+| **MetadataCompiler** | | | |
+| `compile()` — cache miss | 887,713 ops/s | 1.13 µs | +204% |
+| `compile()` — cache hit | 1,876,500 ops/s | 0.53 µs | +20% |
+| `compileAll()` | 1,782,658 ops/s | 0.56 µs | n/a |
+| **MetadataRegistry** | | | |
+| `getRouteMethods()` | 2,929,050 ops/s | 0.34 µs | n/a |
+| `getRouteMetadata()` | 13,760,761 ops/s | 0.073 µs | n/a |
+| **Zod Validation** | | | |
+| `safeParse()` valid | 1,995,269 ops/s | 0.50 µs | +22% |
+| `safeParse()` invalid | 458,740 ops/s | 2.18 µs | +18% |
+| `parse()` valid | 2,436,707 ops/s | 0.41 µs | n/a |
+| **CacheManager (MemoryStore)** | | | |
+| `get()` — cache hit | 2,419,445 ops/s | 0.41 µs | −9% |
+| `get()` — cache miss | 3,760,600 ops/s | 0.27 µs | n/a |
+| `set()` | 3,081,303 ops/s | 0.33 µs | +47% |
+| `generateKey()` | 2,881,494 ops/s | 0.35 µs | n/a |
+| **DIContainer** | | | |
+| `resolve()` — singleton (cached) | 1,903,341 ops/s | 0.53 µs | +43% |
+| **In-process HTTP Dispatch** | | | |
+| `GET /hello` | 182,010 ops/s | 5.49 µs | **+87%** |
+| `GET /users/:id` (param extract) | 220,205 ops/s | 4.54 µs | **+158%** |
+| `POST /validate` (Zod body) | 138,466 ops/s | 7.22 µs | **+157%** |
 
 **Key observations:**
-- JWT crypto (WebCrypto HMAC-SHA256) is the slowest operation at ~32–45 K ops/s — expected and unavoidable.
-- MetadataCompiler cache hit is **5× faster** than a cache miss (0.64 µs vs 3.4 µs).
-- CacheManager and DI resolution are effectively free (sub-microsecond on cache hit).
-- Full in-process HTTP dispatch (including Hono routing, param extraction, handler, JSON serialization) takes **10–19 µs** depending on body/validation work.
+- **Request dispatch is 1.9–2.6× faster than v0.4.18.** Moving controller resolution, interceptor lookup and parameter/dependency ordering out of the per-request path (they are now resolved once at `compile()` time) is where the gain comes from — see [CHANGELOG](CHANGELOG.md).
+- JWT crypto (HMAC-SHA256) remains the slowest operation at ~32–51 K ops/s — expected and unavoidable.
+- `isBlacklisted()` is now **async** (it returns a `Promise`, so a pluggable `TokenBlacklist` can hit Redis for multi-instance revocation). The 77 M ops/s figure previously published was a bare synchronous `Map.has()`; 18 M ops/s is the cost of the promise wrapper. At 0.055 µs it is still far below the noise floor of any real request.
+- The `compile()` cache-miss speedup comes from deleting precomputation the request path never read (path regex, sorted index arrays, `has*` flags) — it now only computes what the handler actually consumes.
+- CacheManager and DI resolution remain effectively free (sub-microsecond).
 
-> Full results: `benchmarks/results/internal-2026-06-25.txt`
+> Full results: `benchmarks/results/internal-2026-07-26.txt`
 
 ---
 
-## HTTP Throughput Comparison — v0.4.3
+## HTTP Throughput Comparison — v1.2.0
 
-Comparative performance measurements of **Veloce-TS v0.4.3** against three popular
-Node.js/Bun web frameworks.
+Comparative performance measurements of **Veloce-TS v1.2.0** against three popular
+Node.js/Bun web frameworks, using a single harness (`benchmarks/run.ts`) — all four
+servers answer the exact same routes on Bun's native server.
 
 > **Run them yourself:**
 > ```bash
@@ -55,36 +67,45 @@ Node.js/Bun web frameworks.
 
 ---
 
-## Results — Bun 1.3.5 · Windows 11 · Ryzen 5
+## Results — Bun 1.3.14 · Windows 11
 
-_6 000 requests · 50 concurrent connections · each server tested in isolation · run 2026-03-28_
+_15 000 requests · 50 concurrent connections · each server tested in isolation · run 2026-07-26_
 
 ### 1. GET /hello — simple JSON response
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **30 376** | 0.95 | 1.70 | 2.62 |
-| **Veloce-TS v0.4.3** | **19 252** | 1.43 | 2.76 | 5.79 |
-| **Fastify 5**    | **16 918** | 1.58 | 3.49 | 5.45 |
-| Express 4        |   14 189 | 1.83 | 3.64 | 5.05 |
+| **Hono (raw)**   | **27 557** | 1.11 | 2.31 | 3.15 |
+| **Veloce-TS v1.2.0** | **18 561** | 1.65 | 3.64 | 5.77 |
+| **Fastify 5**    | **12 063** | 2.39 | 5.42 | 7.04 |
+| Express 4        |    8 414 | 3.38 | 7.10 | 9.45 |
+
+No body to parse, no params to extract, no validation — this is pure routing + decorator/DI
+dispatch overhead. Hono wins clearly here since Veloce-TS adds a real (if increasingly thin)
+layer on top of it for this trivial case.
 
 ### 2. GET /users/:id — route parameter extraction
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **28 479** | 1.00 | 1.75 | 2.60 |
-| **Veloce-TS v0.4.3** | **22 219** | 1.23 | 2.18 | 3.02 |
-| **Fastify 5**    | **19 375** | 1.36 | 2.52 | 3.32 |
-| Express 4        |   15 084 | 1.73 | 3.21 | 4.15 |
+| **Hono (raw)**   | **26 698** | 1.10 | 2.36 | 3.17 |
+| **Veloce-TS v1.2.0** | **25 557** | 1.16 | 2.73 | 3.95 |
+| **Fastify 5**    | **14 896** | 1.96 | 4.12 | 5.28 |
+| Express 4        |   10 216 | 2.80 | 5.62 | 6.77 |
+
+Essentially tied with raw Hono (**−4.3%**) — the compiled parameter-extraction path
+introduced in this release closes almost all of the gap seen on the `/hello` scenario.
 
 ### 3. POST /echo — JSON body parse
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms |
 |------------------|----------:|-------:|-------:|-------:|
-| **Hono (raw)**   | **23 271** | 1.16 | 2.02 | 2.69 |
-| **Veloce-TS v0.4.3** | **18 788** | 1.40 | 2.52 | 3.42 |
-| Fastify 5        |   13 768 | 1.85 | 3.54 | 4.62 |
-| Express 4        |   10 110 | 2.50 | 4.69 | 5.89 |
+| **Veloce-TS v1.2.0** | **23 588** | 1.23 | 2.84 | 3.73 |
+| Hono (raw)       |   20 219 | 1.41 | 3.01 | 4.13 |
+| Fastify 5        |   10 682 | 2.49 | 5.36 | 6.56 |
+| Express 4        |    7 030 | 3.85 | 7.46 | 10.42 |
+
+**Veloce-TS is +16.7% faster than raw Hono** on this scenario.
 
 ### 4. POST /validate — Zod schema validation ⭐
 
@@ -93,10 +114,15 @@ while other frameworks require manual `safeParse` calls.
 
 | Framework        | Req / s   | avg ms | p95 ms | p99 ms | Boilerplate |
 |------------------|----------:|-------:|-------:|-------:|-------------|
-| **Hono (raw)**   | **19 722** | 1.35 | 2.49 | 3.27 | Manual `safeParse` |
-| **Veloce-TS v0.4.3** | **15 988** | 1.64 | 2.98 | 4.11 | **`@Body(Schema)` only** |
-| Fastify 5        |   13 265 | 1.95 | 3.62 | 4.36 | Manual `safeParse` |
-| Express 4        |    9 930 | 2.57 | 4.81 | 6.26 | Manual `safeParse` |
+| **Veloce-TS v1.2.0** | **23 972** | 1.21 | 2.91 | 3.83 | **`@Body(Schema)` only** |
+| Hono (raw)       |   16 674 | 1.71 | 3.58 | 4.82 | Manual `safeParse` |
+| Fastify 5        |   10 361 | 2.60 | 5.23 | 7.71 | Manual `safeParse` |
+| Express 4        |    7 347 | 3.72 | 7.40 | 9.00 | Manual `safeParse` |
+
+**Veloce-TS is +43.8% faster than raw Hono** on this scenario, and beats it despite doing
+strictly more work (schema validation) — the compiled parameter/dependency pipeline and
+the singleton-by-default controller resolution added in this release outweigh the decorator
+overhead once there's real parsing/validation work to amortize it against.
 
 ---
 
@@ -104,15 +130,26 @@ while other frameworks require manual `safeParse` calls.
 
 | Comparison | Result |
 |---|---|
-| Veloce-TS vs Express (GET /hello) | **+36 % faster** |
-| Veloce-TS vs Express (GET /users/:id) | **+47 % faster** |
-| Veloce-TS vs Express (POST + body) | **+86 % faster** |
-| Veloce-TS vs Express (validation) | **+61 % faster** |
-| Veloce-TS vs Fastify (validation) | **+21 % faster** |
-| Veloce-TS vs raw Hono overhead | About **−19 % to −37 %** slower (scenario-dependent) |
+| Veloce-TS vs Express (GET /hello) | **+120.6% faster** |
+| Veloce-TS vs Express (GET /users/:id) | **+150.2% faster** |
+| Veloce-TS vs Express (POST + body) | **+235.5% faster** |
+| Veloce-TS vs Express (validation) | **+226.2% faster** |
+| Veloce-TS vs Fastify (validation) | **+131.4% faster** |
+| Veloce-TS vs raw Hono (GET /hello, no body/params work) | **−32.6%** slower |
+| Veloce-TS vs raw Hono (route params) | **−4.3%** slower (essentially tied) |
+| Veloce-TS vs raw Hono (JSON body parse) | **+16.7% faster** |
+| Veloce-TS vs raw Hono (Zod validation) | **+43.8% faster** |
 
-The decorator + DI layer of Veloce-TS adds **roughly sub–2 ms** average latency versus raw Hono on these runs. In exchange, you get automatic Zod validation, OpenAPI generation,
-dependency injection, and type-safe route parameters — for free.
+The honest summary: Veloce-TS's decorator + DI layer costs real overhead on trivial routes
+with nothing else to do (`/hello`), but that overhead is now **outweighed** by the framework's
+own optimizations (compiled parameter/dependency arrays, cached interceptor resolution,
+singleton controllers by default — see [CHANGELOG](CHANGELOG.md)) as soon as a route does
+real work — parsing a body or validating one. On those two scenarios Veloce-TS is faster
+than the raw Hono it's built on, not just faster than Express/Fastify.
+
+> These numbers superseded a stale `v0.4.3`-labeled comparison that claimed Veloce-TS was
+> "19–37% slower than Hono" across the board — that claim was never re-measured after
+> multiple performance passes and had drifted out of sync with reality.
 
 ---
 
@@ -131,19 +168,19 @@ dependency injection, and type-safe route parameters — for free.
 
 - Each framework runs as an **isolated subprocess** — only one server is active at a time.
 - **500 warmup requests** before each measurement to fill JIT caches.
-- **6 000 requests** at **50 concurrency** for each measurement.
+- **15 000 requests** at **50 concurrency** for each measurement.
 - RPS = successful responses / total wall-clock seconds elapsed.
 - Latency = measured end-to-end from client perspective (includes network round-trip on localhost).
 - Tests run on the same machine; results may vary across hardware and OS.
+- All four servers run on **Bun's native server** (`Bun.serve`) and answer identical routes — Hono previously ran through the `@hono/node-server` Node compat shim even under Bun, which unfairly penalized it; that's fixed.
 
 ### Run environment
 
 ```
-Runtime : Bun 1.3.5
+Runtime : Bun 1.3.14
 OS      : Windows 11 (win32)
-CPU     : AMD Ryzen 5
-Requests: 6 000  |  Concurrency: 50  |  Warmup: 500
-Captured: 2026-03-28 (see benchmarks/results/latest.json)
+Requests: 15 000  |  Concurrency: 50  |  Warmup: 500
+Captured: 2026-07-26 (see benchmarks/results/latest.json)
 ```
 
 ### How to reproduce

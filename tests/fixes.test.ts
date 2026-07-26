@@ -41,46 +41,50 @@ describe('Fix 1: JWT blacklist uses Map with expiry', () => {
     provider = new JWTProvider({ secret: SECRET, expiresIn: '1h' });
   });
 
-  it('token not blacklisted by default', () => {
+  it('token not blacklisted by default', async () => {
     const { accessToken } = provider.generateTokens({ sub: 'u1' });
-    expect(provider.isBlacklisted(accessToken)).toBe(false);
+    expect(await provider.isBlacklisted(accessToken)).toBe(false);
   });
 
-  it('blacklistToken makes isBlacklisted return true', () => {
+  it('blacklistToken makes isBlacklisted return true', async () => {
     const { accessToken } = provider.generateTokens({ sub: 'u1' });
-    provider.blacklistToken(accessToken);
-    expect(provider.isBlacklisted(accessToken)).toBe(true);
+    await provider.blacklistToken(accessToken);
+    expect(await provider.isBlacklisted(accessToken)).toBe(true);
   });
 
-  it('verifyAccessToken throws for blacklisted token', () => {
+  it('verifyAccessToken throws for blacklisted token', async () => {
     const { accessToken } = provider.generateTokens({ sub: 'u1' });
-    provider.blacklistToken(accessToken);
-    expect(() => provider.verifyAccessToken(accessToken)).toThrow('Token has been revoked');
+    await provider.blacklistToken(accessToken);
+    await expect(provider.verifyAccessToken(accessToken)).rejects.toThrow(
+      'Token has been revoked'
+    );
   });
 
-  it('isBlacklisted lazily removes entry when token is expired', () => {
+  it('isBlacklisted lazily removes entry when token is expired', async () => {
     // Manually insert an already-expired entry
-    (provider as any).blacklistedTokens.set('fake.expired.token', 1); // exp=1 (past)
+    const store = (provider as any).blacklist;
+    store.tokens.set('fake.expired.token', 1); // exp=1 (past)
     // First call should detect expiry, remove it, return false
-    expect(provider.isBlacklisted('fake.expired.token')).toBe(false);
+    expect(await provider.isBlacklisted('fake.expired.token')).toBe(false);
     // Entry must be gone from the map
-    expect((provider as any).blacklistedTokens.has('fake.expired.token')).toBe(false);
+    expect(store.tokens.has('fake.expired.token')).toBe(false);
   });
 
-  it('cleanupBlacklist purges expired entries', () => {
+  it('cleanupBlacklist purges expired entries', async () => {
     const { accessToken } = provider.generateTokens({ sub: 'u2' });
-    provider.blacklistToken(accessToken);
+    await provider.blacklistToken(accessToken);
     // Inject a fake already-expired entry
-    (provider as any).blacklistedTokens.set('old.token', 1);
-    provider.cleanupBlacklist();
+    const store = (provider as any).blacklist;
+    store.tokens.set('old.token', 1);
+    await provider.cleanupBlacklist();
     // The valid blacklisted token stays (exp is ~1h from now)
-    expect((provider as any).blacklistedTokens.has(accessToken)).toBe(true);
+    expect(store.tokens.has(accessToken)).toBe(true);
     // The expired entry is gone
-    expect((provider as any).blacklistedTokens.has('old.token')).toBe(false);
+    expect(store.tokens.has('old.token')).toBe(false);
   });
 
-  it('cleanupBlacklist does not throw on empty blacklist', () => {
-    expect(() => provider.cleanupBlacklist()).not.toThrow();
+  it('cleanupBlacklist does not throw on empty blacklist', async () => {
+    await provider.cleanupBlacklist();
   });
 });
 

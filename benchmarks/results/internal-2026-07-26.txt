@@ -1,0 +1,48 @@
+# Veloce-TS Internal Benchmarks — 2026-07-26T08:05:33.144Z
+# Bun 1.3.14 · win32
+# Re-run: bun benchmarks/internal.bench.ts
+
+
+╔═══════════════════════════════════════════════════════════════╗
+║          Veloce-TS Internal Micro-Benchmarks                  ║
+╚═══════════════════════════════════════════════════════════════╝
+
+── JWT Operations ───────────────────────────────────────────────
+  JWTProvider.generateTokens()                              32,329 ops/s  (30.932 µs/op)
+  JWTProvider.verifyAccessToken()                           51,137 ops/s  (19.556 µs/op)
+  JWTProvider.decodeToken()                                251,377 ops/s  (3.978 µs/op)
+  JWTProvider.isBlacklisted() – not blacklisted         18,135,490 ops/s  (0.055 µs/op)
+
+── MetadataCompiler ─────────────────────────────────────────────
+  MetadataCompiler.compile() – cache miss (first call)       887,713 ops/s  (1.126 µs/op)
+  MetadataCompiler.compile() – cache hit                 1,876,500 ops/s  (0.533 µs/op)
+  MetadataCompiler.compileAll() – 3 routes               1,782,658 ops/s  (0.561 µs/op)
+
+── MetadataRegistry ─────────────────────────────────────────────
+  MetadataRegistry.getRouteMethods()                     2,929,050 ops/s  (0.341 µs/op)
+  MetadataRegistry.getRouteMetadata()                   13,760,761 ops/s  (0.073 µs/op)
+
+── Zod Validation ───────────────────────────────────────────────
+  z.object().safeParse() – valid input                   1,995,269 ops/s  (0.501 µs/op)
+  z.object().safeParse() – invalid input                   458,740 ops/s  (2.180 µs/op)
+  z.object().parse() – valid input                       2,436,707 ops/s  (0.410 µs/op)
+
+── CacheManager (in-memory) ─────────────────────────────────────
+  CacheManager.set(key, value)                           3,081,303 ops/s  (0.325 µs/op)
+  CacheManager.get(key) – hit                            2,419,445 ops/s  (0.413 µs/op)
+  CacheManager.get(key) – miss                           3,760,600 ops/s  (0.266 µs/op)
+  CacheManager.generateKey() – method+path               2,881,494 ops/s  (0.347 µs/op)
+
+── MemoryCacheStore (raw) ───────────────────────────────────────
+  MemoryCacheStore.set()                                 4,642,892 ops/s  (0.215 µs/op)
+  MemoryCacheStore.get() – hit                           3,276,438 ops/s  (0.305 µs/op)
+  MemoryCacheStore.get() – miss                          8,277,735 ops/s  (0.121 µs/op)
+  MemoryCacheStore.has() – hit                           7,061,050 ops/s  (0.142 µs/op)
+
+── DIContainer ──────────────────────────────────────────────────
+  DIContainer.resolve() – singleton (cached)             1,903,341 ops/s  (0.525 µs/op)
+
+── HTTP Request Dispatch (in-process, no network) ───────────────
+  GET /api/hello                                           182,010 ops/s  (5.494 µs/op)
+  GET /api/users/:id (param extraction)                    220,205 ops/s  (4.541 µs/op)
+  POST /api/validate (Zod body validation)                 138,466 ops/s  (7.222 µs/op)

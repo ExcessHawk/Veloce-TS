@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-26
+
+### Security
+
+- **Fixed:** refresh tokens could be replayed as access tokens. `JWTProvider.verifyAccessToken()` now rejects any payload with `type === 'refresh'`, mirroring the check `verifyRefreshToken()` already had.
+- **Fixed:** `RS256`/`RS384`/`RS512` were accepted as `JWTConfig.algorithm` but signing always used the shared `secret`. Added `privateKey`/`publicKey` config fields; asymmetric algorithms now throw at construction if the matching key is missing.
+- **Fixed:** the default rate-limit `keyGenerator` trusted `X-Forwarded-For`/`X-Real-IP` unconditionally, letting any client spoof its rate-limit identity. These headers are now ignored unless the new `trustProxy: true` option is set; the untrusted default falls back to the real peer IP (Bun) or `'unknown'`.
+- **Fixed:** `@ResponseSchema` validation failures were silently swallowed, letting malformed handler output pass straight to the client. They now log and return 500.
+
+### Changed (breaking — see [MIGRATION.md](MIGRATION.md))
+
+- `JWTProvider.verifyAccessToken`, `verifyRefreshToken`, `refreshAccessToken`, `blacklistToken`, `isBlacklisted`, `cleanupBlacklist` are now `async`, to support pluggable token revocation stores (`TokenBlacklist` — `MemoryTokenBlacklist` default, new `RedisTokenBlacklist` for multi-instance deployments).
+- Decorator-based controllers now resolve as `singleton` by default instead of `transient` (new instance per request). Opt back in with `@Controller(prefix, { scope: 'transient' })`.
+
+### Added — tooling & CI
+
+- CI now runs a real multi-runtime matrix: Bun (pinned + latest, on ubuntu/windows/macos), a **Node 20/22 smoke job** that builds and then imports both `dist/esm` and `dist/cjs` under real Node, an allow-failure Deno leg, an isolated package-validation job, and a coverage job that gates and uploads its report.
+- `scripts/check-coverage.ts` — coverage gate over `src/**` only (bun's own total is diluted by `dist/`, `examples/` and the tests themselves). Threshold starts at 50%, just under the measured baseline, so it blocks regressions instead of failing on day one.
+- `scripts/smoke-node.mjs` — imports the built ESM and CJS entrypoints under Node, boots an app and asserts a real request round-trips.
+- `bin/veloce.mjs` — Node-compatible CLI launcher (`#!/usr/bin/env node`). The `bin` entry previously pointed at a `#!/usr/bin/env bun` TypeScript file, so the CLI could not run without Bun despite the package advertising Node >= 18.
+- `scripts/test-package.ts` now verifies every `exports` condition resolves to a file that exists on disk, and type-checks a generated consumer file (all 15 entrypoints plus a Zod-validated route) against `dist/types` with real `tsc --strict`. This is what caught the broken `adapters/*` paths above.
+- Type-declaration generation failure is now **fatal** in `--production` builds; it previously warned and continued, so a release could ship broken `.d.ts` with a green pipeline.
+- `veloce generate openapi` now builds its spec with the real `OpenAPIGenerator` instead of a hand-rolled builder that ignored Zod, and the generated TypeScript client emits real interfaces derived from the schemas (falling back to `unknown`, never `any`) instead of typing every method `Promise<any>`.
+
+### Added
+
+- `RouteConfig`/functional API (`app.get/post/put/delete/patch`, `app.route()`) is now generic over the declared Zod schema bag — handler arguments (`body`, `query`, `params`, `headers`) are inferred end-to-end, no manual casts needed.
+- Plugin lifecycle hooks: `Plugin.onStart(app)` (after the server starts listening) and `Plugin.onStop(app)` (during graceful shutdown / `app.shutdown()`, reverse install order).
+- `LoggerConfig.pretty` is now honored via a `pino-pretty` transport when the package is installed.
+- `@Controller(prefix, { scope })` — explicit per-controller instantiation scope (`singleton` | `request` | `transient`).
+- `CacheManager.destroy()` — releases every registered store's resources (timers, connections) without replacing them; call it on shutdown so a `MemoryCacheStore` cleanup interval can't keep the process alive.
+- `VeloceTS.getFetchHandler()` — returns the `fetch(request, env, ctx)` export shape serverless/edge runtimes expect, the supported deploy path for Cloudflare Workers where `listen()` cannot work. Auto-compiles on first call.
+
+### Fixed — packaging (the published package was broken for Node consumers)
+
+- **`veloce-ts/adapters/*` did not resolve.** The `exports` map pointed `import`/`require` at `./dist/{esm,cjs}/adapters/*.js`, but the build emits `./dist/{esm,cjs}/src/adapters/*.js` — so the `import { ExpressAdapter } from 'veloce-ts/adapters/express'` shown in the README failed for every consumer. (The `types` condition on the same entry was already correct, which is why it type-checked but crashed at runtime.)
+- **Runtime dependencies are no longer bundled into `dist`.** Only veloce-ts's own `src/` is bundled now; everything in `dependencies`/`peerDependencies`/`optionalDependencies` is externalized. Bundling them shipped a second copy of each, which:
+  - broke **Zod identity** — the framework checks schemas the user built with *their* zod, and a bundled copy is a different class, so those checks silently stopped matching;
+  - re-transpiled third-party code, which mangled `semver` (pulled in via `jsonwebtoken`) into an **invalid RegExp that threw on require under Node**;
+  - inflated the published package. It is now **1.33 MB, down from 3.82 MB**.
+- **ESM bundle crashed under real Node.** It was built with Bun's `bun` target, which emits the Bun-only `import.meta.require` global; switched to the `node` target (still runs fine under Bun).
+- **`import { sign } from 'jsonwebtoken'` broke Node's ESM loader.** `jsonwebtoken` is CJS-only, so named ESM imports throw `SyntaxError: Named export 'sign' not found` under Node (Bun tolerates it). Now imported via its default export.
+- **`dist/cjs/*.js` was parsed as ESM by Node**, because the root `package.json` declares `"type": "module"`. The build now emits `dist/cjs/package.json` with `{"type":"commonjs"}`.
+
+### Fixed
+
+- Redis-backed cache (`RedisCacheStore`) and session store (`RedisSessionStore`) used the blocking `KEYS` command for `clear()`/`deletePattern()`/`length()`/`all()`; both now use cursor-based `SCAN` (with a `KEYS` fallback for clients lacking `scan()`) plus batched `DEL`.
+- In-memory cache's "LRU" eviction was actually FIFO (ordered by creation time, not last access) — `get()` now re-inserts the entry so eviction order tracks true recency.
+- `Response.file()` threw on non-Bun runtimes; now streams the file via `node:fs` on Node/Deno.
+- Two separate SIGTERM/SIGINT handlers were registered with competing shutdown timeouts; consolidated into one that closes the server, then runs `onShutdown` handlers, then plugin `onStop` hooks.
+- `EventBus.emit`/`emitSync`: a throwing listener no longer aborts the remaining listeners; errors are collected and re-thrown together as an `AggregateError` once every listener has run.
+- Query parameters were validated twice per request (once ad hoc, once via the shared validator) with inconsistent error shapes; now validated once.
+- Fixed a double-rollback in `BaseTransactionManager.executeInNewTransaction`: when a handler completed successfully but the transaction was marked `rollbackOnly`, the resulting error was re-caught by the same try/catch and triggered a second `rollback()` call, which threw "transaction not found" and masked the intended error.
+- `BaseRepository.count()`/`updateMany()`/`deleteMany()` now throw `NotImplementedError` instead of silently loading every row into memory; all three ORM adapters (Drizzle, Prisma, TypeORM) already provide native overrides.
+- GraphQL: resolvers are now actually invoked (previously wired to a `rootValue` shape `graphql-js` never reads, so every query returned `null`), and field/argument types are derived from Zod schemas / `@Returns` metadata instead of being hardcoded to `String`.
+- The route "compiled metadata" layer (`MetadataCompiler`) precomputed a path regex, parameter/dependency index order, and type flags that the request handler never read; replaced with dense, pre-sorted parameter/dependency arrays that the hot path does consume, and controller/interceptor resolution moved out of the per-request path into `compile()` time.
+- `CacheManager.reset()` leaked the previous store's cleanup `setInterval` — repeated calls (e.g. between test suites) accumulated timers and could keep a process alive indefinitely. It now destroys stores before replacing them.
+- `app.shutdown()` never ran registered `onShutdown()` handlers — only the SIGTERM/SIGINT path did, so programmatic shutdown silently skipped user cleanup. It now runs the same teardown (server close → `onShutdown` handlers → plugin `onStop` hooks).
+- The Express adapter buffered whole response bodies via `.json()`/`.text()`/`.arrayBuffer()`, which broke SSE (`@SSE`) and `@Stream` routes (clients received nothing until the generator finished) and forced a serialize/reserialize round-trip on every JSON response. Responses are now streamed chunk-by-chunk with backpressure handling.
+
 ## [1.2.0] - 2026-06-27
 
 ### Added
@@ -914,19 +974,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-## [0.1.0] - 2025-10-12
-
-### Added
-- Initial development version
-- Core framework architecture
-- Basic routing and validation
-- Documentation generation
-- Plugin system
-- WebSocket and GraphQL support
-- CLI tooling
-- Testing utilities
-
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v1.2.0...v2.0.0
 [1.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.18...v1.0.0
 [0.4.18]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.10...v0.4.18
 [0.4.10]: https://github.com/ExcessHawk/veloce-ts/compare/v0.4.9...v0.4.10

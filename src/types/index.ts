@@ -5,6 +5,8 @@
  */
 import type { Context as HonoContext, Hono, MiddlewareHandler } from 'hono';
 import type { ZodSchema, z } from 'zod';
+import type { Plugin } from '../core/plugin';
+import type { CacheStore } from '../cache/types';
 
 // Re-export Zod's infer helper for user convenience
 export { z } from 'zod';
@@ -61,7 +63,7 @@ export interface CacheMetadata {
   includeQuery?: boolean;
   varyByHeaders?: string[];
   condition?: (result: any) => boolean;
-  store?: any;
+  store?: CacheStore;
 }
 
 // Parameter metadata
@@ -71,7 +73,8 @@ export interface ParameterMetadata {
   schema?: ZodSchema;
   name?: string;
   required: boolean;
-  metadata?: any;
+  /** Extra per-parameter-type data: `action` for `@CanAccess`-style checks, `key` for `@SessionData`. */
+  metadata?: { action?: string; key?: string };
 }
 
 // Dependency metadata
@@ -92,6 +95,10 @@ export interface ResponseMetadata {
 export interface ControllerMetadata {
   prefix: string;
   middleware: Middleware[];
+  /** Instantiation scope for the controller class. Defaults to 'singleton'.
+   *  Use 'request' or 'transient' when the controller keeps per-request state
+   *  or injects request-scoped dependencies in its constructor. */
+  scope?: 'singleton' | 'request' | 'transient';
 }
 
 // Route documentation
@@ -100,6 +107,19 @@ export interface RouteDocumentation {
   description?: string;
   tags?: string[];
   deprecated?: boolean;
+  /** Media type of the request body (default: 'application/json'), e.g. 'multipart/form-data' */
+  requestContentType?: string;
+  /** Explicit OpenAPI component-schema name for the request body schema */
+  bodySchemaName?: string;
+  /** Request/response examples emitted into the generated OpenAPI media types */
+  examples?: {
+    /** Single request body example (emitted as media-type `example`) */
+    request?: any;
+    /** Named request body examples (emitted as media-type `examples`) */
+    namedRequest?: Record<string, { summary?: string; description?: string; value: any }>;
+    /** Response example per HTTP status code, e.g. { 200: {...} } (emitted as media-type `example`) */
+    responses?: Record<string | number, any>;
+  };
 }
 
 // Configuration types
@@ -110,7 +130,7 @@ export interface VeloceTSConfig {
   description?: string;
   docs?: boolean | { path?: string; openapi?: string };
   cors?: CorsOptions | boolean;
-  plugins?: any[];
+  plugins?: Plugin[];
   /**
    * Formato de respuestas de error del framework.
    * - `rfc9457` — Problem Details (`application/problem+json`).
@@ -133,6 +153,13 @@ export interface RateLimitOptions {
   windowMs?: number;
   max?: number;
   keyGenerator?: (c: Context) => string;
+  /**
+   * Trust X-Forwarded-For / X-Real-IP headers for client identification.
+   * Leave false (default) unless the app runs behind a trusted reverse proxy —
+   * these headers are client-supplied and trivially spoofable otherwise.
+   * @default false
+   */
+  trustProxy?: boolean;
 }
 
 export interface CompressionOptions {
@@ -140,15 +167,42 @@ export interface CompressionOptions {
   level?: number;
 }
 
-// Route config for functional API
-export interface RouteConfig {
-  handler: (c: Context, ...args: any[]) => any | Promise<any>;
-  schema?: {
-    body?: ZodSchema;
-    query?: ZodSchema;
-    params?: ZodSchema;
-    headers?: ZodSchema;
-  };
+// Schema bag for the functional API
+export interface RouteSchemas {
+  body?: ZodSchema;
+  query?: ZodSchema;
+  params?: ZodSchema;
+  headers?: ZodSchema;
+}
+
+/**
+ * Handler argument tuple inferred from the declared schemas, in the fixed
+ * order the framework injects them: body, query, params, headers.
+ * Only declared schemas contribute an argument.
+ */
+export type SchemaArgs<S extends RouteSchemas | undefined> = S extends RouteSchemas
+  ? [
+      ...(S['body'] extends ZodSchema ? [z.output<S['body']>] : []),
+      ...(S['query'] extends ZodSchema ? [z.output<S['query']>] : []),
+      ...(S['params'] extends ZodSchema ? [z.output<S['params']>] : []),
+      ...(S['headers'] extends ZodSchema ? [z.output<S['headers']>] : []),
+    ]
+  : [];
+
+/**
+ * Route config for the functional API. Generic over the schema bag so the
+ * handler's extra arguments are typed end-to-end from the Zod schemas:
+ *
+ * ```ts
+ * app.post('/users', {
+ *   schema: { body: CreateUserSchema },
+ *   handler: async (c, body) => body.name, // body: z.output<typeof CreateUserSchema>
+ * });
+ * ```
+ */
+export interface RouteConfig<S extends RouteSchemas = RouteSchemas> {
+  handler: (c: Context, ...args: SchemaArgs<S>) => any | Promise<any>;
+  schema?: S;
   middleware?: Middleware[];
   docs?: RouteDocumentation;
   responses?: ResponseMetadata[];

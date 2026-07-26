@@ -77,10 +77,10 @@ export class AuthService {
    * Logout user (blacklist tokens)
    */
   async logout(accessToken: string, refreshToken?: string): Promise<void> {
-    this.jwtProvider.blacklistToken(accessToken);
-    
+    await this.jwtProvider.blacklistToken(accessToken);
+
     if (refreshToken) {
-      this.jwtProvider.blacklistToken(refreshToken);
+      await this.jwtProvider.blacklistToken(refreshToken);
     }
   }
 
@@ -89,7 +89,7 @@ export class AuthService {
    */
   async verifyToken(token: string): Promise<User> {
     try {
-      const payload = this.jwtProvider.verifyAccessToken(token);
+      const payload = await this.jwtProvider.verifyAccessToken(token);
       
       // Get fresh user data
       const user = await this.userProvider.findById(payload.sub);
@@ -113,7 +113,7 @@ export class AuthService {
   /**
    * Get user from token payload (without database lookup)
    */
-  getUserFromToken(token: string): TokenPayload {
+  getUserFromToken(token: string): Promise<TokenPayload> {
     return this.jwtProvider.verifyAccessToken(token);
   }
 

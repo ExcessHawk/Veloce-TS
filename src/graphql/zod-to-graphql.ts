@@ -88,6 +88,30 @@ export function zodToGraphQLType(schema: ZodSchema): string {
 }
 
 /**
+ * Unwrap Optional/Nullable/Default wrappers to get the underlying schema.
+ * Useful for detecting the core type (e.g. ZodObject) behind modifiers.
+ */
+export function unwrapZodSchema(schema: ZodSchema): ZodSchema {
+  let current: any = schema;
+  while (current?._def) {
+    const typeName = current._def.typeName;
+    if (typeName === 'ZodOptional' || typeName === 'ZodNullable' || typeName === 'ZodDefault') {
+      current = current._def.innerType;
+    } else {
+      break;
+    }
+  }
+  return current as ZodSchema;
+}
+
+/**
+ * Get the Zod type name (e.g. 'ZodObject', 'ZodArray') of a schema.
+ */
+export function getZodTypeName(schema: ZodSchema): string | undefined {
+  return (schema as any)?._def?.typeName;
+}
+
+/**
  * Check if a Zod schema is nullable/optional
  */
 export function isNullable(schema: ZodSchema): boolean {

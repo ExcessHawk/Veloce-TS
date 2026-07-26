@@ -297,7 +297,7 @@ describe('OpenAPI / Swagger', () => {
     const body = await res.json() as any;
 
     expect(res.status).toBe(200);
-    expect(body.openapi).toBe('3.0.0');
+    expect(body.openapi).toBe('3.1.0');
     expect(body.info.title).toBe('Products API');
     expect(body.paths).toBeDefined();
   });

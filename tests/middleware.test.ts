@@ -5,6 +5,7 @@ import { describe, it, expect } from 'bun:test';
 import { createRateLimitMiddleware } from '../src/middleware/rate-limit';
 import { createCompressionMiddleware } from '../src/middleware/compression';
 import { createCorsMiddleware } from '../src/middleware/cors';
+import { createTimeoutMiddleware } from '../src/middleware/timeout';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ describe('createRateLimitMiddleware', () => {
   });
 
   it('x-forwarded-for: first IP in comma-separated list is used as key', async () => {
-    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000 });
+    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustProxy: true });
     const c1 = makeFakeContext();
     const c2 = makeFakeContext();
 
@@ -76,7 +77,7 @@ describe('createRateLimitMiddleware', () => {
   });
 
   it('different IPs are tracked independently', async () => {
-    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000 });
+    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustProxy: true });
     const c1 = makeFakeContext();
     const c2 = makeFakeContext();
 
@@ -91,6 +92,23 @@ describe('createRateLimitMiddleware', () => {
 
     expect(c1nexted).toBe(true);
     expect(c2nexted).toBe(true);
+  });
+
+  it('forwarded headers are ignored unless trustProxy is enabled', async () => {
+    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000 });
+    const c1 = makeFakeContext();
+    const c2 = makeFakeContext();
+
+    // Spoofed distinct IPs must NOT bypass the limit without trustProxy
+    c1.req._setHeader('x-forwarded-for', '10.0.0.1');
+    c2.req._setHeader('x-forwarded-for', '10.0.0.2');
+
+    let c2nexted = false;
+    await mw(c1 as any, async () => {});
+    const r2 = await mw(c2 as any, async () => { c2nexted = true; });
+
+    expect(c2nexted).toBe(false);
+    expect(r2?.status).toBe(429);
   });
 });
 
@@ -195,5 +213,85 @@ describe('createCompressionMiddleware', () => {
 
     // Should not have changed the response (images are not compressible)
     expect(c.res).toBe(originalRes);
+  });
+});
+
+// ─── Timeout ──────────────────────────────────────────────────────────────────
+// Shared by the @Timeout decorator and the functional API's `timeout` option.
+
+describe('createTimeoutMiddleware', () => {
+  it('passes through when the handler finishes before the deadline', async () => {
+    const mw = createTimeoutMiddleware(1000);
+    const c = makeFakeContext();
+    let nexted = false;
+
+    await mw(c as any, async () => { nexted = true; });
+
+    expect(nexted).toBe(true);
+    expect(c._headers['x-timeout-ms']).toBe('1000');
+  });
+
+  it('rejects with a 408-flagged TimeoutError when the handler exceeds the deadline', async () => {
+    const mw = createTimeoutMiddleware(20);
+    const c = makeFakeContext();
+
+    const promise = mw(c as any, async () => {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    });
+
+    let caught: any;
+    try {
+      await promise;
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught.name).toBe('TimeoutError');
+    expect(caught.statusCode).toBe(408);
+    expect(caught.message).toContain('20ms');
+  });
+
+  it('uses a custom message when provided', async () => {
+    const mw = createTimeoutMiddleware(20, 'report generation took too long');
+    const c = makeFakeContext();
+
+    let caught: any;
+    try {
+      await mw(c as any, async () => {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught.message).toBe('report generation took too long');
+    expect(caught.statusCode).toBe(408);
+  });
+
+  it('propagates a handler error unchanged rather than masking it as a timeout', async () => {
+    const mw = createTimeoutMiddleware(1000);
+    const c = makeFakeContext();
+
+    let caught: any;
+    try {
+      await mw(c as any, async () => { throw new Error('handler blew up'); });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught.message).toBe('handler blew up');
+    expect(caught.name).not.toBe('TimeoutError');
+  });
+
+  it('clears its timer once the handler resolves (no dangling timeout keeps the loop alive)', async () => {
+    const mw = createTimeoutMiddleware(50);
+    const c = makeFakeContext();
+
+    await mw(c as any, async () => {});
+
+    // If the timer were left pending it would reject ~50ms from now with an
+    // unhandled rejection; waiting past the deadline proves it was cleared.
+    await new Promise(resolve => setTimeout(resolve, 80));
   });
 });
