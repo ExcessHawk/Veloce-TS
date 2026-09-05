@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { createHmac } from 'node:crypto';
+import { getLogger } from '../logging/logger.js';
 
 export interface SessionData {
   id: string;
@@ -41,12 +43,20 @@ export class MemorySessionStore implements SessionStore {
 
   constructor(cleanupIntervalMs = 60_000) {
     this.cleanupTimer = setInterval(() => this.cleanup(), cleanupIntervalMs);
-    if (typeof process !== 'undefined' && process.on) {
-      const stop = () => clearInterval(this.cleanupTimer);
-      process.on('exit', stop);
-      process.on('SIGTERM', stop);
-      process.on('SIGINT', stop);
-    }
+    // unref() keeps this timer from holding the event loop open. Registering
+    // process SIGTERM/SIGINT listeners here (as this used to) removed Node's
+    // default signal behaviour for the whole application, so a script merely
+    // constructing a store stopped exiting on Ctrl+C.
+    this.cleanupTimer.unref?.();
+  }
+
+  /**
+   * Stop the cleanup timer. Named `stopCleanup` rather than `destroy` because
+   * `destroy(sessionId)` is already the SessionStore method that removes a
+   * single session.
+   */
+  stopCleanup(): void {
+    clearInterval(this.cleanupTimer);
   }
 
   async get(sessionId: string): Promise<SessionData | null> {
@@ -236,10 +246,20 @@ export class SessionManager {
     private store: SessionStore,
     config: SessionConfig
   ) {
+    if (!config.secret) {
+      throw new Error(
+        'SessionConfig.secret is required — it signs the session cookie so a client cannot forge a session id.'
+      );
+    }
+
+    const isProduction = typeof process !== 'undefined' && process.env.NODE_ENV === 'production';
+
     this.config = {
       name: 'sessionId',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: false,
+      // Secure cookies by default in production; a session cookie sent over
+      // plain HTTP is interceptable.
+      secure: isProduction,
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
@@ -248,6 +268,13 @@ export class SessionManager {
       ...config,
       domain: config.domain
     };
+
+    if (isProduction && this.config.secure === false) {
+      getLogger().warn(
+        'Session cookie has secure: false in production — it will be sent over plain HTTP.',
+        { cookie: this.config.name }
+      );
+    }
   }
 
   /**
@@ -373,6 +400,50 @@ export class SessionManager {
     for (const session of userSessions) {
       await this.store.destroy(session.id);
     }
+  }
+
+  /**
+   * Sign a session id for transport in a cookie: `<id>.<hmac>`.
+   *
+   * `SessionConfig.secret` is what makes the cookie tamper-evident. Without a
+   * signature the cookie is just the raw id, so anyone could swap in another
+   * (guessed or observed) session id and be served that session.
+   */
+  signSessionId(sessionId: string): string {
+    return `${sessionId}.${this.hmac(sessionId)}`;
+  }
+
+  /**
+   * Verify a signed session cookie and return the id it carries.
+   * Returns `null` when the value is unsigned, malformed, or tampered with.
+   */
+  unsignSessionId(signed: string): string | null {
+    const separator = signed.lastIndexOf('.');
+    if (separator <= 0) return null;
+
+    const sessionId = signed.slice(0, separator);
+    const signature = signed.slice(separator + 1);
+    const expected = this.hmac(sessionId);
+
+    if (!this.timingSafeEqual(signature, expected)) {
+      return null;
+    }
+
+    return sessionId;
+  }
+
+  private hmac(value: string): string {
+    return createHmac('sha256', this.config.secret).update(value).digest('base64url');
+  }
+
+  /** Constant-time comparison, so signature checks don't leak via timing. */
+  private timingSafeEqual(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+      diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return diff === 0;
   }
 
   /**

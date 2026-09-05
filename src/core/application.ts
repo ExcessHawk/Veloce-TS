@@ -1,10 +1,12 @@
 /**
  * @module veloce-ts/core/application
- * @description Clase {@link VeloceTS}: arranque del servidor, registro de controladores/rutas funcionales,
- * middleware global (CORS, rate limit, compresión), plugins y delegación del manejo de errores al {@link ErrorHandler}.
+ * @description {@link VeloceTS} class: server bootstrap, controller/functional-route registration,
+ * global middleware (CORS, rate limit, compression), plugins, and error handling delegated to {@link ErrorHandler}.
  */
 import { Hono } from 'hono';
+import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
 import { MetadataRegistry } from './metadata';
+import { PayloadTooLargeException } from '../errors/exceptions';
 import { DIContainer } from '../dependencies/container';
 import { RouterCompiler } from './router-compiler';
 import { ValidationEngine } from '../validation/validator';
@@ -31,9 +33,12 @@ import type {
   Context
 } from '../types';
 
+/** Default maximum request body size: 1 MiB. Override with `bodyLimit`. */
+const DEFAULT_BODY_LIMIT_BYTES = 1_048_576;
+
 /**
  * Main VeloceTS application class
- * 
+ *
  * Provides both decorator-based and functional API for defining routes.
  * Built on top of Hono.js for maximum performance with support for multiple runtimes.
  * 
@@ -100,6 +105,20 @@ export class VeloceTS {
     // Initialize Hono instance
     this.hono = new Hono();
 
+    // Reject oversized request bodies before any handler reads them.
+    // Without a limit, every @Body route will buffer whatever the client sends.
+    const bodyLimit = this.config.bodyLimit ?? DEFAULT_BODY_LIMIT_BYTES;
+    if (bodyLimit > 0) {
+      this.hono.use('*', honoBodyLimit({
+        maxSize: bodyLimit,
+        onError: () => {
+          throw new PayloadTooLargeException(
+            `Request body exceeds the ${bodyLimit} byte limit`
+          );
+        },
+      }));
+    }
+
     // Create MetadataRegistry and DIContainer instances
     this.metadata = new MetadataRegistry();
     this.container = new DIContainer();
@@ -128,6 +147,43 @@ export class VeloceTS {
         this.useCors(this.config.cors);
       }
     }
+
+    // Register plugins passed through the config (previously accepted and ignored)
+    for (const plugin of this.config.plugins ?? []) {
+      this.usePlugin(plugin);
+    }
+  }
+
+  /**
+   * Mount the OpenAPI plugin according to `VeloceTSConfig.docs`.
+   * Skipped when the application already registers its own `openapi` plugin.
+   */
+  private registerDocsPlugin(): void {
+    if (this.pluginManager.getPlugin('openapi')) {
+      return;
+    }
+
+    const docsConfig = typeof this.config.docs === 'object' ? this.config.docs : {};
+
+    // Imported lazily and synchronously via a thin wrapper plugin so the
+    // constructor stays synchronous and OpenAPI stays out of the hot path for
+    // apps that disable docs.
+    const self = this;
+    this.usePlugin({
+      name: 'openapi',
+      version: '1.0.0',
+      async install(app) {
+        const { OpenAPIPlugin } = await import('../plugins/openapi.js');
+        const plugin = new OpenAPIPlugin({
+          title: self.config.title,
+          version: self.config.version,
+          description: self.config.description,
+          path: docsConfig.openapi ?? '/openapi.json',
+          docsPath: docsConfig.path ?? '/docs',
+        });
+        await plugin.install(app);
+      },
+    });
   }
 
   // ============================================================================
@@ -706,6 +762,13 @@ export class VeloceTS {
       return;
     }
 
+    // `docs` mounts the OpenAPI plugin, unless the app registered its own.
+    // Deferred to compile() (rather than the constructor) so a manually
+    // registered OpenAPIPlugin always wins instead of colliding with this one.
+    if (this.config.docs) {
+      this.registerDocsPlugin();
+    }
+
     // Install plugins before compiling routes
     await this.pluginManager.install(this);
 
@@ -737,7 +800,7 @@ export class VeloceTS {
     // Create and use the appropriate adapter based on configuration
     const adapter = await this.createAdapter();
     
-    this.serverInstance = adapter.listen(port, callback);
+    this.serverInstance = await adapter.listen(port, callback);
 
     // Plugin onStart hooks run once the server is accepting connections
     await this.pluginManager.start(this);

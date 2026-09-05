@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/decorators/http
- * @description Decoradores `@Controller`, `@Get`, `@Post`, `@HttpCode`, rate-limit por ruta, etc. que registran
- * metadatos en {@link MetadataRegistry} para el compilador de rutas.
+ * @description `@Controller`, `@Get`, `@Post`, `@HttpCode`, per-route rate limiting and friends - decorators
+ * that record metadata in {@link MetadataRegistry} for the route compiler.
  */
 import { MetadataRegistry } from '../core/metadata';
 import type { HTTPMethod, Middleware, RateLimitOptions } from '../types';

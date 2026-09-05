@@ -8,9 +8,11 @@ import {
   ResourcePermission,
   Permission
 } from './permissions.js';
-import { createPermissionMiddleware, PermissionGuard } from './permission-decorators.js';
+import { createPermissionMiddleware, PermissionGuard, type ResourcePermissionConfig } from './permission-decorators.js';
 import { getCurrentUser } from './decorators.js';
 import { AuthenticationException } from './exceptions.js';
+import { MetadataRegistry } from '../core/metadata.js';
+import type { Middleware } from '../types/index.js';
 import { Context } from 'hono';
 import { z } from 'zod';
 
@@ -64,8 +66,8 @@ export class PermissionPlugin implements Plugin {
       scope: 'singleton'
     });
 
-    // Extend router compiler to handle permission metadata
-    this.extendRouterCompiler(app);
+    // Enforce @CanAccess()/@CanRead()/… metadata
+    this.injectRouteGuards(app);
 
     // Add management routes if enabled
     if (this.config.enableManagementRoutes !== false) {
@@ -73,27 +75,50 @@ export class PermissionPlugin implements Plugin {
     }
   }
 
-  private extendRouterCompiler(app: VeloceTS): void {
-    const originalCompile = app.compile.bind(app);
-    
-    app.compile = async () => {
-      // First compile normally
-      await originalCompile();
+  /**
+   * Prepend a permission guard to every route declaring resource-permission
+   * metadata (`@CanAccess`, `@CanRead`, `@OwnerOnly`, …).
+   *
+   * Runs during install() — before RouterCompiler.compile() — because install()
+   * is itself called from inside the already-running VeloceTS.compile(), so a
+   * compile wrapper registered here would never fire.
+   */
+  private injectRouteGuards(app: VeloceTS): void {
+    const registry = app.getMetadata();
 
-      // Then add permission checks to routes that need them
-      const routes = app.getMetadata().getRoutes();
-      
-      for (const route of routes) {
-        if (route.resourcePermission) {
-          this.addPermissionGuards(app, route);
-        }
-      }
-    };
+    for (const route of registry.getRoutes()) {
+      const permissionMeta = route.resourcePermission
+        ?? (route.target?.prototype
+          ? MetadataRegistry.getResourcePermissionMetadata(route.target.prototype, route.propertyKey)
+          : undefined);
+
+      if (!permissionMeta?.config) continue;
+
+      const guard = this.buildPermissionMiddleware(permissionMeta.config);
+      registry.registerRoute({
+        ...route,
+        middleware: [guard, ...(route.middleware || [])],
+      });
+    }
   }
 
-  private addPermissionGuards(app: VeloceTS, route: any): void {
-    // This would add permission guard middleware before the route handler
-    // For now, we'll handle it in the parameter extraction phase
+  private buildPermissionMiddleware(config: ResourcePermissionConfig): Middleware {
+    const guard = this.guard;
+
+    return async (c: Context, next: () => Promise<void>) => {
+      const user = getCurrentUser(c);
+      if (!user) {
+        // No authenticated principal → authentication failure (401), not 403.
+        throw new AuthenticationException('Authentication required');
+      }
+
+      // The resource itself is only available once the handler loads it, so the
+      // route-level check evaluates policies against the user + action pair.
+      // Attribute/instance filtering stays available through @FilteredResource.
+      guard.checkResourcePermission(c, config);
+
+      await next();
+    };
   }
 
   private addManagementRoutes(app: VeloceTS): void {

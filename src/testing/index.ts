@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/testing
- * @description {@link TestClient}, {@link TestResponse} y helpers (`setupTestApp`, `mockDependency`) para pruebas de integración contra la app Hono interna.
+ * @description {@link TestClient}, {@link TestResponse} and helpers (`setupTestApp`, `mockDependency`) for integration tests against the internal Hono app.
  */
 export { TestClient, TestResponse } from './test-client';
 export type { TestRequestOptions } from './test-client';

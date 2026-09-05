@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/types
- * @description Tipos compartidos: `Context`, metadatos de rutas, configuración de la app (`VeloceTSConfig`),
- * opciones de CORS/rate-limit, contratos de auth/sesión y re-export de `z` (Zod).
+ * @description Shared types: `Context`, route metadata, application config (`VeloceTSConfig`),
+ * CORS/rate-limit options, auth/session contracts, and a re-export of `z` (Zod).
  */
 import type { Context as HonoContext, Hono, MiddlewareHandler } from 'hono';
 import type { ZodSchema, z } from 'zod';
@@ -24,6 +24,50 @@ export type Scope = 'singleton' | 'request' | 'transient';
 
 // Context type (re-export from Hono)
 export type Context = HonoContext;
+
+/**
+ * Typed context variables.
+ *
+ * Augmenting Hono's `ContextVariableMap` means `c.get('auth.user')` returns the
+ * declared type instead of `any`, and a typo in the key is a compile error.
+ * Applications can add their own keys with the same declaration merging.
+ */
+declare module 'hono' {
+  interface ContextVariableMap {
+    /** Payload of the verified access token, set by the auth middleware. */
+    'auth.user': import('../auth/jwt-provider').TokenPayload | null;
+    /** Raw bearer token as presented by the client. */
+    'auth.token': string | null;
+    /** Why authentication failed, when it did. */
+    'auth.error': string;
+    /** Whether the request carries valid credentials. */
+    'auth.authenticated': boolean;
+    /** The AuthService instance, exposed by AuthPlugin. */
+    'authService': import('../auth/auth-service').AuthService;
+    /** Current session, set by the session middleware. */
+    'session': import('../auth/session').SessionData | null;
+    /** SessionManager instance, exposed by SessionPlugin. */
+    'sessionManager': import('../auth/session').SessionManager | null;
+    /** CSRFProtection instance, when CSRF is enabled. */
+    'csrfProtection': import('../auth/session').CSRFProtection | undefined;
+    /** CSRF token for the current session. */
+    'csrf.token': string | null;
+    /** PermissionManager instance, exposed by PermissionPlugin. */
+    'permissionManager': import('../auth/permissions').PermissionManager | null;
+    /** RBACManager instance, exposed by RBACPlugin. */
+    'rbacManager': import('../auth/rbac').RBACManager | null;
+    /** OAuth profile / token, set by the OAuth middleware. */
+    'oauth.user': import('../auth/oauth-provider').OAuthUser | null;
+    'oauth.token': import('../auth/oauth-provider').OAuthTokens | null;
+    /** Resource and attribute set filtered by the permission middleware. */
+    'filtered.resource': unknown;
+    'filtered.attributes': string[];
+    /** Compiled metadata for the route currently executing. */
+    'routeMetadata': import('../core/compiled-metadata').CompiledRouteMetadata | null;
+    /** CORS headers captured for the current request. */
+    'veloce:corsHeaders': Record<string, string>;
+  }
+}
 
 // Middleware type
 export type Middleware = MiddlewareHandler;
@@ -61,7 +105,14 @@ export interface CacheMetadata {
   key?: string;
   prefix?: string;
   includeQuery?: boolean;
+  /**
+   * Request headers the cache key varies by (e.g. `['authorization']`).
+   * Required for any cached route whose response depends on the caller —
+   * without it, one user's response is served to the next.
+   */
   varyByHeaders?: string[];
+  /** Build the cache key from the request (replaces the default scheme). */
+  keyGenerator?: (c: Context) => string;
   condition?: (result: any) => boolean;
   store?: CacheStore;
 }
@@ -128,9 +179,20 @@ export interface VeloceTSConfig {
   title?: string;
   version?: string;
   description?: string;
+  /**
+   * Mount OpenAPI docs. `true` (default) serves the spec at `/openapi.json`
+   * and Swagger UI at `/docs`; pass an object to change those paths, or
+   * `false` to disable. Ignored when an `openapi` plugin is registered manually.
+   */
   docs?: boolean | { path?: string; openapi?: string };
   cors?: CorsOptions | boolean;
+  /** Plugins to register at construction time (same as calling `usePlugin`). */
   plugins?: Plugin[];
+  /**
+   * Maximum request body size in bytes. Bodies above it are rejected with 413
+   * before any handler runs. Defaults to 1 MiB; `0` disables the limit.
+   */
+  bodyLimit?: number;
   /**
    * Formato de respuestas de error del framework.
    * - `rfc9457` — Problem Details (`application/problem+json`).
@@ -149,10 +211,32 @@ export interface CorsOptions {
   maxAge?: number;
 }
 
+/** One counter bucket returned by a {@link RateLimitStore}. */
+export interface RateLimitHit {
+  /** Requests seen for this key in the current window, including this one. */
+  count: number;
+  /** Epoch milliseconds at which the current window ends. */
+  resetTime: number;
+}
+
+/**
+ * Backing store for rate-limit counters. The default store is in-memory
+ * (per-process); supply a shared implementation (e.g. Redis) to enforce one
+ * limit across several instances.
+ */
+export interface RateLimitStore {
+  /** Record a request for `key` and return the resulting bucket. */
+  hit(key: string, windowMs: number): Promise<RateLimitHit>;
+  /** Drop the counter for `key`. */
+  reset(key: string): Promise<void>;
+}
+
 export interface RateLimitOptions {
   windowMs?: number;
   max?: number;
   keyGenerator?: (c: Context) => string;
+  /** Counter backend. Defaults to an in-memory, per-process store. */
+  store?: RateLimitStore;
   /**
    * Trust X-Forwarded-For / X-Real-IP headers for client identification.
    * Leave false (default) unless the app runs behind a trusted reverse proxy —

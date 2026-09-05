@@ -3,6 +3,7 @@ import type { WebSocketMetadata } from '../types';
 import type { DIContainer } from '../dependencies/container';
 import type { WebSocketPluginConfig } from './plugin';
 import { WebSocketConnection } from './connection';
+import { getLogger } from '../logging/logger';
 
 /** Default heartbeat ping interval (30 seconds). */
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
@@ -90,7 +91,11 @@ export class WebSocketManager {
 
     // Set up error handler
     ws.addEventListener('error', (error) => {
-      console.error(`WebSocket error for connection ${connection.id}:`, error);
+      getLogger().error(
+        'WebSocket transport error',
+        error instanceof Error ? error : new Error(String(error)),
+        { connectionId: connection.id, path: metadata.path }
+      );
     });
 
     return connection;
@@ -218,11 +223,24 @@ export class WebSocketManager {
       // Execute onMessage handler
       await this.executeHandler(metadata, metadata.onMessage, connection, data);
     } catch (error) {
-      // Send error back to client without closing connection
-      connection.send({
-        error: 'Invalid message format',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
+      // Only parsing/schema problems describe the client's own input; anything
+      // else (a failing query, a bug in the gateway) is internal and must not be
+      // echoed back — that would leak driver messages and stack detail.
+      const isClientInput = error instanceof SyntaxError || (error as any)?.name === 'ZodError';
+
+      if (isClientInput) {
+        connection.send({
+          error: 'Invalid message format',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } else {
+        getLogger().error(
+          'WebSocket message handler failed',
+          error instanceof Error ? error : new Error(String(error)),
+          { path: metadata.path, handler: metadata.onMessage, connectionId: connection.id }
+        );
+        connection.send({ error: 'Internal server error' });
+      }
     }
   }
 
@@ -392,7 +410,11 @@ export class WebSocketManager {
     try {
       connection.close(code, reason);
     } catch (error) {
-      console.error(`Error closing WebSocket connection ${connection.id}:`, error);
+      getLogger().error(
+        'Error closing WebSocket connection',
+        error instanceof Error ? error : new Error(String(error)),
+        { connectionId: connection.id, code, reason }
+      );
     }
     this.handleDisconnect(connection, metadata);
   }
@@ -427,7 +449,11 @@ export class WebSocketManager {
         }
       }
     } catch (error) {
-      console.error(`Error executing WebSocket handler ${methodName}:`, error);
+      getLogger().error(
+        'WebSocket handler threw',
+        error instanceof Error ? error : new Error(String(error)),
+        { handler: methodName, connectionId: connection.id, path: metadata.path }
+      );
     }
   }
 

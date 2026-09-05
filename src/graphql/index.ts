@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/graphql
- * @description Schema builder, plugin GraphQL y decoradores de resolvers.
+ * @description Schema builder, GraphQL plugin and resolver decorators.
  */
 export * from './schema-builder';
 export * from './zod-to-graphql';

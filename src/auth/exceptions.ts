@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/auth/exceptions
- * @description Errores específicos de autenticación/autorización JWT/sesión. Extienden {@link HTTPException}
+ * @description Authentication/authorization errors for JWT and sessions. They extend {@link HTTPException}
  * con `problemType` dedicados para clientes que discriminan por URI RFC 9457.
  */
 

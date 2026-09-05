@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/websocket
- * @description Conexión, manager, plugin y decoradores `@WebSocket` / `@OnMessage`, etc.
+ * @description Connection, manager, plugin and the `@WebSocket` / `@OnMessage` decorators.
  */
 export { WebSocketConnection } from './connection';
 export { WebSocketManager } from './manager';

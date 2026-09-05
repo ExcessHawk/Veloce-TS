@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/errors/handler
- * @description {@link ErrorHandler}: punto central que convierte excepciones en respuestas HTTP.
- * Soporta **RFC 9457** (`application/problem+json`) o formato **legacy** (`error` / `statusCode`), según configuración.
+ * @description {@link ErrorHandler}: the single place that turns exceptions into HTTP responses.
+ * Supports **RFC 9457** (`application/problem+json`) or the **legacy** shape (`error` / `statusCode`), per configuration.
  */
 
 import type { Context } from '../types';
@@ -17,7 +17,7 @@ import {
 } from './problem-details.js';
 
 /**
- * Permite sustituir por completo la respuesta ante un error (útil para integrar con otros formatos o loggers).
+ * Replaces the error response entirely (useful for integrating other formats or loggers).
  */
 export type CustomErrorHandler = (error: Error, c: Context) => Response | Promise<Response>;
 
@@ -37,17 +37,17 @@ const DATA_EXCEPTION_SQLSTATES = new Set<string>([
 
 export type ErrorHandlerOptions = {
   /**
-   * `rfc9457` — `Content-Type: application/problem+json` y cuerpo con `type`, `title`, `status`, `detail`, `instance`.
-   * `legacy` — JSON `{ error, statusCode, details? }` como en versiones anteriores.
+   * `rfc9457` - `Content-Type: application/problem+json` with `type`, `title`, `status`, `detail`, `instance`.
+   * `legacy` - JSON `{ error, statusCode, details? }`, as in earlier versions.
    * @default 'rfc9457'
    */
   errorResponseFormat?: ErrorResponseFormat;
-  /** Forzar modo desarrollo (p. ej. en tests) sin depender de NODE_ENV. */
+  /** Force development mode (e.g. in tests) without relying on NODE_ENV. */
   forceDevelopment?: boolean;
 };
 
 /**
- * Procesa errores no capturados en la cadena de middleware/handlers y devuelve una respuesta coherente.
+ * Handles uncaught errors from the middleware/handler chain and returns a consistent response.
  */
 export class ErrorHandler {
   private customHandler?: CustomErrorHandler;
@@ -67,7 +67,7 @@ export class ErrorHandler {
     this.customHandler = handler;
   }
 
-  /** Formato activo (útil para tests o documentación). */
+  /** The active format (useful for tests or documentation). */
   getFormat(): ErrorResponseFormat {
     return this.format;
   }

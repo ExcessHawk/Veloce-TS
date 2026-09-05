@@ -8,7 +8,10 @@ import {
   SessionConfig as SessionManagerConfig,
   CSRFProtection
 } from './session.js';
-import { createSessionMiddleware, SessionGuard } from './session-decorators.js';
+import { createSessionMiddleware, SessionGuard, getCurrentSession } from './session-decorators.js';
+import { MetadataRegistry } from '../core/metadata.js';
+import { AuthenticationException, AuthorizationException } from './exceptions.js';
+import type { Middleware, SessionConfig } from '../types/index.js';
 import { Context } from 'hono';
 import { z } from 'zod';
 
@@ -38,7 +41,6 @@ export class SessionPlugin implements Plugin {
   private sessionManager: SessionManager;
   private csrfProtection?: CSRFProtection;
   private guard: SessionGuard;
-  private compileExtended = false;
   private cleanupIntervalId?: ReturnType<typeof setInterval>;
 
   constructor(private config: SessionPluginConfig) {
@@ -89,8 +91,8 @@ export class SessionPlugin implements Plugin {
       });
     }
 
-    // Extend router compiler to handle session metadata
-    this.extendRouterCompiler(app);
+    // Enforce @Session() / @RequireCSRF() metadata
+    this.injectRouteGuards(app);
 
     // Add management routes if enabled
     if (this.config.enableManagementRoutes !== false) {
@@ -103,30 +105,67 @@ export class SessionPlugin implements Plugin {
     }
   }
 
-  private extendRouterCompiler(app: VeloceTS): void {
-    if (this.compileExtended) return;
-    this.compileExtended = true;
+  /**
+   * Prepend a session/CSRF guard to every route declaring `@Session()` or
+   * `@RequireCSRF()`.
+   *
+   * This runs during install() — before RouterCompiler.compile() — rather than
+   * by wrapping app.compile: install() is called from inside the already-running
+   * VeloceTS.compile(), so a compile wrapper installed here would never fire and
+   * the decorators would be silently unenforced.
+   */
+  private injectRouteGuards(app: VeloceTS): void {
+    const registry = app.getMetadata();
 
-    const originalCompile = app.compile.bind(app);
-    
-    app.compile = async () => {
-      // First compile normally
-      await originalCompile();
+    for (const route of registry.getRoutes()) {
+      const sessionMeta = route.session
+        ?? (route.target?.prototype
+          ? MetadataRegistry.getSessionMetadata(route.target.prototype, route.propertyKey)
+          : undefined);
+      const csrfMeta = route.csrf
+        ?? (route.target?.prototype
+          ? MetadataRegistry.getCSRFMetadata(route.target.prototype, route.propertyKey)
+          : undefined);
 
-      // Then add session checks to routes that need them
-      const routes = app.getMetadata().getRoutes();
-      
-      for (const route of routes) {
-        if (route.session || route.csrf) {
-          this.addSessionGuards(app, route);
-        }
-      }
-    };
+      if (!sessionMeta && !csrfMeta?.required) continue;
+
+      const guard = this.buildSessionMiddleware(sessionMeta?.config, csrfMeta?.required === true);
+      registry.registerRoute({
+        ...route,
+        middleware: [guard, ...(route.middleware || [])],
+      });
+    }
   }
 
-  private addSessionGuards(app: VeloceTS, route: any): void {
-    // This would add session guard middleware before the route handler
-    // For now, we'll handle it in the parameter extraction phase
+  private buildSessionMiddleware(
+    sessionConfig: SessionConfig | undefined,
+    csrfRequired: boolean
+  ): Middleware {
+    const guard = this.guard;
+
+    return async (c: Context, next: () => Promise<void>) => {
+      const session = getCurrentSession(c);
+
+      if (sessionConfig?.required && !session) {
+        throw new AuthenticationException('Session required');
+      }
+
+      // @RequireCSRF() (or @Session({ csrf: true })) must reject the request even
+      // when there is no session — otherwise an unauthenticated caller bypasses
+      // the check entirely.
+      if (csrfRequired || sessionConfig?.csrf) {
+        if (!session) {
+          throw new AuthorizationException('CSRF token required');
+        }
+        guard.checkCSRF(c, session);
+      }
+
+      if (sessionConfig?.regenerate && session) {
+        await guard.regenerateSession(c);
+      }
+
+      await next();
+    };
   }
 
   private addManagementRoutes(app: VeloceTS): void {

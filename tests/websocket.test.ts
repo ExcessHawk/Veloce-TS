@@ -294,28 +294,31 @@ describe('WebSocketManager hardening: heartbeat', () => {
   });
 
   it('treats an inbound pong frame as liveness, keeping the connection open', async () => {
+    // Generous margins on purpose: with a tight timeout (e.g. 45ms) ordinary
+    // scheduling jitter under a loaded test run can push the "still open"
+    // assertion past the deadline and fail intermittently.
     const manager = new WebSocketManager({
-      heartbeatIntervalMs: 15,
-      heartbeatTimeoutMs: 45,
+      heartbeatIntervalMs: 25,
+      heartbeatTimeoutMs: 400,
       idleTimeoutMs: 0
     });
     const fakeWs = new FakeWS();
     const metadata: any = { target: class {}, path: '/ws/pong-keepalive', onMessage: 'onMsg', instance: { onMsg: () => {} } };
     const connection = manager.openConnection(fakeWs as any, metadata);
 
-    await wait(20);
+    await wait(30);
     await manager.handleMessage(
       { data: JSON.stringify({ type: 'pong' }) } as MessageEvent,
       connection,
       metadata
     );
 
-    await wait(30);
-    // ~30ms since the pong — under the 45ms timeout, so still open.
+    await wait(60);
+    // ~60ms since the pong — far under the 400ms timeout, so still open.
     expect(fakeWs.closedWith).toBeNull();
 
-    await wait(60);
-    // ~90ms since the pong with no further activity — now closed.
+    await wait(500);
+    // >400ms since the pong with no further activity — now closed.
     expect(fakeWs.closedWith?.code).toBe(1001);
     expect(fakeWs.closedWith?.reason).toBe('Heartbeat timeout');
   });

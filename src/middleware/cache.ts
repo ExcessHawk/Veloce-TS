@@ -46,6 +46,7 @@ export function createCacheMiddleware(options: CacheMiddlewareOptions): Middlewa
     prefix,
     includeQuery = false,
     varyByHeaders,
+    keyGenerator,
     condition,
     store,
     onlySuccess = true
@@ -54,28 +55,17 @@ export function createCacheMiddleware(options: CacheMiddlewareOptions): Middlewa
   const ttlSeconds = parseTTL(ttl);
 
   return async (c: Context, next: () => Promise<void>) => {
-    // Generate cache key
-    const method = c.req.method;
-    const path = c.req.path;
-    const params = c.req.param();
-    const query = includeQuery ? c.req.query() : undefined;
-
-    // Add header variations to key
-    let headerSuffix = '';
-    if (varyByHeaders && varyByHeaders.length > 0) {
-      const headerValues = varyByHeaders
-        .map(h => `${h}:${c.req.header(h) || ''}`)
-        .join('|');
-      headerSuffix = `:${headerValues}`;
-    }
-
+    // Generate cache key. varyByHeaders / keyGenerator are applied by
+    // CacheManager.generateKey itself, which is what keeps a per-caller
+    // response from being served to a different caller.
     const cacheKey = CacheManager.generateKey(
-      method,
-      path,
-      params,
-      query,
-      { key: customKey, prefix, includeQuery }
-    ) + headerSuffix;
+      c.req.method,
+      c.req.path,
+      c.req.param(),
+      includeQuery ? c.req.query() : undefined,
+      { key: customKey, prefix, includeQuery, varyByHeaders, keyGenerator },
+      c
+    );
 
     const cacheStore = store || CacheManager.getDefaultStore();
     const cached = await cacheStore.get(cacheKey);

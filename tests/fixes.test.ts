@@ -73,14 +73,20 @@ describe('Fix 1: JWT blacklist uses Map with expiry', () => {
   it('cleanupBlacklist purges expired entries', async () => {
     const { accessToken } = provider.generateTokens({ sub: 'u2' });
     await provider.blacklistToken(accessToken);
+    // Entries are keyed by the token's `jti`, not the raw JWT, so the store
+    // never holds a replayable credential.
+    const jti = provider.decodeToken(accessToken)!.jti as string;
+    expect(jti).toBeTruthy();
+
     // Inject a fake already-expired entry
     const store = (provider as any).blacklist;
-    store.tokens.set('old.token', 1);
+    store.tokens.set('old-token-id', 1);
     await provider.cleanupBlacklist();
     // The valid blacklisted token stays (exp is ~1h from now)
-    expect(store.tokens.has(accessToken)).toBe(true);
+    expect(store.tokens.has(jti)).toBe(true);
+    expect(await provider.isBlacklisted(accessToken)).toBe(true);
     // The expired entry is gone
-    expect(store.tokens.has('old.token')).toBe(false);
+    expect(store.tokens.has('old-token-id')).toBe(false);
   });
 
   it('cleanupBlacklist does not throw on empty blacklist', async () => {

@@ -187,14 +187,21 @@ export class JWTProvider {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token.
+   *
+   * Rotation is atomic: the old token is *claimed* (blacklisted only if it was
+   * not already) before a new pair is minted. Verifying first and blacklisting
+   * afterwards let two concurrent requests carrying the same refresh token both
+   * pass verification and each mint a valid pair.
    */
   async refreshAccessToken(refreshToken: string): Promise<TokenPair> {
     const payload = await this.verifyRefreshToken(refreshToken);
 
-    // Blacklist the old refresh token
-    await this.blacklistToken(refreshToken);
-    
+    const claimed = await this.claimToken(refreshToken);
+    if (!claimed) {
+      throw new Error('Invalid refresh token: already used');
+    }
+
     // Generate new token pair
     return this.generateTokens({
       sub: payload.sub,
@@ -221,20 +228,48 @@ export class JWTProvider {
   }
 
   /**
+   * Revocation identity for a token: its `jti` when present (every token this
+   * provider mints has one), otherwise the raw token so externally-issued
+   * tokens can still be revoked.
+   */
+  private revocationId(token: string): { id: string; exp: number } {
+    const payload = this.decodeToken(token);
+    return {
+      id: payload?.jti ? String(payload.jti) : token,
+      exp: payload?.exp ?? Math.floor(Date.now() / 1000) + 3600,
+    };
+  }
+
+  /**
    * Blacklist a token (for logout).
    * Stores the token's expiry so the store can drop expired entries.
    */
   async blacklistToken(token: string): Promise<void> {
-    const payload = this.decodeToken(token);
-    const exp = payload?.exp ?? (Math.floor(Date.now() / 1000) + 3600);
-    await this.blacklist.add(token, exp);
+    const { id, exp } = this.revocationId(token);
+    await this.blacklist.add(id, exp);
+  }
+
+  /**
+   * Blacklist a token only if it was not blacklisted already.
+   * @returns whether this call claimed it (false = someone else got there first)
+   */
+  private async claimToken(token: string): Promise<boolean> {
+    const { id, exp } = this.revocationId(token);
+    if (this.blacklist.claim) {
+      return this.blacklist.claim(id, exp);
+    }
+    // Fallback for custom stores without claim(): not atomic, but still
+    // rejects a reuse that arrives after the first rotation completed.
+    if (await this.blacklist.has(id)) return false;
+    await this.blacklist.add(id, exp);
+    return true;
   }
 
   /**
    * Check if token is blacklisted.
    */
   async isBlacklisted(token: string): Promise<boolean> {
-    return this.blacklist.has(token);
+    return this.blacklist.has(this.revocationId(token).id);
   }
 
   /**

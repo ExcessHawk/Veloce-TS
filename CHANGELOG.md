@@ -7,6 +7,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Full-codebase review of 2026-09-04 (`REVIEW-2026-09-04.md`, 36 items). Fourteen defects were
+first reproduced with failing HTTP-level tests; those now live in `tests/guards.test.ts`.
+
+### Security
+
+- **Route guards declared by `@Auth()`, `@Session()`, `@RequireCSRF()` and the `@CanAccess`
+  family were never enforced.** `AuthPlugin`, `SessionPlugin` and `PermissionPlugin` each
+  reassigned `app.compile` from inside their own `install()` — but `install()` runs from
+  *within* the already-executing `VeloceTS.compile()`, so the replacement function was never
+  called. In practice an `@Auth()` route without a `@CurrentUser()` parameter answered
+  **200 to anonymous requests**, `@Auth({ roles: ['admin'] })` admitted any authenticated
+  user, and `@Session({ required: true })` / `@RequireCSRF()` did nothing at all. All three
+  plugins now inject their guard into the route's middleware during `install()`, the same way
+  `RBACPlugin` already did. **Applications relying on these decorators were unprotected and
+  should update.**
+- **Session cookies are now signed** with `SessionConfig.secret` (HMAC-SHA256, verified in
+  constant time). The cookie previously carried the raw session id, so anyone could swap in
+  another id and be handed that session. `secret` is now required, and cookies default to
+  `secure: true` under `NODE_ENV=production`.
+- **Refresh-token rotation is atomic.** `refreshAccessToken()` verified the token and only then
+  blacklisted it, so two concurrent requests with the same refresh token both succeeded and each
+  received a valid new pair. The old token is now claimed (`SET NX` on Redis, check-and-set in
+  memory) before a new pair is minted; the loser fails.
+- **Request bodies are size-limited.** New `VeloceTSConfig.bodyLimit` (default 1 MiB, `0`
+  disables) rejects oversized bodies with 413 before any handler reads them.
+- **Cached responses can vary by caller.** `@Cache()` now honours `varyByHeaders` and a new
+  `keyGenerator(c)`; previously the key was method + path + params only, so a cached
+  per-user route could serve one user's body to another. A route that reads
+  `@CurrentUser()`/`@Token()`/session data while caching under a caller-independent key now
+  logs a warning at compile time.
+- **Auth flows no longer report internal failures as 401.** A database outage inside
+  `login`/`register`/`refresh` was wrapped into `AuthenticationException(error.message)`,
+  reporting an infrastructure fault as bad credentials and leaking the internal message.
+  Only real credential failures stay 401; anything else is logged and surfaces as 500.
+- **WebSocket handler errors are no longer echoed to the client.** Only parse/schema problems
+  (which describe the client's own input) are returned; everything else is logged server-side
+  and answered with a generic error.
+- **JWT revocation entries are keyed by `jti`** instead of the full token, so the blacklist no
+  longer stores replayable credentials.
+- **CORS**: `Vary: Origin` is emitted whenever the allowed origin depends on the request, and
+  `origin: '*'` combined with `credentials: true` now throws at configuration time instead of
+  producing responses browsers silently reject.
+- **`Response.file()` gained a `root` option** (plus `Response.fileFrom(root, path)`) that
+  confines the lookup to a directory; paths escaping it get 403. The previous docstring showed
+  `'./uploads/' + filename` straight from a route parameter, which is a path-traversal recipe.
+
+### Fixed
+
+- **Class-level `@UseInterceptor` never ran.** The lookup read `target.constructor` on a value
+  that was already the class, so it resolved to `Function` and found nothing.
+- **Exception filters never saw validation or dependency-injection errors** — those were caught
+  by an outer handler that bypassed `FilterManager`. Errors thrown by route middleware/guards now
+  reach filters too.
+- **`DIContainer` reported false circular dependencies under concurrency.** The resolution stack
+  was one container-wide `Set`, so two simultaneous resolves of the same async provider accused
+  each other. Resolution paths are now per async context (`AsyncLocalStorage`), genuine cycles are
+  still detected, and concurrent first-time singleton resolves share one in-flight promise so
+  exactly one instance is created.
+- **Two controllers with the same class name silently overwrote each other's routes.** The route
+  registry keyed on `target.name`; it now keys on class identity.
+- **`VeloceTSConfig.docs` and `.plugins` were accepted and ignored.** `docs` now mounts the
+  OpenAPI plugin (`/openapi.json` + `/docs`, configurable, skipped when an `openapi` plugin is
+  registered manually) and `plugins` registers each entry. The `veloce new` templates and every
+  bundled example already passed `docs: true`.
+- **A malformed JSON body returned 422 "Expected object, received null".** The parse error was
+  swallowed and `null` handed to Zod; it is now a 400 that names the JSON problem.
+- **`AuthService.refresh()` was missing an `await`**, so its `catch` never ran and callers got a
+  bare `Error` instead of `InvalidTokenException`.
+- **Node's `listen()` could never work.** The Node path used `require('@hono/node-server')`, and
+  the published ESM bundle has no `require` in scope, so it always threw and was reported as
+  "package not installed". It now uses a dynamic import; `Adapter.listen` may return a promise.
+- **SSE/streaming generators that throw** now error the stream and log, instead of producing an
+  unhandled rejection. The per-chunk `TextEncoder` allocation was hoisted out.
+- **`HTTPException`s thrown by a DI factory** kept their status instead of being flattened into a
+  generic 500; other failures keep the original error as `cause`.
+- **`process.on('SIGTERM'/'SIGINT')` listeners registered by the rate limiter and
+  `MemorySessionStore`** suppressed Node's default signal handling for the whole application (a
+  script that merely constructed one stopped exiting on Ctrl+C). Both now `unref()` their timer.
+- Flaky WebSocket heartbeat test given realistic margins.
+
+### Added
+
+- `RateLimitStore` contract with `MemoryRateLimitStore` (default) and `RedisRateLimitStore`, so a
+  rate limit can be enforced across instances rather than per process.
+- Typed context variables: `ContextVariableMap` is augmented for `auth.user`, `auth.token`,
+  `session`, `routeMetadata` and the rest, so `c.get('auth.user')` is typed and a mistyped key is
+  a compile error.
+- `veloce-ts` now exports the response builder as **`VeloceResponse`** (and `Res`). The old
+  `Response` export shadowed the global Web API `Response` in any file that imported it; it
+  remains available as a deprecated alias.
+
+### Changed
+
+- `engines.node` raised to `>= 20` (Node 18 is end-of-life). `@hono/node-server` is declared as an
+  optional peer dependency. CI moved to `setup-bun@v2` / `setup-deno@v2`, Deno 2.x, Bun 1.3.x.
+- `MetadataCompiler` caches by route-object identity (a `WeakMap`) instead of hashing a snapshot
+  per route; `ValidationEngine`'s "schema cache" was a no-op wrapper and has been removed
+  (`getCacheStats()` is deprecated but still present).
+- `build.ts` exits non-zero when the build throws — it previously logged and exited 0.
+- Spanish module-header JSDoc across `src/` translated to English for consistency.
+
+
 ## [2.0.2] - 2026-07-26
 
 ### Fixed

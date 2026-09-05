@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "2.0.2",
+  "version": "3.0.0",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
@@ -163,7 +163,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.0.0",
     "bun": ">=1.0.0"
   },
   "dependencies": {
@@ -186,9 +186,13 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
+    "@hono/node-server": ">=1.0.0",
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {
+    "@hono/node-server": {
+      "optional": true
+    },
     "ioredis": {
       "optional": true
     },

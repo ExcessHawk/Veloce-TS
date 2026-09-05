@@ -81,15 +81,17 @@ export function createSessionMiddleware(
 ) {
   return async (c: Context, next: () => Promise<void>) => {
     const config = sessionManager.getConfig();
-    
-    // Get session ID from cookie
-    const sessionId = getCookie(c, config.name);
-    
+
+    // Read the signed session cookie. An unsigned or tampered value is treated
+    // as no session at all, so a forged cookie cannot select another session id.
+    const rawCookie = getCookie(c, config.name);
+    const sessionId = rawCookie ? sessionManager.unsignSessionId(rawCookie) : null;
+
     let session: SessionData | null = null;
-    
+
     if (sessionId) {
       session = await sessionManager.getSession(sessionId);
-      
+
       if (session) {
         // Touch session to update last accessed time
         await sessionManager.touchSession(sessionId);
@@ -176,7 +178,7 @@ export class SessionGuard {
 
     // Set session cookie
     const cookieOptions = sessionManager.getCookieOptions();
-    setCookie(c, sessionManager.getConfig().name, session.id, cookieOptions);
+    setCookie(c, sessionManager.getConfig().name, sessionManager.signSessionId(session.id), cookieOptions);
 
     // Store in context
     c.set('session', session);
@@ -252,7 +254,7 @@ export class SessionGuard {
     if (newSession) {
       // Update session cookie with new ID
       const cookieOptions = sessionManager.getCookieOptions();
-      setCookie(c, sessionManager.getConfig().name, newSession.id, cookieOptions);
+      setCookie(c, sessionManager.getConfig().name, sessionManager.signSessionId(newSession.id), cookieOptions);
 
       // Store in context
       c.set('session', newSession);

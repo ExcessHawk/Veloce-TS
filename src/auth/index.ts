@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/auth
- * @description JWT, sesiones, OAuth, RBAC/permisos, plugins y decoradores de identidad en rutas.
+ * @description JWT, sessions, OAuth, RBAC/permissions, plugins and route-level identity decorators.
  */
 export * from './jwt-provider.js';
 export * from './token-blacklist.js';

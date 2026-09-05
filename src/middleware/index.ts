@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/middleware
- * @description Punto de re-export: CORS, rate limiting, compresión, contexto de request (trace/id) y caché HTTP.
+ * @description Re-export point: CORS, rate limiting, compression, request context (trace/id) and HTTP cache.
  */
 export {
   createCorsMiddleware,

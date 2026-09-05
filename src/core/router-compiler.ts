@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/core/router-compiler
- * @description {@link RouterCompiler}: traduce metadatos + rutas funcionales a rutas Hono reales, aplicando
- * validación Zod, inyección de dependencias, serialización de respuestas y el manejador global de errores.
+ * @description {@link RouterCompiler}: translates metadata + functional routes into real Hono routes,
+ * applying Zod validation, dependency injection, response serialization and the global error handler.
  */
 import type { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
@@ -12,7 +12,7 @@ import { ValidationEngine } from '../validation/validator';
 import { ResponseSerializer } from '../responses/response';
 import { ErrorHandler } from '../errors/handler';
 import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata';
-import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
+import type { ParameterMetadata, DependencyMetadata } from '../types';
 import { BadRequestException, HTTPException } from '../errors/exceptions';
 import { getLogger } from '../logging/logger';
 import type { FilterManager } from '../errors/exception-filter';
@@ -23,20 +23,72 @@ import { parseTTL } from '../cache/types';
 import { AuthenticationException } from '../auth/exceptions';
 import { getRequestId, getAbortSignal } from '../context/request-context';
 
+/** Shared encoder — allocating one per chunk showed up in streaming profiles. */
+const TEXT_ENCODER = new TextEncoder();
+
+/**
+ * What a cached route stores. Keeping the status alongside the (already
+ * validated) body means a cache HIT reproduces the original response exactly,
+ * instead of replaying a raw handler value with a default 200.
+ */
+interface CachedResponse {
+  __veloceCache: 1;
+  body: unknown;
+  status?: number;
+}
+
+function isCachedResponse(value: unknown): value is CachedResponse {
+  return typeof value === 'object' && value !== null && (value as CachedResponse).__veloceCache === 1;
+}
+
 function isAsyncGenerator(v: unknown): v is AsyncGenerator {
   return v != null && typeof (v as any)[Symbol.asyncIterator] === 'function';
 }
 
-function sseResponse(gen: AsyncGenerator): Response {
-  const stream = new ReadableStream({
+/**
+ * Wrap an async generator in a ReadableStream. A throwing generator errors the
+ * stream (and is logged) instead of surfacing as an unhandled rejection.
+ */
+function generatorStream(
+  gen: AsyncGenerator,
+  encodeChunk: (value: any) => Uint8Array,
+  onError: (error: Error) => void
+): ReadableStream {
+  return new ReadableStream({
     async pull(controller) {
-      const { value, done } = await gen.next();
-      if (done) { controller.close(); return; }
-      const data = typeof value === 'string' ? value : JSON.stringify(value);
-      controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+      try {
+        const { value, done } = await gen.next();
+        if (done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(encodeChunk(value));
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        onError(error);
+        try {
+          await gen.return?.(undefined);
+        } catch {
+          // the generator is already broken — nothing further to do
+        }
+        controller.error(error);
+      }
     },
-    cancel() { gen.return?.(undefined); },
+    cancel() {
+      gen.return?.(undefined);
+    },
   });
+}
+
+function sseResponse(gen: AsyncGenerator, onError: (error: Error) => void): Response {
+  const stream = generatorStream(
+    gen,
+    value => {
+      const data = typeof value === 'string' ? value : JSON.stringify(value);
+      return TEXT_ENCODER.encode(`data: ${data}\n\n`);
+    },
+    onError
+  );
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
@@ -46,19 +98,17 @@ function sseResponse(gen: AsyncGenerator): Response {
   });
 }
 
-function streamResponse(gen: AsyncGenerator, contentType: string): Response {
-  const stream = new ReadableStream({
-    async pull(controller) {
-      const { value, done } = await gen.next();
-      if (done) { controller.close(); return; }
-      const chunk = typeof value === 'string'
-        ? new TextEncoder().encode(value)
-        : value instanceof Uint8Array ? value
-        : new TextEncoder().encode(JSON.stringify(value));
-      controller.enqueue(chunk);
-    },
-    cancel() { gen.return?.(undefined); },
-  });
+function streamResponse(gen: AsyncGenerator, contentType: string, onError: (error: Error) => void): Response {
+  const stream = generatorStream(
+    gen,
+    value =>
+      typeof value === 'string'
+        ? TEXT_ENCODER.encode(value)
+        : value instanceof Uint8Array
+          ? value
+          : TEXT_ENCODER.encode(JSON.stringify(value)),
+    onError
+  );
   return new Response(stream, { headers: { 'Content-Type': contentType } });
 }
 
@@ -88,7 +138,15 @@ export class RouterCompiler {
     // error handling and Hono would turn it into a generic 500. Register a global
     // Hono error hook that funnels every uncaught error through the same
     // ErrorHandler, so an AuthorizationException from a guard maps to 403, etc.
-    this.app.onError((err, c) => this.errorHandler.handle(err as Error, c));
+    this.app.onError(async (err, c) => {
+      const error = err instanceof Error ? err : new Error(String(err));
+      // Exception filters must also see errors thrown by route middleware/guards.
+      if (this.filterManager) {
+        const filtered = await this.filterManager.handle(error, c);
+        if (filtered) return filtered;
+      }
+      return this.errorHandler.handle(error, c);
+    });
 
     const routes = this.metadata.getRoutes();
 
@@ -138,11 +196,11 @@ export class RouterCompiler {
    */
   public createHandler(route: CompiledRouteMetadata): (c: Context) => Promise<any> {
     // Per-route constants — resolved once at compile time, not per request
-    const isFunctional = Boolean((route as any).handler);
-    const cacheConfig = (route as any).cache;
-    const invalidatePatterns = (route as any).cacheInvalidate;
-    const responseSchema = (route as any).responseSchema;
-    const statusCode = (route as any).statusCode;
+    const isFunctional = Boolean(route.handler);
+    const cacheConfig = route.cache;
+    const invalidatePatterns = route.cacheInvalidate;
+    const responseSchema = route.responseSchema;
+    const statusCode = route.statusCode;
     const localInterceptors = isFunctional
       ? []
       : getInterceptors(route.target, route.propertyKey);
@@ -154,6 +212,29 @@ export class RouterCompiler {
       ? undefined
       : MetadataRegistry.getControllerMetadata(route.target)?.scope || 'singleton';
 
+    // Caching a per-caller response under a caller-independent key serves one
+    // user's data to the next. Warn once at compile time rather than silently
+    // shipping a data leak.
+    if (cacheConfig && !cacheConfig.keyGenerator && !cacheConfig.varyByHeaders?.length) {
+      const perCaller =
+        route.auth?.required === true ||
+        route.parametersDense.some(p =>
+          p.type === 'current-user' ||
+          p.type === 'token' ||
+          p.type === 'oauth-user' ||
+          p.type === 'oauth-token' ||
+          p.type === 'current-session' ||
+          p.type === 'session-data'
+        );
+      if (perCaller) {
+        getLogger().warn(
+          'Cached route depends on the caller but its cache key does not — responses may leak between users. ' +
+          'Add varyByHeaders (e.g. ["authorization"]) or keyGenerator to @Cache().',
+          { method: route.method, path: route.path, handler: route.propertyKey }
+        );
+      }
+    }
+
     return async (c: Context) => {
       try {
         // Store route metadata in context for auth checks
@@ -163,28 +244,31 @@ export class RouterCompiler {
         let cacheKey: string | null = null;
 
         if (cacheConfig) {
-          // Generate cache key
-          const params = c.req.param();
-          const query = cacheConfig.includeQuery ? c.req.query() : undefined;
-          
           cacheKey = CacheManager.generateKey(
             route.method,
             route.path,
-            params,
-            query,
-            cacheConfig
+            c.req.param(),
+            cacheConfig.includeQuery ? c.req.query() : undefined,
+            cacheConfig,
+            c
           );
 
           // Try to get from cache
           const cached = await CacheManager.get(cacheKey, cacheConfig.store);
           if (cached !== null) {
             c.header('X-Cache', 'HIT');
+            // Entries written by this compiler carry their status; anything else
+            // (e.g. pre-existing entries) is served as a plain body.
+            if (isCachedResponse(cached)) {
+              if (cached.status) c.status(cached.status as any);
+              return this.serializeResponse(c, cached.body);
+            }
             return this.serializeResponse(c, cached);
           }
 
           c.header('X-Cache', 'MISS');
         }
-        
+
         // 1. Extract and validate parameters from the request (dense arrays
         //    are precomputed at compile time — no sparse-slot guards needed)
         const args = await this.extractParameters(c, route.parametersDense);
@@ -202,11 +286,11 @@ export class RouterCompiler {
 
             // Check if this is a functional route (has handler property)
             if (isFunctional) {
-              result = await (route as any).handler(c, ...allArgs);
+              result = await route.handler!(c, ...allArgs);
             } else {
               // Decorator-based route - resolve controller (singleton by default,
               // configurable via @Controller('/x', { scope }) )
-              const instance = await this.container.resolve(route.target, {
+              const instance = await this.container.resolve<any>(route.target, {
                 scope: controllerScope,
                 context: c
               });
@@ -216,14 +300,6 @@ export class RouterCompiler {
               }
 
               result = await instance[route.propertyKey](...allArgs);
-            }
-
-            // Cache the result if caching is enabled
-            if (cacheConfig && cacheKey) {
-              if (!cacheConfig.condition || cacheConfig.condition(result)) {
-                const ttl = parseTTL(cacheConfig.ttl);
-                await CacheManager.set(cacheKey, result, ttl, cacheConfig.store);
-              }
             }
 
             // Handle cache invalidation if configured
@@ -242,11 +318,17 @@ export class RouterCompiler {
 
             // 5a. SSE / Stream — return streaming response directly (skip serializer)
             if (isAsyncGenerator(result)) {
+              const onStreamError = (error: Error) =>
+                getLogger().error('Streaming handler failed mid-response', error, {
+                  method: route.method,
+                  path: route.path,
+                  handler: route.propertyKey,
+                });
               if (sseRoute) {
-                return sseResponse(result);
+                return sseResponse(result, onStreamError);
               }
               if (streamCT) {
-                return streamResponse(result, streamCT);
+                return streamResponse(result, streamCT, onStreamError);
               }
             }
 
@@ -270,21 +352,25 @@ export class RouterCompiler {
               }
             }
 
-            // 5c. Apply @HttpCode status before serialising
+            // 5c. Cache the *validated* result plus its status, so a HIT replays
+            //     exactly what a MISS produced (schema-stripped, same status code).
+            if (cacheConfig && cacheKey) {
+              if (!cacheConfig.condition || cacheConfig.condition(result)) {
+                const ttl = parseTTL(cacheConfig.ttl);
+                const entry: CachedResponse = { __veloceCache: 1, body: result, status: statusCode };
+                await CacheManager.set(cacheKey, entry, ttl, cacheConfig.store);
+              }
+            }
+
+            // 5d. Apply @HttpCode status before serialising
             if (statusCode) {
               c.status(statusCode as any);
             }
 
-            // 5d. Serialize and return the response
+            // 5e. Serialize and return the response
             return this.serializeResponse(c, result);
           } catch (err) {
             const error = err instanceof Error ? err : new Error(String(err));
-            // Try exception filters first
-            if (this.filterManager) {
-              const filtered = await this.filterManager.handle(error, c);
-              if (filtered) return filtered;
-            }
-            // Fall back to default error handler
             return await this.handleError(c, error);
           }
         };
@@ -301,7 +387,9 @@ export class RouterCompiler {
         }
         return execute();
       } catch (error) {
-        // Outer catch: errors from parameter extraction / dependency resolution
+        // Outer catch: errors from parameter extraction / dependency resolution.
+        // Goes through the same path as handler errors so exception filters see
+        // validation and DI failures too.
         return await this.handleError(c, error);
       }
     };
@@ -336,12 +424,18 @@ export class RouterCompiler {
   }
 
   /**
-   * Handle errors that occur during request processing
-   * Delegates to ErrorHandler for consistent error handling
+   * Handle errors during request processing: exception filters first, then the
+   * default error handler.
    */
   private async handleError(c: Context, error: any): Promise<any> {
-    // Delegate to the ErrorHandler
-    return await this.errorHandler.handle(error, c);
+    const err = error instanceof Error ? error : new Error(String(error));
+
+    if (this.filterManager) {
+      const filtered = await this.filterManager.handle(err, c);
+      if (filtered) return filtered;
+    }
+
+    return await this.errorHandler.handle(err, c);
   }
 
   /**
@@ -359,12 +453,10 @@ export class RouterCompiler {
 
       switch (param.type) {
         case 'body':
-          // Extract request body as JSON
-          try {
-            value = await c.req.json();
-          } catch (error) {
-            value = null;
-          }
+          // Extract request body as JSON. A malformed payload is a client error:
+          // reporting it as 400 "Invalid JSON body" is far clearer than passing
+          // `null` down to Zod and returning "Expected object, received null".
+          value = await this.readJsonBody(c);
           break;
 
         case 'query':
@@ -404,24 +496,8 @@ export class RouterCompiler {
           break;
 
         case 'cookie':
-          // Extract cookies using Hono's cookie helper
-          if (param.name) {
-            // Extract specific cookie
-            value = getCookie(c, param.name);
-          } else {
-            // Extract all cookies - parse from Cookie header
-            const cookieHeader = c.req.header('cookie');
-            if (cookieHeader) {
-              value = Object.fromEntries(
-                cookieHeader.split(';').map(cookie => {
-                  const [key, ...valueParts] = cookie.trim().split('=');
-                  return [key, valueParts.join('=')];
-                })
-              );
-            } else {
-              value = {};
-            }
-          }
+          // Extract cookies using Hono's cookie helper (no argument → all cookies)
+          value = param.name ? getCookie(c, param.name) : getCookie(c);
           break;
 
         case 'request':
@@ -435,12 +511,11 @@ export class RouterCompiler {
           value = c;
           break;
 
-        case 'current-user':
+        case 'current-user': {
           // Extract current user from context (set by auth middleware)
           value = c.get('auth.user') || null;
-          
+
           // Check if this route requires authentication by looking for @Auth() decorator
-          // We need to check the route metadata to see if auth is required
           const routeMetadata = this.getRouteMetadataForContext(c);
           if (routeMetadata && this.isAuthRequired(routeMetadata)) {
             if (!value) {
@@ -449,6 +524,7 @@ export class RouterCompiler {
             }
           }
           break;
+        }
 
         case 'token':
           // Extract JWT token from context (set by auth middleware)
@@ -470,7 +546,7 @@ export class RouterCompiler {
           value = c.get('session') || null;
           break;
 
-        case 'session-data':
+        case 'session-data': {
           // Extract session data from context
           const session = c.get('session');
           if (session && param.metadata?.key) {
@@ -481,6 +557,7 @@ export class RouterCompiler {
             value = null;
           }
           break;
+        }
 
         case 'csrf-token':
           // Extract CSRF token from context
@@ -513,12 +590,7 @@ export class RouterCompiler {
 
       // Validate with Zod schema if provided
       if (param.schema) {
-        try {
-          value = await this.validator.validate(value, param.schema);
-        } catch (error) {
-          // Re-throw validation errors - they'll be caught by error handler
-          throw error;
-        }
+        value = await this.validator.validate(value, param.schema);
       }
 
       // Store at the correct parameter index
@@ -526,6 +598,34 @@ export class RouterCompiler {
     }
 
     return extracted;
+  }
+
+  /**
+   * Read and parse a JSON request body.
+   *
+   * An empty body stays `null` (so `@Body()` on an optional payload behaves as
+   * before), but a body that is present and *malformed* raises 400 rather than
+   * silently becoming `null`.
+   */
+  private async readJsonBody(c: Context): Promise<any> {
+    let raw: string;
+    try {
+      raw = await c.req.text();
+    } catch {
+      throw new BadRequestException('Could not read request body');
+    }
+
+    if (raw.trim() === '') {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      throw new BadRequestException(
+        `Invalid JSON body: ${error instanceof Error ? error.message : 'could not be parsed'}`
+      );
+    }
   }
 
   /**
@@ -558,7 +658,7 @@ export class RouterCompiler {
     if (!Number.isFinite(maxIndex) || maxIndex < 0) {
       maxIndex = 0;
     }
-    
+
     // Pre-allocate array with exact size needed
     const merged: any[] = new Array(maxIndex + 1);
 
@@ -596,9 +696,15 @@ export class RouterCompiler {
         // Store at the correct parameter index
         resolved[dep.index] = value;
       } catch (error) {
-        // Wrap dependency resolution errors with context
+        // An HTTPException thrown by a provider/factory is a deliberate HTTP
+        // outcome — keep it (and its status) intact. Everything else is wrapped
+        // with context, preserving the original error as `cause`.
+        if (error instanceof HTTPException) {
+          throw error;
+        }
         throw new Error(
-          `Failed to resolve dependency at index ${dep.index}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Failed to resolve dependency at index ${dep.index}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error }
         );
       }
     }

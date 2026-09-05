@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/cache
- * @description Tipos de almacén, implementaciones en memoria y Redis, `CacheManager` y TTL.
+ * @description Store types, in-memory and Redis implementations, `CacheManager` and TTL helpers.
  */
 
 // Types

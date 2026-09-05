@@ -5,6 +5,8 @@ import { AuthService, UserProvider } from './auth-service.js';
 import { JWTConfig } from './jwt-provider.js';
 import { createAuthMiddleware, getCurrentUser, getToken, isAuthenticated, getAuthError } from './decorators.js';
 import { AuthenticationException, AuthorizationException } from './exceptions.js';
+import { getLogger } from '../logging/logger.js';
+import type { AuthConfig, Middleware } from '../types/index.js';
 import { Context } from 'hono';
 import { z } from 'zod';
 
@@ -25,7 +27,6 @@ export class AuthPlugin implements Plugin {
   version = '1.0.0';
 
   private authService: AuthService;
-  private compileExtended = false;
 
   constructor(private config: AuthPluginConfig) {
     this.authService = new AuthService(config.jwt, config.userProvider);
@@ -35,6 +36,12 @@ export class AuthPlugin implements Plugin {
     // Add authentication middleware globally
     const authMiddleware = createAuthMiddleware(this.authService.getJWTProvider());
     app.use(authMiddleware);
+
+    // Expose the auth service on the context for downstream middleware/handlers
+    app.use(async (c, next) => {
+      c.set('authService', this.authService);
+      await next();
+    });
 
     // Add auth service to DI container
     app.getContainer().register(AuthService, {
@@ -47,93 +54,71 @@ export class AuthPlugin implements Plugin {
       this.addDefaultRoutes(app);
     }
 
-    // Extend router compiler to handle auth metadata
-    this.extendRouterCompiler(app);
+    // Enforce @Auth() metadata by injecting a guard into each route's middleware.
+    // This MUST happen here, during install(), rather than by wrapping app.compile:
+    // install() is itself invoked from inside the already-running VeloceTS.compile(),
+    // so reassigning app.compile at this point is a no-op — the wrapper never fires
+    // and @Auth() silently becomes unenforced. install() runs before
+    // RouterCompiler.compile(), so guards injected into route metadata now land on
+    // the live Hono routes.
+    this.injectRouteGuards(app);
   }
 
-  private extendRouterCompiler(app: VeloceTS): void {
-    if (this.compileExtended) return;
-    this.compileExtended = true;
+  /**
+   * Prepend an authentication/authorization guard to every route that declares
+   * `@Auth()` metadata (directly on the route or via reflect-metadata).
+   */
+  private injectRouteGuards(app: VeloceTS): void {
+    const registry = app.getMetadata();
 
-    // Add auth middleware that runs before route handlers
-    app.use(async (c, next) => {
-      // Store auth service in context for later use
-      c.set('authService', this.authService);
-      
-      // Continue to next middleware/handler
-      await next();
-    });
-    
-    // Override the compile method to add route-specific auth checks
-    const originalCompile = app.compile.bind(app);
-    
-    app.compile = async () => {
-      // First compile normally
-      await originalCompile();
-      
-      // Then add auth checks for each route that needs them
-      const hono = app.getHono();
-      const routes = app.getMetadata().getRoutes();
-      
-      for (const route of routes) {
-        // Check if auth metadata exists in reflect-metadata directly
-        const authMetadata = MetadataRegistry.getAuthMetadata(route.target.prototype, route.propertyKey);
-        const authRequired = route.auth?.required || authMetadata?.required;
-        
-        if (authRequired) {
-          const authConfig = route.auth?.config || authMetadata?.config;
+    for (const route of registry.getRoutes()) {
+      const authMetadata = route.target?.prototype
+        ? MetadataRegistry.getAuthMetadata(route.target.prototype, route.propertyKey)
+        : undefined;
+      const authRequired = route.auth?.required || authMetadata?.required;
 
-          // Add middleware specifically for this route
-          hono.use(route.path, async (c, next) => {
-            // Only apply to the specific method
-            if (c.req.method !== route.method) {
-              return next();
-            }
+      if (!authRequired) continue;
 
-            // Check authentication
-            const user = (c as any).get('auth.user');
-            const error = (c as any).get('auth.error');
+      const guard = this.buildAuthMiddleware(route.auth?.config || authMetadata?.config);
 
-            if (!user) {
-              const authError = error || 'Authentication required';
-              throw new AuthenticationException(authError);
-            }
+      // Re-register the same route (keyed by target + propertyKey, so this replaces
+      // it in place) with the guard ahead of any existing middleware.
+      registry.registerRoute({
+        ...route,
+        middleware: [guard, ...(route.middleware || [])],
+      });
+    }
+  }
 
-            // Check roles if specified
-            if (authConfig?.roles?.length) {
-              if (!this.authService.hasRoles(user, authConfig.roles)) {
-                throw new AuthorizationException(
-                  `Required roles: ${authConfig.roles.join(', ')}`
-                );
-              }
-            }
+  private buildAuthMiddleware(authConfig?: AuthConfig): Middleware {
+    const authService = this.authService;
 
-            // Check permissions if specified
-            if (authConfig?.permissions?.length) {
-              if (!this.authService.hasPermissions(user, authConfig.permissions)) {
-                throw new AuthorizationException(
-                  `Required permissions: ${authConfig.permissions.join(', ')}`
-                );
-              }
-            }
-            
-            await next();
-          });
+    return async (c: Context, next: () => Promise<void>) => {
+      const user = c.get('auth.user');
+
+      if (!user) {
+        // Missing/invalid credentials is authentication (401), not authorization (403)
+        throw new AuthenticationException(c.get('auth.error') || 'Authentication required');
+      }
+
+      if (authConfig?.roles?.length) {
+        if (!authService.hasRoles(user, authConfig.roles)) {
+          throw new AuthorizationException(
+            `Required roles: ${authConfig.roles.join(', ')}`
+          );
         }
       }
+
+      if (authConfig?.permissions?.length) {
+        if (!authService.hasPermissions(user, authConfig.permissions)) {
+          throw new AuthorizationException(
+            `Required permissions: ${authConfig.permissions.join(', ')}`
+          );
+        }
+      }
+
+      await next();
     };
-  }
-
-  private buildPath(route: any): string {
-    // The route already contains the full path from the router compiler
-    return route.path;
-  }
-
-  private pathMatches(routePath: string, requestPath: string): boolean {
-    // Simple path matching - convert route params to regex
-    const pattern = routePath.replace(/:([^/]+)/g, '([^/]+)');
-    const regex = new RegExp(`^${pattern}$`);
-    return regex.test(requestPath);
   }
 
 
@@ -155,9 +140,7 @@ export class AuthPlugin implements Plugin {
             tokens: result.tokens
           };
         } catch (error) {
-          throw new AuthenticationException(
-            error instanceof Error ? error.message : 'Login failed'
-          );
+          throw this.toAuthFailure(error, 'login', 'Login failed');
         }
       },
       schema: {
@@ -181,9 +164,7 @@ export class AuthPlugin implements Plugin {
             tokens
           };
         } catch (error) {
-          throw new AuthenticationException(
-            error instanceof Error ? error.message : 'Token refresh failed'
-          );
+          throw this.toAuthFailure(error, 'refresh', 'Token refresh failed');
         }
       },
       schema: {
@@ -236,9 +217,7 @@ export class AuthPlugin implements Plugin {
               tokens: result.tokens
             };
           } catch (error) {
-            throw new AuthenticationException(
-              error instanceof Error ? error.message : 'Registration failed'
-            );
+            throw this.toAuthFailure(error, 'register', 'Registration failed');
           }
         },
         schema: {
@@ -269,6 +248,30 @@ export class AuthPlugin implements Plugin {
   }
 
 
+
+  /**
+   * Map an error thrown by an auth flow to what the client should see.
+   *
+   * Only genuine credential failures (`AuthenticationException` and its
+   * subclasses, e.g. `InvalidTokenException`) are surfaced as 401 with their
+   * own message. Anything else — a database outage, a bug in a custom
+   * `UserProvider` — is an internal failure: it is logged in full server-side
+   * and rethrown unchanged so the error handler turns it into a 500 instead of
+   * reporting "invalid credentials" and leaking internal detail as the message.
+   */
+  private toAuthFailure(error: unknown, flow: string, fallback: string): unknown {
+    if (error instanceof AuthenticationException) {
+      return error;
+    }
+
+    getLogger().error(
+      `Auth flow "${flow}" failed with a non-authentication error`,
+      error instanceof Error ? error : new Error(String(error)),
+      { flow, fallback }
+    );
+
+    return error instanceof Error ? error : new Error(fallback);
+  }
 
   getAuthService(): AuthService {
     return this.authService;

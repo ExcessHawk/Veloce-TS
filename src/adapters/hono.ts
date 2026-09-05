@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/adapters/hono
- * @description {@link HonoAdapter}: detecta runtime (Bun/Node/Deno/Workers) y expone `listen` sobre la instancia Hono.
+ * @description {@link HonoAdapter}: detects the runtime (Bun/Node/Deno/Workers) and exposes `listen` over the Hono instance.
  */
 import type { Hono } from 'hono';
 import type { Adapter, ServerInstance } from './base';
@@ -52,7 +52,7 @@ export class HonoAdapter implements Adapter {
    * Start the server on the specified port
    * Automatically uses the appropriate server for the detected runtime
    */
-  listen(port: number, callback?: () => void): ServerInstance {
+  async listen(port: number, callback?: () => void): Promise<ServerInstance> {
     switch (this.runtime) {
       case 'bun':
         return this.listenBun(port, callback);
@@ -186,33 +186,45 @@ export class HonoAdapter implements Adapter {
    * Start server using Node.js adapter
    * Requires @hono/node-server package
    */
-  private listenNode(port: number, callback?: () => void): ServerInstance {
-    try {
-      // Dynamically import @hono/node-server
-      // This is a peer dependency that users need to install for Node.js support
-      const { serve } = require('@hono/node-server');
-      
-      const server = serve(
-        {
-          fetch: this.hono.fetch,
-          port,
-        },
-        callback
-      );
+  private async listenNode(port: number, callback?: () => void): Promise<ServerInstance> {
+    let serve: (options: any, callback?: () => void) => any;
 
-      return {
-        port,
-        close: async () => {
-          return new Promise<void>((resolve) => {
-            server.close(() => resolve());
-          });
-        },
-        ...server
-      };
+    try {
+      // @hono/node-server is an optional peer dependency: only Node users
+      // calling listen() need it.
+      //
+      // This must be a dynamic import, not require(): the published ESM bundle
+      // has no `require` in scope, so the old `require('@hono/node-server')`
+      // threw ReferenceError under real Node — and the catch below reported it
+      // as "package not installed" even when it was.
+      //
+      // The specifier is held in a variable so neither tsc nor the bundler
+      // tries to resolve a package that is optional by design.
+      const specifier = '@hono/node-server';
+      ({ serve } = await import(specifier));
     } catch (error) {
       throw new Error(
-        'Node.js adapter requires @hono/node-server package. Install it with: npm install @hono/node-server'
+        'Node.js adapter requires the @hono/node-server package. Install it with: npm install @hono/node-server',
+        { cause: error }
       );
     }
+
+    const server = serve(
+      {
+        fetch: this.hono.fetch,
+        port,
+      },
+      callback
+    );
+
+    return {
+      port,
+      close: async () => {
+        return new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+      },
+      ...server
+    };
   }
 }

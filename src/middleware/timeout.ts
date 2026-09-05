@@ -1,8 +1,8 @@
 /**
  * @module veloce-ts/middleware/timeout
- * @description Middleware de timeout por ruta: corre el handler contra un temporizador
- * y aborta con 408 si se excede. Compartido por el decorador `@Timeout` y por la
- * opción `timeout` de la API funcional (`app.get(path, { timeout })`).
+ * @description Per-route timeout middleware: races the handler against a timer and
+ * aborts with 408 when it is exceeded. Shared by the `@Timeout` decorator and the
+ * functional API's `timeout` option (`app.get(path, { timeout })`).
  */
 import type { Middleware } from '../types';
 

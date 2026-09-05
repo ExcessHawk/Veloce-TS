@@ -1,5 +1,5 @@
 /**
- * Tipos para el sistema de logging con Pino
+ * Types for the Pino-based logging system
  */
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';

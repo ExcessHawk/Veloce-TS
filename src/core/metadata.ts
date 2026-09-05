@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/core/metadata
- * @description {@link MetadataRegistry}: almacén en memoria de metadatos generados por decoradores
- * (`@Controller`, `@Get`, parámetros `@Body`, dependencias, WebSocket, GraphQL, etc.) antes de compilar rutas.
+ * @description {@link MetadataRegistry}: in-memory store for decorator-generated metadata
+ * (`@Controller`, `@Get`, `@Body` parameters, dependencies, WebSocket, GraphQL, …) prior to route compilation.
  */
 import 'reflect-metadata';
 import type {
@@ -47,25 +47,29 @@ const SESSION_METADATA_KEY = Symbol('session:metadata');
 const CSRF_METADATA_KEY = Symbol('csrf:metadata');
 
 export class MetadataRegistry {
-  private routes: Map<string, RouteMetadata> = new Map();
+  /**
+   * Routes keyed by controller *identity* (the class object), then by method name.
+   * Keying by `target.name` collided when two controllers in different modules
+   * shared a class name (e.g. two `UserController`s) — the second silently
+   * overwrote the first's same-named routes.
+   */
+  private routes: Map<Class, Map<string, RouteMetadata>> = new Map();
   private controllers: Map<Class, ControllerMetadata> = new Map();
-  private routesByController: Map<Class, RouteMetadata[]> = new Map();
   private websockets: Map<Class, WebSocketMetadata> = new Map();
   private graphqlResolvers: Map<Class, GraphQLResolverMetadata> = new Map();
   private graphqlFields: Map<string, GraphQLFieldMetadata> = new Map();
 
   /**
-   * Register a route in the registry
+   * Register a route in the registry. Re-registering the same
+   * `target:propertyKey` replaces the previous entry in place.
    */
   registerRoute(metadata: RouteMetadata): void {
-    const key = this.getRouteKey(metadata.target, metadata.propertyKey);
-    this.routes.set(key, metadata);
-
-    // Also track routes by controller
-    if (!this.routesByController.has(metadata.target)) {
-      this.routesByController.set(metadata.target, []);
+    let byMethod = this.routes.get(metadata.target);
+    if (!byMethod) {
+      byMethod = new Map();
+      this.routes.set(metadata.target, byMethod);
     }
-    this.routesByController.get(metadata.target)!.push(metadata);
+    byMethod.set(metadata.propertyKey, metadata);
   }
 
   /**
@@ -79,22 +83,28 @@ export class MetadataRegistry {
    * Get all registered routes
    */
   getRoutes(): RouteMetadata[] {
-    return Array.from(this.routes.values());
+    const all: RouteMetadata[] = [];
+    for (const byMethod of this.routes.values()) {
+      for (const route of byMethod.values()) {
+        all.push(route);
+      }
+    }
+    return all;
   }
 
   /**
    * Get a specific route by target and property key
    */
   getRoute(target: Class, propertyKey: string): RouteMetadata | undefined {
-    const key = this.getRouteKey(target, propertyKey);
-    return this.routes.get(key);
+    return this.routes.get(target)?.get(propertyKey);
   }
 
   /**
    * Get all routes for a specific controller
    */
   getRoutesByController(target: Class): RouteMetadata[] {
-    return this.routesByController.get(target) || [];
+    const byMethod = this.routes.get(target);
+    return byMethod ? Array.from(byMethod.values()) : [];
   }
 
   /**
@@ -143,8 +153,16 @@ export class MetadataRegistry {
    * Register a GraphQL field in the registry
    */
   registerGraphQLField(metadata: GraphQLFieldMetadata): void {
-    const key = this.getRouteKey(metadata.target, metadata.propertyKey);
-    this.graphqlFields.set(key, metadata);
+    this.graphqlFields.set(this.getFieldKey(metadata.target, metadata.propertyKey), metadata);
+  }
+
+  /**
+   * Key for a GraphQL field. Unlike routes, GraphQL fields live in one flat
+   * schema namespace where the resolver's class name is the natural
+   * identifier, so a name-based key is correct here.
+   */
+  private getFieldKey(target: Class, propertyKey: string): string {
+    return `${target.name}:${propertyKey}`;
   }
 
   /**
@@ -183,7 +201,6 @@ export class MetadataRegistry {
   clear(): void {
     this.routes.clear();
     this.controllers.clear();
-    this.routesByController.clear();
     this.websockets.clear();
     this.graphqlResolvers.clear();
     this.graphqlFields.clear();
@@ -192,10 +209,6 @@ export class MetadataRegistry {
   /**
    * Generate a unique key for a route
    */
-  private getRouteKey(target: Class, propertyKey: string): string {
-    return `${target.name}:${propertyKey}`;
-  }
-
   // ============================================================================
   // Static methods for decorator usage
   // ============================================================================

@@ -65,7 +65,10 @@ export class AuthService {
    */
   async refresh(refreshToken: string): Promise<TokenPair> {
     try {
-      return this.jwtProvider.refreshAccessToken(refreshToken);
+      // `await` is required: without it the promise escapes the try block and
+      // a rejection never reaches this catch, so callers got a bare Error
+      // instead of InvalidTokenException.
+      return await this.jwtProvider.refreshAccessToken(refreshToken);
     } catch (error) {
       throw new InvalidTokenException(
         error instanceof Error ? error.message : 'Invalid refresh token'

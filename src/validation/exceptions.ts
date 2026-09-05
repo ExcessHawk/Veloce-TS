@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/validation/exceptions
- * @description {@link ValidationException}: error 422 cuando falla la validación Zod en `@Body`, `@Query`, etc.
- * Expone `violations` (lista de campos/mensajes/códigos) y el formato Problem Details + legacy `details`.
+ * @description {@link ValidationException}: the 422 raised when Zod validation fails on `@Body`, `@Query`, etc.
+ * Exposes `violations` (field/message/code entries) plus the Problem Details format and legacy `details`.
  */
 
 import { ZodError } from 'zod';

@@ -1,137 +1,86 @@
 /**
  * @module veloce-ts/validation/validator
- * @description {@link ValidationEngine}: ejecuta esquemas Zod sobre body, query, params y headers según metadatos de ruta.
+ * @description {@link ValidationEngine}: runs Zod schemas over body, query, params and headers
+ * according to route metadata, normalising failures into {@link ValidationException}.
  */
 import { ZodSchema, ZodError } from 'zod';
 import { ValidationException } from './exceptions.js';
 
-interface CachedSchema<T = any> {
-  schema: ZodSchema<T>;
-}
-
 /**
- * ValidationEngine handles validation of data against Zod schemas
- * with built-in caching for performance optimization
- * 
- * Performance optimizations:
- * - WeakMap-based schema caching to reuse parsed schemas
- * - Optional result caching for identical input objects
- * - Efficient error handling with minimal overhead
+ * ValidationEngine validates data against Zod schemas and converts Zod errors
+ * into the framework's ValidationException (422).
+ *
+ * Zod schemas are already compiled objects — there is nothing to cache between
+ * validations, so this class deliberately holds no schema cache. It only keeps
+ * lightweight counters for observability.
  */
 export class ValidationEngine {
-  // Primary schema cache using WeakMap for automatic garbage collection
-  private schemaCache: WeakMap<ZodSchema, CachedSchema> = new WeakMap();
-  
-  // Statistics for monitoring cache effectiveness (optional, for debugging)
   private stats = {
-    hits: 0,
-    misses: 0,
-    validations: 0
+    validations: 0,
+    failures: 0,
   };
 
   /**
    * Validates data asynchronously against a Zod schema
-   * Uses cached schema for improved performance on repeated validations
-   * 
-   * @param data - The data to validate
-   * @param schema - The Zod schema to validate against
-   * @returns The validated and typed data
    * @throws ValidationException if validation fails
    */
   async validate<T>(data: unknown, schema: ZodSchema<T>): Promise<T> {
     this.stats.validations++;
-    
     try {
-      // Get or create cached schema
-      let cached = this.schemaCache.get(schema);
-      
-      if (!cached) {
-        this.stats.misses++;
-        // First time seeing this schema - cache it
-        cached = { schema };
-        this.schemaCache.set(schema, cached);
-      } else {
-        this.stats.hits++;
-      }
-      
-      // Use the cached schema for validation
-      return await cached.schema.parseAsync(data);
+      return await schema.parseAsync(data);
     } catch (error) {
-      // Also catch by name to handle cross-module ZodError instances (e.g. bun link / file: protocol)
-      if (error instanceof ZodError || (error as any)?.name === 'ZodError') {
-        throw new ValidationException(error as any);
-      }
-      throw error;
+      throw this.normalize(error);
     }
   }
 
   /**
    * Validates data synchronously against a Zod schema
-   * Uses cached schema for improved performance on repeated validations
-   * 
-   * @param data - The data to validate
-   * @param schema - The Zod schema to validate against
-   * @returns The validated and typed data
    * @throws ValidationException if validation fails
    */
   validateSync<T>(data: unknown, schema: ZodSchema<T>): T {
     this.stats.validations++;
-    
     try {
-      // Get or create cached schema
-      let cached = this.schemaCache.get(schema);
-      
-      if (!cached) {
-        this.stats.misses++;
-        // First time seeing this schema - cache it
-        cached = { schema };
-        this.schemaCache.set(schema, cached);
-      } else {
-        this.stats.hits++;
-      }
-      
-      // Use the cached schema for validation
-      return cached.schema.parse(data);
+      return schema.parse(data);
     } catch (error) {
-      if (error instanceof ZodError) {
-        throw new ValidationException(error);
-      }
-      throw error;
+      throw this.normalize(error);
     }
   }
 
+  /** Wrap Zod errors (also cross-module instances matched by name) into ValidationException. */
+  private normalize(error: unknown): unknown {
+    if (error instanceof ZodError || (error as any)?.name === 'ZodError') {
+      this.stats.failures++;
+      return new ValidationException(error as any);
+    }
+    return error;
+  }
+
   /**
-   * Get cache statistics (useful for monitoring and debugging)
-   * Returns hit rate and total validations performed
+   * Validation counters (useful for monitoring and debugging)
+   */
+  getStats(): { validations: number; failures: number } {
+    return { ...this.stats };
+  }
+
+  /**
+   * @deprecated There is no schema cache any more; use {@link getStats}. Kept for API
+   * compatibility — `hits`/`misses`/`hitRate` are always 0.
    */
   getCacheStats(): { hits: number; misses: number; validations: number; hitRate: number } {
-    const hitRate = this.stats.validations > 0 
-      ? (this.stats.hits / this.stats.validations) * 100 
-      : 0;
-    
-    return {
-      ...this.stats,
-      hitRate: Math.round(hitRate * 100) / 100 // Round to 2 decimal places
-    };
+    return { hits: 0, misses: 0, validations: this.stats.validations, hitRate: 0 };
   }
 
   /**
-   * Reset cache statistics (useful for testing)
+   * Reset counters (useful for testing)
    */
   resetStats(): void {
-    this.stats = {
-      hits: 0,
-      misses: 0,
-      validations: 0
-    };
+    this.stats = { validations: 0, failures: 0 };
   }
 
   /**
-   * Clear the schema cache (useful for testing or memory management)
-   * Note: WeakMap doesn't have a clear method, so we create a new instance
+   * @deprecated No cache exists; equivalent to {@link resetStats}.
    */
   clearCache(): void {
-    this.schemaCache = new WeakMap();
     this.resetStats();
   }
 }

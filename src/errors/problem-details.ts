@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/errors/problem-details
  * @description Utilidades para respuestas de error alineadas con **RFC 9457** (Problem Details for HTTP APIs).
- * Define URIs de `type`, títulos por código de estado, `instance` a partir del request y el formato legacy.
+ * Defines `type` URIs, per-status titles, the `instance` value derived from the request, and the legacy format.
  */
 
 import type { Context } from '../types';
@@ -11,7 +11,7 @@ export const PROBLEM_JSON_MEDIA_TYPE = 'application/problem+json';
 
 /**
  * Base estable de URIs `type` documentadas en veloce-ts.com.
- * Los clientes pueden usar `type` para ramificar lógica sin parsear `detail`.
+ * Clients can branch on `type` without parsing `detail`.
  */
 export const DEFAULT_PROBLEM_TYPE_BASE = 'https://veloce-ts.com/problems';
 

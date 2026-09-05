@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts
- * @description Punto de entrada del paquete: exporta la clase {@link VeloceTS}, decoradores HTTP/DI, validación,
- * errores, plugins, adaptadores y módulos opcionales (auth, ORM, GraphQL, WebSocket, caché, testing).
+ * @description Package entry point: exports the {@link VeloceTS} class, HTTP/DI decorators, validation,
+ * errors, plugins, adapters and optional modules (auth, ORM, GraphQL, WebSocket, cache, testing).
  */
 import 'reflect-metadata';
 
@@ -33,8 +33,27 @@ export { registerDrizzle, InjectDB, DB_TOKEN } from './dependencies/drizzle';
 export { registerPrisma, PRISMA_TOKEN } from './dependencies/prisma';
 export { registerTypeORM, TYPEORM_TOKEN } from './dependencies/typeorm';
 
-// Response exports
-export * from './responses/response';
+// Response exports.
+//
+// The response builder is exported as `VeloceResponse` (and the shorter `Res`).
+// It used to be exported as `Response`, which shadowed the global Web API
+// `Response` in any file that imported it — `new Response(body, init)` then
+// silently resolved to this class instead. `Response` is still exported as a
+// deprecated alias for backwards compatibility.
+export {
+  Response as VeloceResponse,
+  Response as Res,
+  /** @deprecated Shadows the global `Response`. Import `VeloceResponse` (or `Res`) instead. */
+  Response,
+  JSONResponse,
+  HTMLResponse,
+  RedirectResponse,
+  FileResponse,
+  StreamResponse,
+  ResponseSerializer,
+  type FileOptions,
+  type StreamOptions,
+} from './responses/response';
 
 // Error exports (RFC 9457 + legacy; ver `VeloceTSConfig.errorResponseFormat`)
 export * from './errors/exceptions';

@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/adapters/base
- * @description Contrato {@link ServerAdapter} / {@link ServerInstance}: abstrae `listen` y cierre graceful
- * sobre distintos runtimes (Bun, Node, etc.) y backends (Hono, Express).
+ * @description {@link Adapter} / {@link ServerInstance} contract: abstracts `listen` and graceful
+ * shutdown across runtimes (Bun, Node, …) and backends (Hono, Express).
  */
 
 /**
@@ -23,9 +23,11 @@ export interface Adapter {
    * Start the server and listen on the specified port
    * @param port - Port number to listen on
    * @param callback - Optional callback to execute when server starts
-   * @returns Server instance with close() method for graceful shutdown
+   * @returns Server instance with close() method for graceful shutdown.
+   *   May be returned asynchronously — the Node backend loads its server
+   *   package on demand, which is only possible with a dynamic import.
    */
-  listen(port: number, callback?: () => void): ServerInstance;
+  listen(port: number, callback?: () => void): ServerInstance | Promise<ServerInstance>;
 
   /**
    * Get the native handler for the underlying framework/runtime

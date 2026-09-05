@@ -2,6 +2,8 @@
  * Cache system types
  */
 
+import type { Context } from '../types';
+
 /**
  * Cache entry with data and expiration
  */
@@ -85,9 +87,21 @@ export interface CacheOptions {
   includeQuery?: boolean;
 
   /**
-   * Whether to vary cache by specific headers
+   * Request headers the cache key varies by, e.g. `['authorization']`.
+   *
+   * Without this (or `keyGenerator`) every caller shares one entry for a given
+   * URL, so a response computed for one user can be served to another. Set it
+   * on any route whose body depends on who is asking.
    */
   varyByHeaders?: string[];
+
+  /**
+   * Build the cache key from the request yourself. Replaces the default
+   * method/path/params scheme (`prefix` is still prepended). Use it when the
+   * cache identity is something other than headers, e.g. the authenticated
+   * user id: `keyGenerator: c => \`products:\${c.get('auth.user')?.sub}\``.
+   */
+  keyGenerator?: (c: Context) => string;
 
   /**
    * Custom condition to determine if response should be cached

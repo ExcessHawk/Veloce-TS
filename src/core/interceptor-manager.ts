@@ -22,12 +22,23 @@ export function UseInterceptor(...interceptors: Interceptor[]): MethodDecorator 
   };
 }
 
+/**
+ * Collect class-level + method-level interceptors for a controller method.
+ * `target` may be the class constructor (what RouteMetadata.target holds) or
+ * its prototype (what a method decorator receives) — both are normalised so
+ * class-level `@UseInterceptor` is found in either case.
+ */
 export function getInterceptors(target: any, propertyKey?: string): Interceptor[] {
+  const ctor: Function | undefined =
+    typeof target === 'function' ? target : target?.constructor;
+  const proto: object | undefined =
+    typeof target === 'function' ? target.prototype : target;
+
   const classInterceptors: Interceptor[] =
-    Reflect.getMetadata(USE_INTERCEPTORS_KEY, target.constructor ?? target) ?? [];
-  if (!propertyKey) return classInterceptors;
+    (ctor && Reflect.getMetadata(USE_INTERCEPTORS_KEY, ctor)) ?? [];
+  if (!propertyKey || !proto) return classInterceptors;
   const methodInterceptors: Interceptor[] =
-    Reflect.getMetadata(USE_INTERCEPTORS_KEY, target.prototype ?? target, propertyKey) ?? [];
+    Reflect.getMetadata(USE_INTERCEPTORS_KEY, proto, propertyKey) ?? [];
   return [...classInterceptors, ...methodInterceptors];
 }
 

@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/responses/response
- * @description Helpers de respuesta HTTP (`JSONResponse`, `HTMLResponse`, `FileResponse`, `RedirectResponse`)
- * y {@link ResponseSerializer} usado por el compilador de rutas para normalizar valores de retorno de handlers.
+ * @description HTTP response helpers (`JSONResponse`, `HTMLResponse`, `FileResponse`, `RedirectResponse`)
+ * and {@link ResponseSerializer}, used by the route compiler to normalise handler return values.
  */
 import type { Context } from '../types';
 
@@ -9,6 +9,14 @@ export interface FileOptions {
   filename?: string;
   contentType?: string;
   download?: boolean;
+  /**
+   * Directory the file must live inside. When set, the resolved path is checked
+   * against it and anything escaping the directory (`../`, an absolute path, a
+   * symlinked parent) is refused with 403 instead of being served.
+   *
+   * Always set this when any part of the path comes from the request.
+   */
+  root?: string;
 }
 
 export interface StreamOptions {
@@ -74,21 +82,46 @@ export class Response {
   }
 
   /**
-   * Create a file response to serve static files
+   * Create a file response to serve static files.
+   *
+   * ⚠️ Never build the path by interpolating request input without a `root`:
+   * `Response.file('./uploads/' + filename)` lets a caller walk out of the
+   * directory with `../`. Pass `root`, or use {@link Response.fileFrom}.
+   *
    * @param path - Path to the file
-   * @param options - File serving options (filename, contentType, download)
+   * @param options - File serving options (filename, contentType, download, root)
    * @returns FileResponse instance
-   * 
+   *
    * @example
    * ```typescript
    * @Get('/download/:filename')
    * downloadFile(@Param('filename') filename: string) {
-   *   return Response.file(`./uploads/${filename}`, { download: true });
+   *   // `root` confines the lookup to ./uploads
+   *   return Response.file(filename, { root: './uploads', download: true });
    * }
    * ```
    */
   static file(path: string, options?: FileOptions) {
     return new FileResponse(path, options);
+  }
+
+  /**
+   * Serve a file from inside a fixed directory, safely.
+   *
+   * Prefer this over {@link Response.file} whenever any part of the path comes
+   * from the request: it resolves the final path and refuses anything that
+   * escapes `root`, so `../../etc/passwd` cannot be reached.
+   *
+   * @example
+   * ```typescript
+   * @Get('/download/:name')
+   * download(@Param('name') name: string) {
+   *   return Response.fileFrom('./uploads', name, { download: true });
+   * }
+   * ```
+   */
+  static fileFrom(root: string, relativePath: string, options?: FileOptions) {
+    return new FileResponse(relativePath, { ...options, root });
   }
 
   /**
@@ -207,12 +240,20 @@ export class FileResponse {
   ) { }
 
   async toHonoResponse(c: Context) {
+    let resolvedPath: string;
+    try {
+      resolvedPath = await this.resolvePath();
+    } catch (error) {
+      // Path escaped the configured root — refuse without revealing the layout
+      return c.json({ error: 'Forbidden', message: 'Path is outside the allowed directory' }, 403);
+    }
+
     try {
       // Read file using Bun's file API (works in Bun runtime)
       // For other runtimes, this would need adapter-specific implementation
-      const file = typeof Bun !== 'undefined' 
-        ? Bun.file(this.path)
-        : await this.readFileNode(this.path);
+      const file = typeof Bun !== 'undefined'
+        ? Bun.file(resolvedPath)
+        : await this.readFileNode(resolvedPath);
 
       // Determine content type
       const contentType = this.options?.contentType || this.guessContentType(this.path);
@@ -251,6 +292,28 @@ export class FileResponse {
         404
       );
     }
+  }
+
+  /**
+   * Resolve the path to serve, enforcing `options.root` when present.
+   * @throws when the resolved path falls outside `root`
+   */
+  private async resolvePath(): Promise<string> {
+    if (!this.options?.root) {
+      return this.path;
+    }
+
+    const { resolve, sep } = await import('node:path');
+    const root = resolve(this.options.root);
+    // resolve() collapses `..` segments, so traversal is normalised away before
+    // the containment check rather than being compared as a raw string.
+    const target = resolve(root, '.' + sep + this.path);
+
+    if (target !== root && !target.startsWith(root + sep)) {
+      throw new Error('Path escapes root');
+    }
+
+    return target;
   }
 
   private async readFileNode(path: string): Promise<ReadableStream> {
@@ -329,11 +392,6 @@ export class ResponseSerializer {
     // NOTE: This file exports a custom class also named "Response", so we must
     // explicitly check against the global Web API Response to avoid confusion.
     if (typeof globalThis.Response !== 'undefined' && result instanceof globalThis.Response) {
-      return result;
-    }
-
-    // If result is the custom Veloce Response helper class (static factory only), skip
-    if (result instanceof Response) {
       return result;
     }
 

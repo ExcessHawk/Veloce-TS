@@ -3,6 +3,7 @@
  */
 
 import type { CacheStore, CacheOptions } from './types';
+import type { Context } from '../types';
 import { parseTTL } from './types';
 import { MemoryCacheStore } from './memory-store';
 
@@ -92,15 +93,30 @@ export class CacheManager {
   }
 
   /**
-   * Generate cache key from route and parameters
+   * Generate a cache key from route and parameters.
+   *
+   * IMPORTANT — per-caller isolation: by default the key is derived only from
+   * method + path + params (+ query), so two different users hitting the same
+   * URL share one entry. For any route whose response depends on the caller,
+   * pass `varyByHeaders` (e.g. `['authorization']`) or a `keyGenerator`;
+   * otherwise one user's response can be served to another.
+   *
+   * @param context - Hono context, required to evaluate `varyByHeaders` / `keyGenerator`
    */
   static generateKey(
     method: string,
     path: string,
     params?: Record<string, any>,
     query?: Record<string, any>,
-    options?: Pick<CacheOptions, 'key' | 'prefix' | 'includeQuery'>
+    options?: Pick<CacheOptions, 'key' | 'prefix' | 'includeQuery' | 'varyByHeaders' | 'keyGenerator'>,
+    context?: Context
   ): string {
+    // A custom generator replaces the whole scheme (prefix still applies).
+    if (options?.keyGenerator && context) {
+      const custom = options.keyGenerator(context);
+      return options.prefix ? `${options.prefix}:${custom}` : custom;
+    }
+
     const parts: string[] = [];
 
     // Add prefix if provided
@@ -111,14 +127,14 @@ export class CacheManager {
     // Use custom key if provided
     if (options?.key) {
       let key = options.key;
-      
+
       // Replace placeholders like {id}, {userId}
       if (params) {
         for (const [paramKey, paramValue] of Object.entries(params)) {
           key = key.replace(`{${paramKey}}`, String(paramValue));
         }
       }
-      
+
       parts.push(key);
     } else {
       // Generate key from route
@@ -140,6 +156,16 @@ export class CacheManager {
           return acc;
         }, {} as Record<string, any>);
       parts.push(JSON.stringify(sortedQuery));
+    }
+
+    // Vary the key by the listed request headers — this is what keeps a
+    // per-user response (Authorization, Cookie, Accept-Language, …) from
+    // leaking to another caller.
+    if (options?.varyByHeaders?.length && context) {
+      const varied = options.varyByHeaders
+        .map(name => `${name.toLowerCase()}=${context.req.header(name) ?? ''}`)
+        .join('|');
+      parts.push(`vary(${varied})`);
     }
 
     return parts.join(':');

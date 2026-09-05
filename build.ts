@@ -73,6 +73,7 @@ async function build(options: BuildOptions = {}) {
     'node:stream',
     'node:crypto',
     'node:path',
+    'node:async_hooks',
   ];
 
   // Build ESM
@@ -222,4 +223,9 @@ const options: BuildOptions = {
   production: args.includes('--production'),
 };
 
-build(options).catch(console.error);
+build(options).catch(error => {
+  // Exit non-zero so a failing build actually fails CI — `.catch(console.error)`
+  // logged the problem and still exited 0.
+  console.error(error);
+  process.exit(1);
+});

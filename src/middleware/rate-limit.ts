@@ -1,16 +1,92 @@
-import type { Context, Middleware, RateLimitOptions } from '../types';
+import type { Context, Middleware, RateLimitOptions, RateLimitStore, RateLimitHit } from '../types';
 
 /**
- * Rate limit record for tracking requests
+ * In-memory rate-limit store. Suitable for a single instance; for a fleet,
+ * supply a shared store (e.g. Redis) via {@link RateLimitOptions.store} so the
+ * limit is enforced across processes instead of per-process.
  */
-interface RateLimitRecord {
-  count: number;
-  resetTime: number;
+export class MemoryRateLimitStore implements RateLimitStore {
+  private requests = new Map<string, { count: number; resetTime: number }>();
+  private cleanupInterval?: ReturnType<typeof setInterval>;
+
+  constructor(cleanupIntervalMs = 60_000) {
+    if (cleanupIntervalMs > 0) {
+      this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
+      // Never keep the process alive just to expire rate-limit buckets.
+      // (Previously this registered process SIGTERM/SIGINT listeners, which
+      // suppressed Node's default signal handling for the whole application.)
+      this.cleanupInterval.unref?.();
+    }
+  }
+
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
+    const now = Date.now();
+    const record = this.requests.get(key);
+
+    if (!record || now > record.resetTime) {
+      const resetTime = now + windowMs;
+      this.requests.set(key, { count: 1, resetTime });
+      return { count: 1, resetTime };
+    }
+
+    record.count++;
+    return { count: record.count, resetTime: record.resetTime };
+  }
+
+  async reset(key: string): Promise<void> {
+    this.requests.delete(key);
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, record] of this.requests.entries()) {
+      if (now > record.resetTime) {
+        this.requests.delete(key);
+      }
+    }
+  }
+
+  /** Stop the cleanup timer. */
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+  }
 }
 
 /**
- * Create rate limiting middleware
- * Tracks requests per IP/key and returns 429 when limit exceeded
+ * Redis-backed rate-limit store — shares one counter across every instance.
+ * Pass any ioredis-compatible client.
+ */
+export class RedisRateLimitStore implements RateLimitStore {
+  constructor(private redis: any, private prefix = 'ratelimit:') {}
+
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
+    const redisKey = this.prefix + key;
+    const count: number = await this.redis.incr(redisKey);
+
+    if (count === 1) {
+      // First request in this window — set the expiry alongside it.
+      await this.redis.pexpire(redisKey, windowMs);
+      return { count, resetTime: Date.now() + windowMs };
+    }
+
+    const ttl: number = await this.redis.pttl(redisKey);
+    return {
+      count,
+      resetTime: Date.now() + (ttl > 0 ? ttl : windowMs),
+    };
+  }
+
+  async reset(key: string): Promise<void> {
+    await this.redis.del(this.prefix + key);
+  }
+}
+
+/**
+ * Create rate limiting middleware.
+ * Tracks requests per IP/key and returns 429 when the limit is exceeded.
  */
 export function createRateLimitMiddleware(options: RateLimitOptions): Middleware {
   const trustProxy = options.trustProxy === true;
@@ -18,6 +94,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
   const {
     windowMs = 60000, // 1 minute default
     max = 100, // 100 requests per window default
+    store = new MemoryRateLimitStore(windowMs),
     keyGenerator = (c: Context) => {
       if (trustProxy) {
         // Behind a trusted reverse proxy the forwarded headers are reliable.
@@ -41,62 +118,16 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
     }
   } = options;
 
-  // In-memory storage for rate limit records
-  const requests = new Map<string, RateLimitRecord>();
-
-  // Cleanup old entries periodically to prevent memory leaks
-  const cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, record] of requests.entries()) {
-      if (now > record.resetTime) {
-        requests.delete(key);
-      }
-    }
-  }, windowMs);
-
-  // Cleanup on process exit and common termination signals
-  if (typeof process !== 'undefined' && process.on) {
-    const stop = () => clearInterval(cleanupInterval);
-    process.on('exit', stop);
-    process.on('SIGTERM', stop);
-    process.on('SIGINT', stop);
-  }
-
   return async (c: Context, next) => {
     const key = keyGenerator(c);
-    const now = Date.now();
-    const record = requests.get(key);
+    const { count, resetTime } = await store.hit(key, windowMs);
 
-    if (!record || now > record.resetTime) {
-      // New window - reset counter
-      requests.set(key, { 
-        count: 1, 
-        resetTime: now + windowMs 
-      });
+    c.header('X-RateLimit-Limit', max.toString());
+    c.header('X-RateLimit-Remaining', Math.max(0, max - count).toString());
+    c.header('X-RateLimit-Reset', new Date(resetTime).toISOString());
 
-      // Add rate limit headers
-      c.header('X-RateLimit-Limit', max.toString());
-      c.header('X-RateLimit-Remaining', (max - 1).toString());
-      c.header('X-RateLimit-Reset', new Date(now + windowMs).toISOString());
-
-      await next();
-    } else if (record.count < max) {
-      // Within limit - increment counter
-      record.count++;
-
-      // Add rate limit headers
-      c.header('X-RateLimit-Limit', max.toString());
-      c.header('X-RateLimit-Remaining', (max - record.count).toString());
-      c.header('X-RateLimit-Reset', new Date(record.resetTime).toISOString());
-
-      await next();
-    } else {
-      // Rate limit exceeded
-      const retryAfter = Math.ceil((record.resetTime - now) / 1000);
-
-      c.header('X-RateLimit-Limit', max.toString());
-      c.header('X-RateLimit-Remaining', '0');
-      c.header('X-RateLimit-Reset', new Date(record.resetTime).toISOString());
+    if (count > max) {
+      const retryAfter = Math.max(1, Math.ceil((resetTime - Date.now()) / 1000));
       c.header('Retry-After', retryAfter.toString());
 
       return c.json(
@@ -108,5 +139,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
         429
       );
     }
+
+    await next();
   };
 }

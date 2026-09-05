@@ -14,7 +14,12 @@ export async function createApp(dbPath?: string): Promise<Veloce> {
     version:     '1.0.0',
     description: 'CRUD de todos y categorías con autenticación JWT. Template: Fullstack',
     docs: true,
-    cors: { origin: '*', credentials: true },
+    // A wildcard origin cannot be combined with credentials: browsers reject
+    // such responses, so list the origins that may send cookies/Authorization.
+    cors: {
+      origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:3000').split(','),
+      credentials: true,
+    },
   });
 
   app.usePlugin(new OpenAPIPlugin({

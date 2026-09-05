@@ -45,6 +45,21 @@ export function createCorsMiddleware(options?: CorsOptions): Middleware {
     maxAge = 86400 // 24 hours default
   } = options || {};
 
+  // The CORS spec forbids the wildcard origin with credentials: browsers reject
+  // the response, so this combination never works — fail at config time rather
+  // than leaving a silently broken endpoint.
+  if (credentials && origin === '*') {
+    throw new Error(
+      'CORS misconfiguration: credentials: true cannot be combined with origin: "*". ' +
+      'List the allowed origins explicitly.'
+    );
+  }
+
+  // When the allowed origin depends on the request, the response varies by the
+  // Origin header. Without Vary, a shared cache can serve one origin's
+  // Access-Control-Allow-Origin to a different origin.
+  const originVaries = typeof origin !== 'string';
+
   return async (c: Context, next) => {
     const requestOrigin = c.req.header('origin');
     const requestMethod = c.req.method;
@@ -65,6 +80,11 @@ export function createCorsMiddleware(options?: CorsOptions): Middleware {
     }
 
     const snapshot: VeloceCorsHeadersSnapshot = {};
+
+    if (originVaries) {
+      c.header('Vary', 'Origin');
+      snapshot['Vary'] = 'Origin';
+    }
 
     // Set CORS headers
     if (allowedOrigin) {

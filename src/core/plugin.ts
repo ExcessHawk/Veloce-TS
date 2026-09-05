@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/core/plugin
- * @description Contrato {@link Plugin}, {@link PluginManager} y orden de instalación: extensión del núcleo
- * (OpenAPI, GraphQL, WebSocket, ORM, auth, etc.) antes de {@link VeloceTS.compile}.
+ * @description The {@link Plugin} contract, {@link PluginManager} and install ordering: core extensions
+ * (OpenAPI, GraphQL, WebSocket, ORM, auth) applied before {@link VeloceTS.compile}.
  */
 import type { VeloceTS } from './application';
 

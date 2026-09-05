@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/errors
- * @description Export público del subsistema de errores: excepciones HTTP, {@link ErrorHandler} y utilidades RFC 9457.
+ * @description Public surface of the error subsystem: HTTP exceptions, {@link ErrorHandler} and RFC 9457 helpers.
  */
 
 export {

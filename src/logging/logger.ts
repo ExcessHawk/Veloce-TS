@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/logging/logger
- * @description Fábrica de logger estructurado: usa **Pino** si está instalado; si no, consola con formato legible.
- * Consumido por middleware de request context y por {@link ErrorHandler} en errores 5xx.
+ * @description Structured logger factory: uses **Pino** when installed, otherwise a readable console format.
+ * Consumed by the request-context middleware and by {@link ErrorHandler} for 5xx errors.
  */
 
 import type { Logger, LoggerConfig, LogContext } from './types';
@@ -19,7 +19,7 @@ function loadPino(): any | null {
   return pino;
 }
 
-// Implementación de Logger con Pino
+// Pino-backed Logger implementation
 class PinoLogger implements Logger {
   private logger: any;
 
