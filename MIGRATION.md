@@ -1,5 +1,104 @@
 # Migration Guide
 
+## 2.0.x → next (unreleased)
+
+The 2026-09-04 review pass. Most changes are fixes you want silently, but six of them can
+change how an existing application behaves.
+
+---
+
+### 1. Route guards actually run now
+
+`@Auth()`, `@Auth({ roles })`, `@Session()`, `@RequireCSRF()` and `@CanAccess`/`@CanRead`/… were
+**never enforced** in 2.0.x: the plugins installed their guard by replacing `app.compile`, from
+inside a call that `compile()` had already started, so the replacement never executed.
+
+If your app relied on those decorators, it was serving those routes unprotected — and requests
+that "worked" before may now correctly receive 401/403. Check that:
+
+- every `@Auth()` route is actually reached with a bearer token;
+- roles named in `@Auth({ roles: [...] })` match what your `UserProvider` puts on the user;
+- clients of `@RequireCSRF()` routes send `X-CSRF-Token` (or `?_csrf=`).
+
+Nothing to change in your code — this is the behaviour the decorators always advertised.
+
+### 2. `SessionConfig.secret` is required, and cookies are signed
+
+```typescript
+// Before — secret was accepted and ignored; the cookie held the raw session id
+new SessionPlugin({ session: {} as any });
+
+// After — secret is required and signs the cookie
+new SessionPlugin({ session: { secret: process.env.SESSION_SECRET! } });
+```
+
+Sessions issued by an older version will not validate against the new signed format: existing
+session cookies are rejected and those users simply log in again. Cookies also default to
+`secure: true` when `NODE_ENV=production` (set `secure: false` explicitly to opt out).
+
+### 3. `docs` and `plugins` config options now do something
+
+`new VeloceTS({ docs: true })` previously served nothing. It now mounts the OpenAPI plugin at
+`/openapi.json` and `/docs`. Since `docs` **defaults to `true`**, an app that never registered
+`OpenAPIPlugin` will start exposing its API documentation.
+
+```typescript
+new VeloceTS({ docs: false });                                  // keep the old behaviour
+new VeloceTS({ docs: { path: '/api-docs', openapi: '/spec' } }); // custom paths
+```
+
+Registering `OpenAPIPlugin` yourself still wins — the automatic one is skipped.
+`plugins: [...]` in the config now registers those plugins instead of ignoring them.
+
+### 4. Request bodies are limited to 1 MiB by default
+
+Bodies above the limit get 413 before the handler runs. Raise or disable it if you accept
+uploads:
+
+```typescript
+new VeloceTS({ bodyLimit: 20 * 1024 * 1024 }); // 20 MiB
+new VeloceTS({ bodyLimit: 0 });                // no limit
+```
+
+### 5. Cached per-user routes need an explicit key
+
+`@Cache()` keys on method + path + params. If the response depends on who is asking, say so —
+otherwise one caller's response is served to the next (the framework now logs a warning when it
+detects this shape):
+
+```typescript
+@Get('/me')
+@Cache({ ttl: '1m', varyByHeaders: ['authorization'] })
+// or: @Cache({ ttl: '1m', keyGenerator: c => `me:${c.get('auth.user')?.sub}` })
+me(@CurrentUser() user: TokenPayload) { … }
+```
+
+### 6. `Response` is now `VeloceResponse`
+
+The old export shadowed the global `Response` in any file importing it:
+
+```typescript
+// Before — `new Response(...)` in this file silently used the Veloce class
+import { Response } from 'veloce-ts';
+
+// After
+import { VeloceResponse } from 'veloce-ts';   // or: import { Res } from 'veloce-ts'
+```
+
+`Response` still works as a deprecated alias.
+
+### Smaller notes
+
+- `engines.node` is now `>= 20`. Node's `listen()` requires `@hono/node-server` (an optional
+  peer dependency) — and it genuinely works now; it previously always threw.
+- `Adapter.listen()` may return a `Promise<ServerInstance>`. Custom adapters are unaffected;
+  `await` it if you call an adapter directly.
+- JWT blacklist entries are keyed by `jti`. A custom `TokenBlacklist` receives token *ids*
+  now, and can implement the optional `claim()` for atomic refresh rotation.
+- Rate limiting accepts a `store` (`RedisRateLimitStore` for multi-instance limits).
+
+---
+
 ## 1.2.x → 2.0.0
 
 Two breaking changes from the security/performance hardening pass.
