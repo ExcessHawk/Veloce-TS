@@ -58,7 +58,7 @@ Built-in DI container
 ### 🌐 **Multi-Runtime**
 Write once, run anywhere
 - Bun (recommended)
-- Node.js 18+
+- Node.js 20+
 - Deno
 - Cloudflare Workers
 
@@ -329,6 +329,14 @@ class ProductController {
   async createProduct(@Body(ProductSchema) data: any) {
     return await db.products.create(data);
   }
+
+  // ⚠️ Caching a per-user response? Vary the key by the caller, or every user
+  // gets served whichever response was cached first.
+  @Get('/recommended')
+  @Cache({ ttl: '1m', varyByHeaders: ['authorization'] })
+  async recommended(@CurrentUser() user: TokenPayload) {
+    return await db.products.recommendFor(user.sub);
+  }
 }
 
 // Or use Redis for distributed caching
@@ -529,9 +537,9 @@ app.usePlugin(new GraphQLPlugin({
 | Runtime | Status | Notes |
 |---------|--------|-------|
 | **Bun** | ✅ Recommended | Best performance |
-| **Node.js** | ✅ Supported | v18+ required |
-| **Deno** | ✅ Supported | Use `npm:veloce` |
-| **Cloudflare Workers** | ✅ Supported | Edge-ready — deploy via `getFetchHandler()`, not `listen()` |
+| **Node.js** | ✅ Supported | v20+ required; `listen()` needs `@hono/node-server` |
+| **Deno** | ✅ Supported | Use `npm:veloce-ts` |
+| **Cloudflare Workers** | ✅ Supported | Deploy via `getFetchHandler()`, not `listen()`. Requires the `nodejs_compat` flag |
 
 > **WebSockets:** HTTP → WS upgrade is supported on **Bun** and **Deno**. On **Node.js** the built-in WebSocket plugin still returns **501** until a Node upgrade path lands (see **Current limitations** below).
 
@@ -594,7 +602,7 @@ For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and pr
 
 ## ⚙️ Requirements
 
-- **Runtime**: Bun >= 1.0.0 (recommended) or Node.js >= 18.0.0
+- **Runtime**: Bun >= 1.0.0 (recommended) or Node.js >= 20.0.0
 - **TypeScript**: >= 5.0.0
 - **Zod**: >= 3.22.0
 
