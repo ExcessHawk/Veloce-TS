@@ -28,23 +28,31 @@ import type {
   CSRFMetadata
 } from '../types/index.js';
 
-// Metadata keys for reflect-metadata
-const ROUTE_METADATA_KEY = Symbol('route:metadata');
-const CONTROLLER_METADATA_KEY = Symbol('controller:metadata');
-const PARAMETER_METADATA_KEY = Symbol('parameter:metadata');
-const DEPENDENCY_METADATA_KEY = Symbol('dependency:metadata');
-const WEBSOCKET_METADATA_KEY = Symbol('websocket:metadata');
-const WEBSOCKET_HANDLER_METADATA_KEY = Symbol('websocket:handler:metadata');
-const GRAPHQL_RESOLVER_KEY = Symbol('graphql:resolver');
-const GRAPHQL_FIELD_KEY = Symbol('graphql:field');
-const AUTH_METADATA_KEY = Symbol('auth:metadata');
-const OAUTH_METADATA_KEY = Symbol('oauth:metadata');
-const ROLES_METADATA_KEY = Symbol('roles:metadata');
-const PERMISSIONS_METADATA_KEY = Symbol('permissions:metadata');
-const MINIMUM_ROLE_METADATA_KEY = Symbol('minimum-role:metadata');
-const RESOURCE_PERMISSION_METADATA_KEY = Symbol('resource-permission:metadata');
-const SESSION_METADATA_KEY = Symbol('session:metadata');
-const CSRF_METADATA_KEY = Symbol('csrf:metadata');
+// Metadata keys.
+//
+// `Symbol.for` rather than `Symbol`: these land in the global symbol registry,
+// so two copies of the framework in one process agree on them. That happens
+// whenever a consumer mixes import specifiers — `veloce-ts` and
+// `veloce-ts/plugins` are separate bundles under CJS — and with plain `Symbol`
+// a class decorated through one specifier was invisible to code loaded through
+// the other. The failure was silent: an empty GraphQL schema, routes that never
+// registered, guards that never ran.
+const ROUTE_METADATA_KEY = Symbol.for('veloce-ts:route:metadata');
+const CONTROLLER_METADATA_KEY = Symbol.for('veloce-ts:controller:metadata');
+const PARAMETER_METADATA_KEY = Symbol.for('veloce-ts:parameter:metadata');
+const DEPENDENCY_METADATA_KEY = Symbol.for('veloce-ts:dependency:metadata');
+const WEBSOCKET_METADATA_KEY = Symbol.for('veloce-ts:websocket:metadata');
+const WEBSOCKET_HANDLER_METADATA_KEY = Symbol.for('veloce-ts:websocket:handler:metadata');
+const GRAPHQL_RESOLVER_KEY = Symbol.for('veloce-ts:graphql:resolver');
+const GRAPHQL_FIELD_KEY = Symbol.for('veloce-ts:graphql:field');
+const AUTH_METADATA_KEY = Symbol.for('veloce-ts:auth:metadata');
+const OAUTH_METADATA_KEY = Symbol.for('veloce-ts:oauth:metadata');
+const ROLES_METADATA_KEY = Symbol.for('veloce-ts:roles:metadata');
+const PERMISSIONS_METADATA_KEY = Symbol.for('veloce-ts:permissions:metadata');
+const MINIMUM_ROLE_METADATA_KEY = Symbol.for('veloce-ts:minimum-role:metadata');
+const RESOURCE_PERMISSION_METADATA_KEY = Symbol.for('veloce-ts:resource-permission:metadata');
+const SESSION_METADATA_KEY = Symbol.for('veloce-ts:session:metadata');
+const CSRF_METADATA_KEY = Symbol.for('veloce-ts:csrf:metadata');
 
 export class MetadataRegistry {
   /**

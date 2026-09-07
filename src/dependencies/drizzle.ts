@@ -36,7 +36,7 @@ import type { VeloceTS } from '../core/application.js';
 import { MetadataRegistry } from '../core/metadata.js';
 
 /** Default token used when no custom name is provided. */
-export const DB_TOKEN = Symbol('veloce:db');
+export const DB_TOKEN = Symbol.for('veloce-ts:veloce:db');
 
 /**
  * Register a Drizzle (or any database) instance in the application DI container.

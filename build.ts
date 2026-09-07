@@ -99,7 +99,20 @@ async function build(options: BuildOptions = {}) {
     // internals with a debugger. Dev builds keep inline maps, which is where they
     // actually get used.
     sourcemap: production ? 'none' : 'inline',
-    splitting: false, // Disable code splitting to avoid export conflicts
+    // Splitting ON so every subpath shares one copy of the framework.
+    //
+    // Without it Bun bundles each entrypoint independently, so
+    // `veloce-ts/plugins` and `veloce-ts` were two separate module instances.
+    // Their `Symbol()` metadata keys did not match, which meant a resolver
+    // decorated through one specifier was invisible to a plugin imported
+    // through the other — the GraphQL schema came out empty and the first
+    // query died on `buildSchema('')` with "Syntax Error: Unexpected <EOF>".
+    // Class identity broke the same way.
+    //
+    // CJS cannot be split (Bun emits ESM chunks only), which is why the
+    // metadata keys are also `Symbol.for(...)`: that fixes the metadata half
+    // of the problem for `require()` consumers too.
+    splitting: true,
     naming: '[dir]/[name].js',
     external,
   });

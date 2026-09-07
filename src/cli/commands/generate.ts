@@ -359,6 +359,107 @@ export class ${pascal}Plugin implements Plugin {
 `;
       await writeGenerated(filePath, content, opts.dryRun ?? false);
     });
+
+  // Generate a WebSocket gateway
+  generateCommand
+    .command('gateway <name>')
+    .description('Generate a WebSocket gateway')
+    .option('--flat', 'Place file in src/ instead of src/websockets/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'websockets');
+      const filePath = join(dir, `${kebab}.websocket.ts`);
+      const content = `import { WebSocket, OnConnect, OnMessage, OnDisconnect } from 'veloce-ts/websocket';
+import type { WebSocketConnection } from 'veloce-ts/websocket';
+import { z } from 'zod';
+
+// One @OnMessage per gateway: the metadata stores a single message handler, so
+// model different client payloads as a discriminated union on \`type\`.
+const ${pascal}MessageSchema = z.object({
+  type: z.string(),
+  payload: z.unknown().optional(),
+});
+
+@WebSocket('/ws/${kebab}')
+export class ${pascal}Gateway {
+  @OnConnect()
+  handleConnect(connection: WebSocketConnection) {
+    connection.join('${kebab}');
+    connection.send({ type: 'connected', id: connection.id });
+  }
+
+  @OnMessage(${pascal}MessageSchema)
+  async handleMessage(
+    connection: WebSocketConnection,
+    message: z.infer<typeof ${pascal}MessageSchema>
+  ) {
+    // connection.send(...)        reply to this client
+    // connection.broadcast(...)   every other client
+    // connection.broadcast(..., '${kebab}')   only this room
+    connection.send({ type: 'echo', payload: message.payload });
+  }
+
+  @OnDisconnect()
+  handleDisconnect(_connection: WebSocketConnection) {
+    // Clean up anything keyed to this connection.
+  }
+}
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+      if (!opts.dryRun) {
+        console.log('\nRegister it like a controller, then enable the plugin:');
+        console.log(`  import { ${pascal}Gateway } from './websockets/${kebab}.websocket.js';`);
+        console.log(`  app.include(${pascal}Gateway);`);
+        console.log('  app.usePlugin(new WebSocketPlugin());');
+      }
+    });
+
+  // Generate an event-listener class
+  generateCommand
+    .command('listener <name>')
+    .description('Generate an @On event listener class')
+    .option('--flat', 'Place file in src/ instead of src/listeners/')
+    .option('--dry-run', 'Preview without writing files')
+    .action(async (name: string, opts: { flat?: boolean; dryRun?: boolean }) => {
+      const { pascal, kebab, camel } = normalizeName(name);
+      const src = resolveSrcDir();
+      const dir = opts.flat ? src : join(src, 'listeners');
+      const filePath = join(dir, `${kebab}.listener.ts`);
+      const content = `import { On, globalEvents } from 'veloce-ts';
+
+/**
+ * Registered with \`app.include()\` like a controller, and resolved through the
+ * DI container — so it can inject services with @Inject the same way.
+ *
+ * Subscriptions attach at compile() and are removed at shutdown().
+ */
+export class ${pascal}Listeners {
+  @On('${camel}.created')
+  async onCreated(payload: unknown) {
+    // A throwing listener does not stop the others: emit() settles them all and
+    // rethrows the failures together as an AggregateError.
+    console.log('${camel}.created', payload);
+  }
+
+  @On('app.ready', { once: true })
+  onReady() {
+    // Removed after the first delivery.
+  }
+}
+
+// Emit from anywhere:
+//   await globalEvents.emit('${camel}.created', { id: '1' });
+export { globalEvents };
+`;
+      await writeGenerated(filePath, content, opts.dryRun ?? false);
+      if (!opts.dryRun) {
+        console.log('\nRegister it:');
+        console.log(`  import { ${pascal}Listeners } from './listeners/${kebab}.listener.js';`);
+        console.log(`  app.include(${pascal}Listeners);`);
+      }
+    });
 }
 
 async function generateOpenAPI(options: { output: string }): Promise<void> {

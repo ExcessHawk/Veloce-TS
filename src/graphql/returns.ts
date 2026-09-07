@@ -10,7 +10,7 @@
 import 'reflect-metadata';
 import type { ZodSchema } from 'zod';
 
-const GRAPHQL_RETURN_KEY = Symbol('graphql:return');
+const GRAPHQL_RETURN_KEY = Symbol.for('veloce-ts:graphql:return');
 
 /**
  * Options for the @Returns decorator.

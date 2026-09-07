@@ -20,6 +20,7 @@
  * but never started, because `WebSocketPlugin` threw on Node by design.
  */
 import { execFileSync, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -32,12 +33,55 @@ const CLI = join(REPO, 'bin', 'veloce.mjs');
 // Bun/Deno only, so the two WebSocket templates were built but never started.
 const TEMPLATES = [
   { name: 'rest', boots: true, path: '/users' },
-  { name: 'graphql', boots: true, path: '/graphql' },
+  // `probe` runs a real operation once the app answers. A status check alone is
+  // too weak here: the GraphQL endpoint returns 200 with an `errors` payload
+  // when the optional `graphql` package is missing, so the template shipped
+  // without that dependency and still looked healthy.
+  { name: 'graphql', boots: true, path: '/graphql', probe: graphqlProbe },
   // No HTTP route of its own; the upgrade endpoint answers 426 to a plain GET,
   // which is proof enough that the plugin installed and the route is live.
   { name: 'websocket', boots: true, path: '/ws' },
-  { name: 'fullstack', boots: true, path: '/users' },
+  { name: 'fullstack', boots: true, path: '/users', probe: graphqlProbe },
 ];
+
+/** Execute a query and a mutation, and require real data back. */
+async function graphqlProbe(port) {
+  const post = async (query) => {
+    const res = await fetch(`http://127.0.0.1:${port}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    return res.json();
+  };
+
+  const created = await post(
+    'mutation { createUser(name: "Ada", email: "ada@example.com") { id name } }'
+  );
+  if (created.errors) {
+    return `createUser failed: ${created.errors.map((e) => e.message).join('; ')}`;
+  }
+  if (created.data?.createUser?.name !== 'Ada') {
+    return `createUser returned ${JSON.stringify(created.data)}`;
+  }
+
+  const listed = await post('{ users { id name } }');
+  if (listed.errors) {
+    return `users query failed: ${listed.errors.map((e) => e.message).join('; ')}`;
+  }
+  if (!Array.isArray(listed.data?.users) || listed.data.users.length !== 1) {
+    return `users returned ${JSON.stringify(listed.data)}`;
+  }
+
+  // The schema must advertise a runnable Subscription type, not SDL alone.
+  const introspected = await post('{ __schema { subscriptionType { fields { name } } } }');
+  const names = introspected.data?.__schema?.subscriptionType?.fields?.map((f) => f.name) ?? [];
+  if (!names.includes('userCreated')) {
+    return `subscription type missing userCreated (saw ${JSON.stringify(names)})`;
+  }
+
+  return null;
+}
 
 const BOOT_TIMEOUT_MS = 30_000;
 const failures = [];
@@ -88,8 +132,29 @@ function useLocalFramework(projectDir, tarball) {
  * The templates call `app.listen(3000)` with a literal, so there is nothing to
  * override with PORT — the checks run one at a time for that reason.
  */
-async function boots(projectDir, path) {
+/**
+ * Refuse to run when something already holds the port.
+ *
+ * The templates listen on a literal 3000, so a stray server from an earlier run
+ * answers the probes and the test reports on the wrong process — which is how a
+ * clean-looking pass hid a real failure once.
+ */
+async function portIsFree(port) {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.once('error', () => resolve(false));
+    probe.once('listening', () => probe.close(() => resolve(true)));
+    probe.listen(port, '127.0.0.1');
+  });
+}
+
+async function boots(projectDir, path, probe) {
   const port = 3000;
+
+  if (!(await portIsFree(port))) {
+    return `port ${port} is already in use — stop whatever is listening before running this`;
+  }
+
   const child = spawn(process.execPath, [join(projectDir, 'dist', 'index.js')], {
     cwd: projectDir,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -101,6 +166,10 @@ async function boots(projectDir, path) {
 
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
   try {
+    // Phase 1: wait for the server to answer. Only connection errors are retried
+    // here. A failing probe must NOT go round again: one that runs a mutation
+    // would apply it twice, and the retry would then fail on its own effects.
+    let ready = false;
     while (Date.now() < deadline) {
       if (child.exitCode !== null) {
         return `process exited early (code ${child.exitCode})\n${output.split('\n').slice(0, 10).join('\n')}`;
@@ -108,14 +177,27 @@ async function boots(projectDir, path) {
       try {
         const res = await fetch(`http://127.0.0.1:${port}${path}`);
         // Any non-5xx means the app booted and routed the request.
-        if (res.status < 500) return null;
-        return `${path} answered ${res.status}`;
+        if (res.status >= 500) return `${path} answered ${res.status}`;
+        ready = true;
+        break;
       } catch {
         // not listening yet
       }
       await new Promise((r) => setTimeout(r, 400));
     }
-    return `did not answer ${path} within ${BOOT_TIMEOUT_MS}ms\n${output.split('\n').slice(0, 10).join('\n')}`;
+
+    if (!ready) {
+      return `did not answer ${path} within ${BOOT_TIMEOUT_MS}ms\n${output.split('\n').slice(0, 10).join('\n')}`;
+    }
+
+    // Phase 2: routing alone is not proof for every template — see `probe`.
+    // Run it exactly once.
+    if (!probe) return null;
+    try {
+      return await probe(port);
+    } catch (error) {
+      return `probe threw: ${error.message}`;
+    }
   } finally {
     child.kill('SIGKILL');
   }
@@ -144,7 +226,7 @@ async function checkTemplate(template, workdir, tarball) {
   if (error) return error;
   console.log('  ok   - builds under Node');
 
-  const bootError = await boots(dir, template.path);
+  const bootError = await boots(dir, template.path, template.probe);
   if (bootError) return `boot failed\n${bootError}`;
   console.log(`  ok   - serves ${template.path}`);
   return null;

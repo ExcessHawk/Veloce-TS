@@ -627,6 +627,20 @@ export class GraphQLPlugin implements Plugin {
     if (this.executableSchema) return this.executableSchema;
     if (!this.schema) return undefined;
 
+    if (this.schema.typeDefs.trim() === '') {
+      // buildSchema('') fails with "Syntax Error: Unexpected <EOF>", which sends
+      // whoever hits it looking at their query. The cause is always the same:
+      // no resolver metadata was found, either because no resolver was passed
+      // or because the decorators came from a different copy of the framework.
+      throw new Error(
+        'GraphQL schema is empty: no @Resolver class with @GQLQuery/@GQLMutation/@GQLSubscription ' +
+        'methods was found. Pass them to GraphQLPlugin({ resolvers: [...] }) or register them with ' +
+        'app.include(). If they are registered and you still see this, check that the decorators and ' +
+        'the plugin are imported from the same specifier — "veloce-ts" and "veloce-ts/plugins" are ' +
+        'separate modules under CommonJS.'
+      );
+    }
+
     const schema = graphqlModule.buildSchema(this.schema.typeDefs);
     this.attachResolvers(schema.getQueryType(), this.schema.resolvers.Query);
     this.attachResolvers(schema.getMutationType(), this.schema.resolvers.Mutation);

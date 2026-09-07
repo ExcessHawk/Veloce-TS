@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] - 2026-09-07
+
+### Fixed — mixing import specifiers silently broke decorators
+
+`veloce-ts` and `veloce-ts/plugins` were **separate bundles**, so importing from
+both put two copies of the framework in one process. Their metadata keys were
+plain `Symbol()`, which is unique per module instance — so a class decorated
+through one specifier was invisible to code loaded through the other, with no
+error anywhere.
+
+What that looked like: the `fullstack` template imported `GraphQLPlugin` from
+`veloce-ts/plugins` while its resolver used decorators from `veloce-ts`. The
+plugin found no resolver metadata, generated an empty schema, and the first
+query died on `buildSchema('')` with **"Syntax Error: Unexpected \<EOF\>"** —
+an error that points at the query, which was fine. Routes and guards registered
+across a specifier boundary would have failed the same way.
+
+Two changes, because they cover different halves:
+
+- **The ESM build now uses code splitting**, so every subpath shares one copy of
+  the framework. Class identity works again too — `instanceof` across
+  specifiers had the same problem. Bonus: deduplicating across the 15
+  entrypoints took the package from **0.45 MB to 0.39 MB**.
+- **Every metadata key and DI token is `Symbol.for('veloce-ts:…')`**, resolved
+  through the global registry. CJS cannot be split (Bun emits ESM chunks only),
+  so this is what fixes it for `require()` consumers. 24 keys across
+  `core/metadata.ts`, the GraphQL and event decorators, and the Drizzle, Prisma
+  and TypeORM tokens.
+
+An empty schema now also explains itself instead of failing inside graphql-js,
+and names this as a likely cause.
+
+### Added — CLI
+
+- **`veloce new --install`** runs the package manager (Bun when available, npm
+  otherwise) and **`--git`** initialises a repository with the first commit. It
+  skips `git init` when the target is already inside a repository, so
+  scaffolding into a monorepo does not nest one.
+- **`veloce generate gateway <name>`** scaffolds a `@WebSocket` gateway and
+  **`veloce generate listener <name>`** an `@On` listener class. Both surfaces
+  existed with no scaffolding behind them.
+- **Generated projects get a `.env.example`** listing the variables the code
+  actually reads. The templates have configured CORS from `CORS_ORIGINS` since
+  3.1.0, documented nowhere the reader would look.
+
+### Changed — the templates teach the framework now
+
+- **Dependencies are injected, not constructed.** The example controller and
+  resolver ask for a `UserService` with `@Inject(UserService)` and the container
+  builds it; scaffolding that news up its own dependencies taught the opposite
+  of what the framework provides. Swapping the in-memory array for a database
+  leaves every caller untouched.
+- **`app.listen()` is awaited.** It has been async since the Node path landed,
+  and without the await a failure to bind became an unhandled rejection instead
+  of the error message the template prints. On Node it also matters for
+  ordering: both WebSocket surfaces attach to the real `http.Server`.
+- **The GraphQL and fullstack templates enable subscriptions**, shipped in
+  3.4.0, and their resolver demonstrates one end to end with `PubSub`.
+- **The GraphQL templates now depend on `graphql`.** It is an optional peer of
+  veloce-ts, so nothing executed without it — and its absence is not a type
+  error, only a 501 at the first query.
+- **The README matches what was written**: per-template file layout, the real
+  endpoints, the scripts table, and the fact that the project runs on Node as
+  well as Bun. It previously showed a generic tree and pointed at `/docs.html`,
+  which is not the path served.
+- **`veloce build --sourcemap` defaults to off.** Shipping sourcemaps is a
+  deployment-size decision, not a build default — the framework's own package
+  was 73% sourcemaps before that lesson landed in 3.1.2.
+- The four templates no longer duplicate their shared controller, resolver and
+  gateway source. That duplication is how a `handlers` option that does not
+  exist survived in two copies until 3.1.0.
+- A GraphQL project no longer ships an empty `src/controllers/` directory.
+
+### Changed — the template smoke test was too weak to catch any of this
+
+It asserted only that a route answered with a non-5xx status. The GraphQL
+endpoint returns **200 with an `errors` payload** when the `graphql` package is
+missing, so a template shipping without that dependency looked healthy.
+
+- GraphQL templates now run a real mutation and query and require data back,
+  plus introspection showing a runnable `Subscription` type.
+- A failing probe is no longer retried. It shared the "not listening yet" catch,
+  so a probe that ran a mutation applied it twice and then failed on its own
+  effects.
+- The run aborts when port 3000 is already held. The templates listen on a
+  literal port, so a stray server from an earlier run answered the probes and
+  the test reported on the wrong process.
+
 ## [3.4.0] - 2026-09-07
 
 ### Added — GraphQL subscriptions actually run

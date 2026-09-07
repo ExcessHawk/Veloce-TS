@@ -25,7 +25,7 @@
 import type { VeloceTS } from '../core/application.js';
 
 /** Default injection token for a TypeORM DataSource registered with `registerTypeORM()`. */
-export const TYPEORM_TOKEN = Symbol('veloce:typeorm');
+export const TYPEORM_TOKEN = Symbol.for('veloce-ts:veloce:typeorm');
 
 /**
  * Register a TypeORM DataSource in the application DI container.

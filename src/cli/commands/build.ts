@@ -18,7 +18,10 @@ export function registerBuildCommand(program: Command): void {
     .command('build')
     .description('Build project for production')
     .option('-m, --minify', 'Minify output', false)
-    .option('-s, --sourcemap', 'Generate sourcemaps', true)
+    // Off by default: sourcemaps embed the full source text, and shipping them
+    // is a deployment-size decision, not a build default. The framework's own
+    // package was 73% sourcemaps before this lesson landed in 3.1.2.
+    .option('-s, --sourcemap', 'Generate sourcemaps', false)
     .option('-o, --outdir <dir>', 'Output directory', 'dist')
     .option('-f, --format <format>', 'Output format (esm, cjs, both) — Bun only', 'both')
     .option('-r, --runtime <runtime>', 'Runtime to use (auto, bun, node)', 'auto')

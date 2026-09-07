@@ -24,7 +24,7 @@
 import type { VeloceTS } from '../core/application.js';
 
 /** Default injection token for a Prisma client registered with `registerPrisma()`. */
-export const PRISMA_TOKEN = Symbol('veloce:prisma');
+export const PRISMA_TOKEN = Symbol.for('veloce-ts:veloce:prisma');
 
 /**
  * Register a Prisma client instance in the application DI container.

@@ -11,7 +11,7 @@
  */
 import 'reflect-metadata';
 
-const EVENT_LISTENERS_KEY = Symbol('events:listeners');
+const EVENT_LISTENERS_KEY = Symbol.for('veloce-ts:events:listeners');
 
 /** One `@On`-decorated method. */
 export interface EventListenerMetadata {

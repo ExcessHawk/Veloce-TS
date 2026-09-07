@@ -9,9 +9,9 @@ import type {
 } from '../types/index.js';
 
 // Metadata keys for reflect-metadata
-const GRAPHQL_RESOLVER_KEY = Symbol('graphql:resolver');
-const GRAPHQL_FIELD_KEY = Symbol('graphql:field');
-const GRAPHQL_ARGS_KEY = Symbol('graphql:args');
+const GRAPHQL_RESOLVER_KEY = Symbol.for('veloce-ts:graphql:resolver');
+const GRAPHQL_FIELD_KEY = Symbol.for('veloce-ts:graphql:field');
+const GRAPHQL_ARGS_KEY = Symbol.for('veloce-ts:graphql:args');
 
 /**
  * @Resolver decorator - Marks a class as a GraphQL resolver

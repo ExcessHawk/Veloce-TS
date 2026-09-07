@@ -477,6 +477,27 @@ describe('generated schema', () => {
     await app.shutdown();
   });
 
+  it('says why the schema is empty instead of failing on buildSchema', async () => {
+    // buildSchema('') reports "Syntax Error: Unexpected <EOF>", which sends the
+    // reader looking at their query. The cause is always that no resolver
+    // metadata was found.
+    const app = new VeloceTS({ docs: false });
+    app.usePlugin(new GraphQLPlugin({ resolvers: [], playground: false }));
+    const server = await app.listen(0);
+
+    const response = await fetch(`http://127.0.0.1:${server.port}/graphql`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    });
+    const body: any = await response.json();
+
+    expect(body.errors[0].message).toContain('GraphQL schema is empty');
+    expect(body.errors[0].message).toContain('resolvers');
+
+    await app.shutdown();
+  });
+
   it('exposes subscriptions through introspection', async () => {
     running = await startApp();
 
