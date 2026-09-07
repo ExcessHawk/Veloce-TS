@@ -273,8 +273,9 @@ export class WebSocketPlugin implements Plugin {
     } else if (typeof (globalThis as any).Deno !== 'undefined') {
       return this.handleDenoUpgrade(c, metadata);
     } else {
-      // Should never reach here — install() throws on Node.js before routes are registered.
-      return c.text('WebSocket support requires Bun or Deno runtime', 501);
+      // Unreachable on Node: registerNodeWebSocket() owns those routes, so this
+      // branch is only for a runtime that is none of the three.
+      return c.text('WebSocket upgrades require Bun, Deno or Node with @hono/node-ws', 501);
     }
   }
 
