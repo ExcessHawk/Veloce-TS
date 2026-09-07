@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — benchmark methodology, and a correction
+
+- **The published claim that Veloce-TS beat raw Hono was wrong.** BENCHMARKS.md and the docs
+  stated Veloce-TS was faster than raw Hono on JSON body parsing (+16.7%) and Zod validation
+  (+43.8%). Those came from a single timed pass per framework, and a single pass is not a
+  measurement: three consecutive runs of the identical scenario put Hono ahead by 2%, then 17%,
+  then level — and a fourth put Veloce ahead by 14%. With repeat rounds and a median, Hono is
+  ahead in **every** scenario, which is the only sensible answer given Veloce-TS is a layer on
+  top of Hono. Measured cost of that layer: **2–11%**. Against Express 4 it is ~1.8× faster
+  (the README said 10×) and ~1.3–1.4× faster than Fastify 5.
+- **Both benchmark harnesses were reworked** so this class of error is visible rather than
+  published:
+  - Rounds are repeated and the **median** reported, with the **spread shown next to every
+    number**. The internal harness flags anything that varied more than 15% between rounds and
+    lists it in a summary.
+  - Round length is calibrated by **wall time (~250 ms), not a fixed iteration count** — a
+    sub-microsecond operation run 100k times finished in a few milliseconds, far too short for
+    a GC pause to average out. This alone took the worst spread from ±108% to ±13%.
+  - The framework comparison gained `--rounds` (default 3) and rotates every server across each
+    round, so machine drift is spread over all of them instead of being charged to whichever ran
+    first.
+
 ## [3.2.0] - 2026-09-07
 
 ### Added — WebSockets work on Node

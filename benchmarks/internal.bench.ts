@@ -21,30 +21,130 @@ function log(line = ''): void {
 
 // ── Manual benchmark runner ───────────────────────────────────────────────────
 
-async function bench(
-  name: string,
-  fn: () => any,
-  iterations = 100_000,
-): Promise<void> {
-  // warmup
-  for (let i = 0; i < Math.min(1_000, iterations / 10); i++) {
-    const r = fn();
-    if (r instanceof Promise) await r;
-  }
+/**
+ * Rounds measured per benchmark. The previous harness timed a single loop, so
+ * one GC pause or CPU-frequency change landed entirely in the published number —
+ * repeat runs of the same operation on the same machine ranged from 7.5M to
+ * 15.8M ops/s. Several rounds plus a median makes a stray pause an outlier
+ * instead of the result.
+ */
+const ROUNDS = 7;
 
+/** Above this relative spread the sample is too unstable to quote. */
+const NOISE_THRESHOLD = 0.15;
+
+/**
+ * Target wall time per round.
+ *
+ * Iteration counts are calibrated to hit this rather than being fixed per
+ * benchmark. With a fixed count, a sub-microsecond operation finishes a round in
+ * a few milliseconds, and a single GC pause or scheduler slice then dominates
+ * the measurement — which is why the same operation could differ 2× between
+ * rounds. A round long enough to amortise those events is what makes repeat
+ * runs agree.
+ */
+const TARGET_ROUND_MS = 250;
+
+interface Measurement {
+  opsPerSec: number;
+  usPerOp: number;
+  /** Interquartile range over the median — robust to a single stray round. */
+  spread: number;
+  iterations: number;
+}
+
+/** Time one pass of `iterations` calls, returning elapsed milliseconds. */
+async function timeRound(fn: () => any, iterations: number): Promise<number> {
   const start = performance.now();
   for (let i = 0; i < iterations; i++) {
     const r = fn();
     if (r instanceof Promise) await r;
   }
-  const ms = performance.now() - start;
-
-  const opsPerSec = Math.round(iterations / (ms / 1_000));
-  const usPerOp   = ((ms / iterations) * 1_000).toFixed(3);
-  log(
-    `  ${name.padEnd(50)} ${opsPerSec.toLocaleString().padStart(13)} ops/s  (${usPerOp} µs/op)`,
-  );
+  return performance.now() - start;
 }
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/** Value at `q` (0..1) of a sorted-on-the-fly sample. */
+function quantile(values: number[], q: number): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+/**
+ * Pick an iteration count that makes a round last about {@link TARGET_ROUND_MS},
+ * measured from a short probe. Also serves as JIT warmup.
+ */
+async function calibrate(fn: () => any, hint: number): Promise<number> {
+  let iterations = Math.max(1, Math.min(hint, 1_000));
+  let elapsed = 0;
+
+  // Grow until a round is long enough to time meaningfully.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    elapsed = await timeRound(fn, iterations);
+    if (elapsed >= 25) break;
+    iterations *= 4;
+  }
+
+  const scaled = Math.round(iterations * (TARGET_ROUND_MS / Math.max(elapsed, 0.001)));
+  return Math.max(100, Math.min(scaled, 20_000_000));
+}
+
+async function measure(fn: () => any, hint: number): Promise<Measurement> {
+  const iterations = await calibrate(fn, hint);
+
+  // One more untimed round at the real size: the JIT needs far more than the
+  // 1,000 iterations the old harness allowed before it reaches steady state.
+  await timeRound(fn, iterations);
+
+  const rounds: number[] = [];
+  for (let r = 0; r < ROUNDS; r++) {
+    rounds.push(await timeRound(fn, iterations));
+  }
+
+  const ms = median(rounds);
+
+  return {
+    opsPerSec: Math.round(iterations / (ms / 1_000)),
+    usPerOp: (ms / iterations) * 1_000,
+    // IQR rather than min-max: one descheduled round should not condemn an
+    // otherwise steady sample.
+    spread: (quantile(rounds, 0.75) - quantile(rounds, 0.25)) / ms,
+    iterations,
+  };
+}
+
+async function bench(
+  name: string,
+  fn: () => any,
+  iterations = 100_000,
+): Promise<void> {
+  const { opsPerSec, usPerOp, spread } = await measure(fn, iterations);
+
+  // Print the spread rather than a bare number: a reader can then tell a solid
+  // measurement from one the machine was too busy to take.
+  const spreadPct = `±${(spread * 100).toFixed(1)}%`;
+  const flag = spread > NOISE_THRESHOLD ? '  ⚠ noisy' : '';
+
+  log(
+    `  ${name.padEnd(50)} ${opsPerSec.toLocaleString().padStart(13)} ops/s  ` +
+    `(${usPerOp.toFixed(3)} µs/op, ${spreadPct})${flag}`,
+  );
+
+  if (spread > NOISE_THRESHOLD) {
+    noisy.push(name);
+  }
+}
+
+/** Benchmarks whose rounds disagreed too much to be quoted as fact. */
+const noisy: string[] = [];
 
 async function group(name: string, fn: () => Promise<void>): Promise<void> {
   log(`\n── ${name} ${'─'.repeat(Math.max(0, 60 - name.length))}─`);
@@ -240,6 +340,17 @@ import { join } from 'path';
 
 const resultsDir = join(import.meta.dir, 'results');
 if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
+
+// Summarise reliability before writing the file, so the transcript carries it.
+if (noisy.length > 0) {
+  log('');
+  log(`⚠  ${noisy.length} benchmark(s) varied more than ${NOISE_THRESHOLD * 100}% between rounds:`);
+  for (const name of noisy) log(`     ${name}`);
+  log('   Treat those as indicative only — close other work and re-run before quoting them.');
+} else {
+  log('');
+  log(`✓  Every benchmark stayed within ${NOISE_THRESHOLD * 100}% across ${ROUNDS} rounds.`);
+}
 
 const date = new Date().toISOString().split('T')[0];
 const filename = join(resultsDir, `internal-${date}.txt`);

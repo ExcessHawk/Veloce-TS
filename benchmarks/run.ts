@@ -29,6 +29,16 @@ const getArg = (flag: string, fallback: string) =>
 const TOTAL_REQUESTS  = Number(getArg('requests', '10000'));
 const CONCURRENCY     = Number(getArg('concurrency', '50'));
 const WARMUP_REQUESTS = 500;
+/**
+ * Times the whole server rotation is repeated. Each (server, scenario) pair is
+ * reported as the median of its rounds, with the spread alongside.
+ *
+ * One pass is not a measurement: repeat runs of the same scenario on the same
+ * machine put Hono ahead by 2%, then 17%, then level — and a fourth put Veloce
+ * ahead by 14%. Rotating the servers several times also spreads machine drift
+ * across all of them instead of charging it to whichever ran first.
+ */
+const ROUNDS = Number(getArg('rounds', '3'));
 const OUTPUT_JSON     = args.includes('--json');
 const SCENARIO_FILTER = getArg('scenario', 'all');
 
@@ -216,10 +226,18 @@ if (scenariosToRun.length === 0) {
 
 const allResults: Record<string, { name: string; color: string; result: BenchResult }[]> = {};
 
+/** Every round's req/s, keyed by `scenario\u0000server`. */
+const samples: Record<string, number[]> = {};
+
 // Initialise result buckets
 for (const [key] of scenariosToRun) {
   allResults[key] = [];
 }
+
+for (let round = 1; round <= ROUNDS; round++) {
+  if (ROUNDS > 1) {
+    console.log(`\n${BOLD}Round ${round}/${ROUNDS}${RESET}`);
+  }
 
 for (const server of SERVERS) {
   console.log(`\n${server.color}${BOLD}▶ ${server.name}${RESET} (:${server.port})`);
@@ -255,12 +273,38 @@ for (const server of SERVERS) {
     const errNote = result.errors > 0 ? ` ${RED}(${result.errors} err)${RESET}` : '';
     console.log(`${BOLD}${result.rps.toLocaleString()} req/s${RESET}  avg ${result.avgMs}ms  p99 ${result.p99Ms}ms${errNote}  (${elapsed}s)`);
 
-    allResults[key].push({ name: server.name, color: server.color, result });
+    const sampleKey = `${key}\u0000${server.name}`;
+    (samples[sampleKey] ??= []).push(result.rps);
+
+    // Keep the last round's latency figures, but replace req/s with the median
+    // across rounds once every round has been collected.
+    const existing = allResults[key].find((r) => r.name === server.name);
+    if (existing) {
+      existing.result = result;
+    } else {
+      allResults[key].push({ name: server.name, color: server.color, result });
+    }
   }
 
   // Stop server before starting next one
   proc.kill();
   await Bun.sleep(300); // let port be freed
+}
+}
+
+// Replace each single-run req/s with the median of its rounds, and record how
+// much the rounds disagreed so the tables can show it.
+const spreads: Record<string, number> = {};
+for (const [key, entries] of Object.entries(allResults)) {
+  for (const entry of entries) {
+    const runs = samples[`${key}\u0000${entry.name}`] ?? [entry.result.rps];
+    const sorted = [...runs].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const med = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    entry.result = { ...entry.result, rps: Math.round(med) };
+    spreads[`${key}\u0000${entry.name}`] =
+      med > 0 ? (sorted[sorted.length - 1] - sorted[0]) / med : 0;
+  }
 }
 
 // Print comparison tables per scenario

@@ -29,7 +29,7 @@
 <td width="50%">
 
 ### 🚀 **Performance First**
-Built on Hono.js - **10x faster** than Express
+Built on Hono.js — measured **~1.8× faster than Express 4** ([benchmarks](BENCHMARKS.md))
 - Optimized routing
 - Minimal overhead
 - Edge-ready
