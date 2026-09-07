@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-09-05
+
+### Fixed
+
+- **`MemoryRateLimitStore` and `RedisRateLimitStore` were not exported.** 3.0.0 introduced the
+  pluggable rate-limit store and documented it, but neither class was re-exported from
+  `veloce-ts` or `veloce-ts/middleware`, so `RateLimitOptions.store` could not actually be
+  supplied by a consumer. Both are now exported from both entry points; the `RateLimitStore`
+  and `RateLimitHit` types were already reachable via `veloce-ts/types`.
+
+## [3.0.0] - 2026-09-05
+
 Full-codebase review of 2026-09-04 (`REVIEW-2026-09-04.md`, 36 items). Fourteen defects were
 first reproduced with failing HTTP-level tests; those now live in `tests/guards.test.ts`.
 
@@ -1092,7 +1104,9 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.0...v3.0.1
+[3.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.2...v3.0.0
 [2.0.2]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v1.2.0...v2.0.0

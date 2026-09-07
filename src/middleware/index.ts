@@ -8,7 +8,11 @@ export {
   VELOCE_CORS_HEADERS_KEY,
   type VeloceCorsHeadersSnapshot,
 } from './cors';
-export { createRateLimitMiddleware } from './rate-limit';
+export {
+  createRateLimitMiddleware,
+  MemoryRateLimitStore,
+  RedisRateLimitStore,
+} from './rate-limit';
 export { createCompressionMiddleware } from './compression';
 export { createTimeoutMiddleware } from './timeout';
 export { 
