@@ -21,6 +21,8 @@ import { createCompressionMiddleware } from '../middleware/compression.js';
 import { createTimeoutMiddleware } from '../middleware/timeout.js';
 import { getLogger } from '../logging/index.js';
 import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql.js';
+import { hasEventListeners, getEventListeners } from '../decorators/events.js';
+import { EventBus, globalEvents } from '../events/index.js';
 import type {
   VeloceTSConfig,
   Class,
@@ -94,6 +96,12 @@ export class VeloceTS {
   private _shutdownTimeout = 30_000;
   private shutdownSignalsRegistered = false;
 
+  /** Classes carrying `@On` methods, subscribed during compile(). */
+  private eventListenerClasses: Class[] = [];
+  /** Active subscriptions, so shutdown() can detach them again. */
+  private eventSubscriptions: Array<{ event: string; handler: (payload: any) => any }> = [];
+  private eventBus: EventBus;
+
   constructor(config?: VeloceTSConfig) {
     this.config = {
       adapter: 'hono',
@@ -102,6 +110,10 @@ export class VeloceTS {
       docs: true,
       ...config
     };
+
+    // Defaults to the global bus, so `@On` listeners and `globalEvents.emit()`
+    // reach each other. Pass one explicitly to isolate an app (tests, mainly).
+    this.eventBus = this.config.eventBus ?? globalEvents;
 
     // Initialize Hono instance
     this.hono = new Hono();
@@ -230,6 +242,13 @@ export class VeloceTS {
         }
       }
       return;
+    }
+
+    // Event listeners are subscribed at compile() time: resolving them needs the
+    // DI container and is async, while include() is not.
+    if (hasEventListeners(controller)) {
+      this.eventListenerClasses.push(controller);
+      // A class may be both a listener and a controller, so fall through.
     }
 
     // If this is a WebSocket gateway, register it and stop — it has no HTTP routes
@@ -692,6 +711,54 @@ export class VeloceTS {
   }
 
   /**
+   * The application's event bus — the one `@On` listeners are attached to.
+   * Defaults to the `globalEvents` singleton.
+   */
+  getEventBus(): EventBus {
+    return this.eventBus;
+  }
+
+  /**
+   * Resolve every class carrying `@On` methods and attach its handlers.
+   *
+   * Subscriptions are recorded so `shutdown()` can detach them: listeners on the
+   * global bus otherwise survive the app that registered them, and a test suite
+   * creating several apps would fire each event into all of them.
+   */
+  private async subscribeEventListeners(): Promise<void> {
+    for (const listenerClass of this.eventListenerClasses) {
+      const instance = await this.container.resolve<any>(listenerClass, {
+        scope: MetadataRegistry.getControllerMetadata(listenerClass)?.scope ?? 'singleton',
+      });
+
+      for (const { event, propertyKey, once } of getEventListeners(listenerClass)) {
+        const method = instance[propertyKey];
+        if (typeof method !== 'function') {
+          throw new Error(
+            `@On('${event}') refers to ${listenerClass.name}.${propertyKey}, which is not a method.`
+          );
+        }
+
+        const handler = (payload: any) => method.call(instance, payload);
+        if (once) {
+          this.eventBus.once(event, handler);
+        } else {
+          this.eventBus.on(event, handler);
+        }
+        this.eventSubscriptions.push({ event, handler });
+      }
+    }
+  }
+
+  /** Detach every `@On` subscription this app made. */
+  private unsubscribeEventListeners(): void {
+    for (const { event, handler } of this.eventSubscriptions) {
+      this.eventBus.off(event, handler);
+    }
+    this.eventSubscriptions = [];
+  }
+
+  /**
    * Get a `fetch(request, env, ctx)` handler bound to this app — the export
    * shape serverless/edge runtimes expect instead of `listen()`. This is the
    * deploy path for **Cloudflare Workers** (and any other fetch-per-request
@@ -785,6 +852,10 @@ export class VeloceTS {
     // Install plugins before compiling routes
     await this.pluginManager.install(this);
 
+    // Subscribe @On listeners. After plugin install, so a listener can inject
+    // anything a plugin registered in the container.
+    await this.subscribeEventListeners();
+
     // Use the RouterCompiler to process all routes
     this.compiler.compile();
 
@@ -836,6 +907,7 @@ export class VeloceTS {
       await Promise.resolve(this.serverInstance.close());
       this.serverInstance = null;
     }
+    this.unsubscribeEventListeners();
     await this.runShutdownHandlers('manual');
     await this.pluginManager.stop(this);
   }

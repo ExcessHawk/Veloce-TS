@@ -189,6 +189,12 @@ export interface VeloceTSConfig {
   /** Plugins to register at construction time (same as calling `usePlugin`). */
   plugins?: Plugin[];
   /**
+   * Event bus that `@On` listeners attach to. Defaults to the `globalEvents`
+   * singleton, so decorator listeners and `globalEvents.emit()` reach each
+   * other. Pass a dedicated `EventBus` to isolate an application.
+   */
+  eventBus?: import('../events/event-bus.js').EventBus;
+  /**
    * Maximum request body size in bytes. Bodies above it are rejected with 413
    * before any handler runs. Defaults to 1 MiB; `0` disables the limit.
    */

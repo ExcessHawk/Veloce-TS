@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the `@On('event')` decorator
+
+Declarative event listeners, the last item the documentation listed as missing from the event
+bus. A class with `@On` methods is registered like a controller and its instance comes from the
+DI container, so a listener injects the same services a controller can:
+
+```typescript
+class NotificationListeners {
+  constructor(@Inject(Mailer) private mailer: Mailer) {}
+
+  @On('user.created')
+  async welcome(payload: { email: string }) {
+    await this.mailer.send(payload.email, 'Welcome!');
+  }
+
+  @On('app.ready', { once: true })
+  warmCaches() { /* … */ }
+}
+
+app.include(NotificationListeners);
+```
+
+- Subscriptions attach during `compile()` and are **removed again on `shutdown()`**. Without
+  that, listeners registered against the process-wide `globalEvents` outlive the app that
+  created them, and every app built in a test suite answers the same event.
+- A class can be both a controller and a listener — `include()` no longer stops at the first
+  match.
+- `new VeloceTS({ eventBus })` takes a bus of your own; it defaults to `globalEvents`.
+- `@On` naming something that is not a method fails at `compile()` with the class and property
+  in the message, not silently at emit time.
+- `app.getEventBus()` exposes the bus the application is wired to.
+
 ### Changed — CLI housekeeping
 
 - **The version fallbacks said `0.3.0`.** `veloce --version` and, worse, the dependency range

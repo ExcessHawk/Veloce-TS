@@ -139,6 +139,11 @@ export * from './cache/index.js';
 // Event bus exports
 export { EventBus, globalEvents } from './events/index.js';
 
+// Declarative event listeners: `@On('event')` on a class registered with
+// app.include(), the decorator counterpart to globalEvents.on().
+export { On, getEventListeners, hasEventListeners } from './decorators/events.js';
+export type { EventListenerMetadata, OnOptions } from './decorators/events.js';
+
 // Extra decorator exports
 export {
   Throttle, getThrottle, type ThrottleOptions,
