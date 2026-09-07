@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
@@ -94,6 +94,7 @@
     "release:minor": "bun run scripts/release.ts minor",
     "release:patch": "bun run scripts/release.ts patch",
     "test:package": "bun run scripts/test-package.ts",
+    "test:templates": "node scripts/smoke-templates.mjs",
     "benchmark": "bun run benchmarks/run.ts"
   },
   "keywords": [

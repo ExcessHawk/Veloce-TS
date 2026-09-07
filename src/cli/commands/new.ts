@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { mkdir, writeFile } from 'fs/promises';
+import { bunAvailable } from './runtime';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -153,11 +154,20 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
     console.log('\n✅ Project created successfully!');
     console.log('\n📋 Next steps:');
     console.log(`   cd ${name}`);
-    console.log('   bun install');
-    console.log('   bun run dev');
+    console.log('   npm install    (or: bun install)');
+    console.log('   npm run dev    (or: bun run dev)');
     console.log('\n🌐 Your API will be available at:');
     console.log('   http://localhost:3000');
     console.log('   http://localhost:3000/docs (API Documentation)');
+
+    // WebSocket upgrades are Bun/Deno only. Say so now rather than letting the
+    // app throw on first start.
+    const usesWebSockets = options.template === 'websocket' || options.template === 'fullstack';
+    if (usesWebSockets && !bunAvailable()) {
+      console.log('\n⚠️  This template uses WebSockets, which currently require Bun or Deno.');
+      console.log('   Under Node the app will throw at startup when WebSocketPlugin installs.');
+      console.log('   Install Bun (https://bun.sh), or drop WebSocketPlugin from src/index.ts.');
+    }
   } catch (error) {
     console.error('❌ Error creating project:', error);
 
