@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-09-07
+
+### Changed
+
+- **Production builds no longer emit sourcemaps, cutting the published package by ~69%.**
+  Bun embeds each source file's full text in the map through `sourcesContent`, and with both an
+  ESM and a CJS build that meant shipping the entire TypeScript source twice: sourcemaps were
+  **73% of the tarball**. Every install paid for it, to serve the rare case of stepping into
+  framework internals with a debugger — clone the repo for that instead.
+
+  | | Packed | Unpacked |
+  |---|---:|---:|
+  | 3.1.1 | 1.47 MB | 6.9 MB |
+  | 3.1.2 | 0.41 MB | 1.73 MB |
+
+  Development builds (`bun run build`) keep inline sourcemaps, which is where they are actually
+  used.
+
+- **Declaration maps are no longer emitted either.** The 256 `.d.ts.map` files resolved to
+  `../../src/*.ts`, and `files` does not publish `src/` — so they were 351 KB of maps pointing at
+  nothing in an installed package.
+
 ## [3.1.1] - 2026-09-07
 
 ### Fixed — the published types were unusable on `node16`/`nodenext`
@@ -1161,7 +1183,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.2...HEAD
+[3.1.2]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.0...v3.0.1

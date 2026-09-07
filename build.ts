@@ -89,7 +89,13 @@ async function build(options: BuildOptions = {}) {
     // keeps a single ESM artifact usable by both runtimes.
     target: 'node',
     minify: production || minify,
-    sourcemap: production ? 'external' : 'inline',
+    // No sourcemaps in the published package. Bun embeds each source file's full
+    // text in the map via `sourcesContent`, and with both an ESM and a CJS build
+    // that shipped the entire TypeScript source twice — 73% of the tarball, paid
+    // for on every install, to serve the rare case of stepping into framework
+    // internals with a debugger. Dev builds keep inline maps, which is where they
+    // actually get used.
+    sourcemap: production ? 'none' : 'inline',
     splitting: false, // Disable code splitting to avoid export conflicts
     naming: '[dir]/[name].js',
     external,
@@ -120,7 +126,13 @@ async function build(options: BuildOptions = {}) {
     format: 'cjs',
     target: 'node',
     minify: production || minify,
-    sourcemap: production ? 'external' : 'inline',
+    // No sourcemaps in the published package. Bun embeds each source file's full
+    // text in the map via `sourcesContent`, and with both an ESM and a CJS build
+    // that shipped the entire TypeScript source twice — 73% of the tarball, paid
+    // for on every install, to serve the rare case of stepping into framework
+    // internals with a debugger. Dev builds keep inline maps, which is where they
+    // actually get used.
+    sourcemap: production ? 'none' : 'inline',
     naming: '[dir]/[name].js',
     external,
   });
@@ -192,7 +204,7 @@ async function build(options: BuildOptions = {}) {
   console.log('\n📊 Build Summary:');
   console.log(`   Format: ESM + CJS`);
   console.log(`   Minified: ${minify || production ? 'Yes' : 'No'}`);
-  console.log(`   Sourcemaps: ${production ? 'External' : 'Inline'}`);
+  console.log(`   Sourcemaps: ${production ? 'None (published package stays small)' : 'Inline'}`);
   console.log(`   Tree-shaking: Enabled`);
 }
 

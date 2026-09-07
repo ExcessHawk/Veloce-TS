@@ -9,7 +9,10 @@
         "moduleResolution": "bundler",
         "noEmit": false,
         "declaration": true,
-        "declarationMap": true,
+        // Off on purpose: declaration maps point at ../../src/*.ts, and `files`
+        // in package.json does not publish src/. They shipped 351 KB of maps
+        // that resolve to nothing in an installed package.
+        "declarationMap": false,
         "emitDeclarationOnly": true,
         "sourceMap": false,
         "outDir": "./dist/types",
