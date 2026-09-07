@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A missing file was served as 200 with an empty body under Bun.** `Bun.file()` is lazy and
+  never throws for a nonexistent path, so `Response.file()` handed it straight to the response.
+  The Node branch, which stats the file first, correctly returned 404 — the same call answered
+  differently depending on the runtime. Found by the first test ever written for that path.
+
+### Added — tests
+
+Coverage over `src/` went from **50.17% to 56.79%** (706 → 768 tests), concentrated on code that
+had almost none and carries real risk:
+
+- **The Redis-backed stores** (cache, session, token blacklist, rate limit) sat at ~4%. They now
+  run against an in-memory client double, including `RedisTokenBlacklist.claim()` — the `SET NX`
+  that stops two concurrent refreshes from both minting a token pair — asserted to have exactly
+  one winner under concurrency, and the cursor paging in `scan`, with its `KEYS` fallback.
+- **`WebSocketConnection`** (2.8%), covering the send/close guards and that it no longer reads
+  `WebSocket.OPEN` off a global that does not exist on Node 20.
+- **`Response.file()` root containment**, so a route parameter cannot walk out of the directory.
+- **`request-context`** (10%), including the timeout that aborts in-flight work and the cleanup
+  that must stop it firing after the handler returned.
+
+The CI coverage gate moves from 50% to 55%. It had been set at exactly the measured value, which
+left no headroom and made it a tripwire rather than a ratchet.
+
 ### Changed — benchmark methodology, and a correction
 
 - **The published claim that Veloce-TS beat raw Hono was wrong.** BENCHMARKS.md and the docs

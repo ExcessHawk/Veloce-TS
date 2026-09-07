@@ -218,10 +218,12 @@ jobs:
       - name: Run tests with coverage
         run: bun test tests/ --coverage --coverage-reporter=text --coverage-reporter=lcov
 
-      # Ratchet set just below the current ~50% baseline: it blocks regressions
-      # now rather than failing on day one. Raise it as coverage climbs.
-      - name: Enforce coverage threshold (src/**, line coverage >= 50%)
-        run: bun run scripts/check-coverage.ts --threshold 50
+      # Ratchet just under the measured baseline, so it blocks regressions
+      # without failing on an unrelated change. Raise it as coverage climbs:
+      # 50% -> 55% once the Redis stores, WebSocketConnection, file-serving and
+      # request-context gained real tests in 3.2.0 (50.17% -> 56.79%).
+      - name: Enforce coverage threshold (src/**, line coverage >= 55%)
+        run: bun run scripts/check-coverage.ts --threshold 55
 
       - name: Upload coverage report
         if: always()

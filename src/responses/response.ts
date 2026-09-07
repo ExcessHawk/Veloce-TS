@@ -251,9 +251,19 @@ export class FileResponse {
     try {
       // Read file using Bun's file API (works in Bun runtime)
       // For other runtimes, this would need adapter-specific implementation
-      const file = typeof Bun !== 'undefined'
-        ? Bun.file(resolvedPath)
-        : await this.readFileNode(resolvedPath);
+      let file: unknown;
+      if (typeof Bun !== 'undefined') {
+        const bunFile = Bun.file(resolvedPath);
+        // `Bun.file()` is lazy and never throws for a missing path, so without
+        // this check a nonexistent file was served as 200 with an empty body —
+        // while the Node branch, which stats the file, correctly returned 404.
+        if (!(await bunFile.exists())) {
+          throw new Error(`File not found: ${resolvedPath}`);
+        }
+        file = bunFile;
+      } else {
+        file = await this.readFileNode(resolvedPath);
+      }
 
       // Determine content type
       const contentType = this.options?.contentType || this.guessContentType(this.path);
