@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — CLI housekeeping
+
+- **The version fallbacks said `0.3.0`.** `veloce --version` and, worse, the dependency range
+  `veloce new` writes into a scaffolded `package.json` both fell back to a hardcoded version that
+  had not been current for a long time. `veloce new` also fell back to *the current directory's*
+  `package.json` first — whatever project the user happened to be standing in, which is not
+  veloce-ts. Both now resolve the installed framework version, shared through `src/cli/version.ts`.
+- **`veloce new` could hang on the npm lookup.** The registry request had no timeout; it now gives
+  up after 5 seconds and scaffolds with the installed version, saying so.
+- **Removed a dead `#!/usr/bin/env bun` shebang** from `src/cli/index.ts`. The executable is
+  `bin/veloce.mjs` (`#!/usr/bin/env node`), which imports that bundle — the line was inert and
+  misleading about what runs the CLI.
+- **`emitDecoratorMetadata` is off for the framework's own build.** It reads the emitted `design:*`
+  keys exactly zero times, so it only cost compile time. Generated projects keep it, since an
+  application may add decorators of its own that do read them.
+
 ### Fixed
 
 - **A missing file was served as 200 with an empty body under Bun.** `Bun.file()` is lazy and

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { mkdir, writeFile } from 'fs/promises';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { getScaffoldVersionRange } from '../version.js';
 
 // Interface for npm registry response
 interface NpmRegistryResponse {
@@ -13,30 +14,37 @@ interface NpmRegistryResponse {
   [key: string]: any;
 }
 
-// Get latest version from npm
+/** Give up on the registry rather than hanging a scaffold on a slow network. */
+const REGISTRY_TIMEOUT_MS = 5_000;
+
+/**
+ * The version range to write into the new project's dependencies.
+ *
+ * Asks npm for the latest release, and falls back to the version of the CLI
+ * doing the scaffolding — which is by definition installed and real. The old
+ * fallbacks were the *current directory's* package.json (whatever the user
+ * happened to be standing in, not veloce-ts at all) and then a hardcoded
+ * `'0.3.0'`, which would have been written straight into a new project.
+ */
 const getLatestVersion = async (): Promise<string> => {
   try {
-    // Try to get latest version from npm registry
-    const response = await fetch('https://registry.npmjs.org/veloce-ts');
+    const response = await fetch('https://registry.npmjs.org/veloce-ts', {
+      signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS),
+    });
     if (response.ok) {
       const data = await response.json() as NpmRegistryResponse;
       const latestVersion = data['dist-tags']?.latest;
       if (latestVersion && typeof latestVersion === 'string') {
-        return latestVersion;
+        return `^${latestVersion}`;
       }
     }
-  } catch (error) {
-    console.warn('Could not fetch latest version from npm, using fallback');
+  } catch {
+    // Offline, slow, or the registry is down — the installed version is fine.
   }
 
-  // Fallback: try to get version from local package.json
-  try {
-    const packagePath = join(process.cwd(), 'package.json');
-    const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8')) as { version?: string };
-    return packageJson.version || '0.3.0';
-  } catch {
-    return '0.3.0';
-  }
+  const fallback = getScaffoldVersionRange();
+  console.warn(`⚠️  Could not reach npm; using the installed version (${fallback}).`);
+  return fallback;
 };
 
 async function generateSwaggerUI(projectPath: string): Promise<void> {
@@ -179,7 +187,7 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
 async function generatePackageJson(projectPath: string, name: string): Promise<void> {
   console.log('📦 Fetching latest VeloceTS version from npm...');
   const latestVersion = await getLatestVersion();
-  console.log(`✅ Using VeloceTS version: ${latestVersion}`);
+  console.log(`✅ Using VeloceTS ${latestVersion}`);
 
   const packageJson = {
     name,
@@ -198,7 +206,7 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
       'generate:client': 'veloce generate client',
     },
     dependencies: {
-      'veloce-ts': `^${latestVersion}`,
+      'veloce-ts': latestVersion,
       // Required for app.listen() under Node; Bun and Deno serve natively.
       '@hono/node-server': '^1.19.0',
       // WebSocket upgrades on Node. Unused under Bun/Deno, which upgrade natively.

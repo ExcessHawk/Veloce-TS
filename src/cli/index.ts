@@ -1,37 +1,20 @@
-#!/usr/bin/env bun
 /**
  * @module veloce-ts/cli
  * @description Entry point for the `veloce` / `veloce-ts` binary: the `new`, `generate`, `dev` and `build` commands (Commander).
+ *
+ * No shebang here: the executable is `bin/veloce.mjs` (`#!/usr/bin/env node`),
+ * which imports this bundle. A `#!/usr/bin/env bun` line at the top of this file
+ * was dead, and misleading about what actually runs the CLI.
  */
 import { Command } from 'commander';
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
-// Get package.json version
-const getVersion = (): string => {
-  try {
-    // Try to get version from the framework's package.json
-    const frameworkPackagePath = join(__dirname, '..', '..', 'package.json');
-    const frameworkPackageJson = JSON.parse(readFileSync(frameworkPackagePath, 'utf-8'));
-    return frameworkPackageJson.version || '0.3.0';
-  } catch {
-    // Fallback to current directory package.json
-    try {
-      const packagePath = join(process.cwd(), 'package.json');
-      const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
-      return packageJson.version || '0.3.0';
-    } catch {
-      return '0.3.0';
-    }
-  }
-};
+import { getFrameworkVersion } from './version.js';
 
 const program = new Command();
 
 program
   .name('veloce')
   .description('A modern, fast web framework for TypeScript inspired by FastAPI')
-  .version(getVersion(), '-v, --version', 'Display version number')
+  .version(getFrameworkVersion(), '-v, --version', 'Display version number')
   .helpOption('-h, --help', 'Display help for command');
 
 // Import and register subcommands

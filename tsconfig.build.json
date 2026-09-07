@@ -25,7 +25,10 @@
         "resolveJsonModule": true,
         "isolatedModules": true,
         "experimentalDecorators": true,
-        "emitDecoratorMetadata": true,
+        // Off: the framework never reads the emitted `design:*` keys (verified — zero
+        // references in src/), so this only cost compile time. Generated projects keep
+        // it, since an application may add decorators of its own that do read them.
+        "emitDecoratorMetadata": false,
         "types": [
             "bun-types"
         ]
