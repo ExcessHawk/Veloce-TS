@@ -80,11 +80,16 @@ export class GraphQLSchemaBuilder {
       typeDefs += Array.from(this.customTypes.values()).join('\n\n') + '\n\n';
     }
 
-    // Add Query type
+    // Add Query type. GraphQL requires a query root on every schema, so a
+    // resolver set that only declares mutations or subscriptions still gets
+    // one — without it the first operation fails with "Query root type must
+    // be provided", which says nothing about the actual cause.
     if (queries.length > 0) {
       typeDefs += 'type Query {\n';
       typeDefs += queries.map(q => `  ${q}`).join('\n');
       typeDefs += '\n}\n\n';
+    } else if (mutations.length > 0 || subscriptions.length > 0) {
+      typeDefs += 'type Query {\n  _empty: Boolean\n}\n\n';
     }
 
     // Add Mutation type
@@ -94,10 +99,8 @@ export class GraphQLSchemaBuilder {
       typeDefs += '\n}\n\n';
     }
 
-    // Add Subscription type.
-    // NOTE: only SDL generation is supported for subscriptions. Executing
-    // them requires a WebSocket (or SSE) transport, which is out of scope —
-    // the HTTP plugin does not wire subscription resolvers into execution.
+    // Add Subscription type. Execution needs a transport that can push, which
+    // GraphQLPlugin provides over WebSocket (graphql-transport-ws).
     if (subscriptions.length > 0) {
       typeDefs += 'type Subscription {\n';
       typeDefs += subscriptions.map(s => `  ${s}`).join('\n');
@@ -320,13 +323,48 @@ export class GraphQLSchemaBuilder {
             resolversObj.Mutation![field.name!] = resolverFn;
             break;
           case 'subscription':
-            resolversObj.Subscription![field.name!] = resolverFn;
+            // A subscription field is a pair: `subscribe` produces the stream,
+            // `resolve` maps each payload to the field value. Publishing the
+            // field value directly is the common case, so `resolve` is the
+            // identity — `pubsub.publish('USER_CREATED', user)` arrives as
+            // `{ data: { onUserCreated: user } }`.
+            resolversObj.Subscription![field.name!] = {
+              subscribe: this.createSubscriptionSource(resolverClass, field, resolverFn),
+              resolve: (payload: any) => payload,
+            };
             break;
         }
       }
     }
 
     return resolversObj;
+  }
+
+  /**
+   * Wrap a subscription resolver so a non-streaming return value fails with a
+   * message naming the field, instead of graphql-js's generic
+   * "Subscription field must return Async Iterable".
+   */
+  private createSubscriptionSource(
+    target: any,
+    field: GraphQLFieldMetadata,
+    resolverFn: GraphQLResolverFn
+  ): GraphQLResolverFn {
+    const fieldName = field.name || field.propertyKey;
+
+    return async (parent, args, context, info) => {
+      const source = await resolverFn(parent, args, context, info);
+
+      if (!source || typeof source[Symbol.asyncIterator] !== 'function') {
+        throw new Error(
+          `Subscription "${fieldName}" on ${target.name}.${field.propertyKey} must return an ` +
+          "async iterable (for example pubsub.subscribe('TOPIC'), or an async generator), " +
+          `but returned ${source === null ? 'null' : typeof source}.`
+        );
+      }
+
+      return source;
+    };
   }
 
   /**
@@ -364,11 +402,15 @@ export class GraphQLSchemaBuilder {
           }
         }
 
-        // Resolve the resolver instance (with DI support)
-        const instance: any = await this.container.resolve(target, {
-          scope: 'request',
-          context: context.request
-        });
+        // Resolve the resolver instance (with DI support).
+        //
+        // Over HTTP each operation has its own Context, so request scope is
+        // right. Over a WebSocket there is none — the connection outlives any
+        // single request — and asking for request scope there fails with
+        // "cannot resolve request-scoped provider without a request context".
+        const instance: any = context?.request
+          ? await this.container.resolve(target, { scope: 'request', context: context.request })
+          : await this.container.resolve(target, { scope: 'singleton' });
 
         // Execute the resolver method
         const result = await instance[field.propertyKey](...resolvedArgs);
@@ -406,7 +448,16 @@ export interface GraphQLSchemaDefinition {
 export interface GraphQLResolvers {
   Query?: Record<string, GraphQLResolverFn>;
   Mutation?: Record<string, GraphQLResolverFn>;
-  Subscription?: Record<string, GraphQLResolverFn>;
+  Subscription?: Record<string, GraphQLSubscriptionResolver>;
+}
+
+/**
+ * A subscription field, in the shape graphql-js executes: `subscribe` returns
+ * the event stream, `resolve` maps each payload to the field's value.
+ */
+export interface GraphQLSubscriptionResolver {
+  subscribe: GraphQLResolverFn;
+  resolve: (payload: any) => any;
 }
 
 export type GraphQLResolverFn = (

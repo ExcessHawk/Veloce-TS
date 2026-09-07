@@ -156,6 +156,12 @@ jobs:
       - name: WebSocket gateway works under Node
         run: node scripts/smoke-websocket-node.mjs
 
+      # Runs the hand-written graphql-transport-ws server against the official
+      # graphql-ws client, which is the only check that proves interoperability
+      # with the clients people actually use (Apollo, urql, GraphiQL).
+      - name: GraphQL subscriptions work under Node
+        run: node scripts/smoke-graphql-subscriptions.mjs
+
   # Best-effort Deno smoke test for the ESM build. Not a supported runtime
   # yet (see continue-on-error below and the inline notes), but this gives
   # early signal without blocking merges on it.

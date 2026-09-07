@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-09-07
+
+### Added — GraphQL subscriptions actually run
+
+Subscriptions were generated into the SDL and nothing more: there was no
+execution transport, so `subscribe` did nothing and the docs said so. This was
+the framework's largest remaining gap.
+
+`GraphQLPlugin` now serves them over **graphql-transport-ws** — the subprotocol
+Apollo Client, urql, GraphiQL and the `graphql-ws` client speak — on Bun, Deno
+and Node:
+
+```typescript
+const pubsub = new PubSub();
+
+@Resolver()
+class ChatResolver {
+  @GQLSubscription()
+  @Returns(MessageSchema, { name: 'ChatMessage' })
+  messageAdded() {
+    return pubsub.subscribe('MESSAGE_ADDED');
+  }
+
+  @GQLMutation()
+  async send(@Arg('input', SendMessage) input: SendMessage) {
+    await pubsub.publish('MESSAGE_ADDED', input);
+    return input;
+  }
+}
+
+app.usePlugin(new GraphQLPlugin({
+  resolvers: [ChatResolver],
+  subscriptions: {
+    // A browser WebSocket cannot send an Authorization header, so credentials
+    // arrive in connectionParams instead.
+    onConnect: ({ connectionParams }) => verify(connectionParams?.token),
+  },
+}));
+```
+
+- **Off by default.** Opening a WebSocket endpoint should be a deliberate
+  choice; `subscriptions: true` takes the defaults.
+- **Shares the GraphQL path**, which is what clients assume. An upgrade and a
+  POST can coexist there because they are different methods.
+- **`PubSub`** is the source: `publish(topic, payload)` /
+  `subscribe(topic)`, returning the `AsyncIterableIterator` that `graphql`'s
+  `subscribe()` wants. It is built on `EventBus`, so passing `globalEvents`
+  makes an `@On('user.created')` listener and a GraphQL subscription react to
+  the same publish. A subscription resolver can equally return a plain async
+  generator.
+- **Backpressure is bounded.** A subscriber that cannot keep up would otherwise
+  grow an unbounded queue; `maxQueueSize` (1000) with `drop-oldest`,
+  `drop-newest` or `error` decides what gives.
+- **Nothing leaks.** Ending an operation, closing the socket and
+  `app.shutdown()` all run the iterator's teardown, which detaches its bus
+  listener.
+- **Requires the `graphql` package**, now declared as an optional peer
+  dependency rather than left implicit. On Node it also needs `@hono/node-ws`,
+  and the app must be served with `app.listen()`.
+
+The protocol implementation is Veloce-TS's own — no runtime dependency on
+`graphql-ws` — so the interop claim is verified rather than assumed: CI runs the
+server against the official `graphql-ws` client under Node
+(`npm run test:graphql-subscriptions`), covering the handshake, queries over the
+socket, generator and pubsub subscriptions, `onConnect` refusal, and detaching
+on a dropped socket. Close codes follow the spec: 4400 bad request, 4401
+unauthorized, 4403 forbidden, 4408 init timeout, 4409 duplicate subscriber,
+4429 too many init requests.
+
+### Fixed
+
+- **`app.listen(0)` reported port 0.** The returned `ServerInstance` carried the
+  *requested* port, so a caller asking the OS for a free one had no way to learn
+  which it got — the spread that was meant to pick it up copies own enumerable
+  properties, and `port` lives on the server's prototype under both Bun and
+  Node. Fixed on all three runtimes; Deno reads it from `onListen`.
+- **Two WebSocket plugins on one Node app destroyed each other's
+  connections.** `WebSocketPlugin` and the subscription endpoint each created
+  their own `@hono/node-ws` instance, and every instance attaches an `'upgrade'`
+  listener that ends any socket it finds no waiter for — so whichever ran first
+  killed the other's handshake. They now share one adapter per application
+  (`src/websocket/node-adapter.ts`), and the injection is idempotent.
+- **A resolver set with no queries produced an unusable schema.** GraphQL
+  requires a query root on every schema, so subscriptions or mutations alone
+  failed on the first operation with `Query root type must be provided` — an
+  error that points nowhere near the cause. A placeholder `Query` is emitted
+  when nothing else declares one.
+- **`graphql`'s `validate()` throws rather than returning errors** when the
+  schema itself is invalid. Inside a socket's message handler that took the
+  process down; it is now reported to the client as an `error` message.
+- **GraphQL resolvers could not be resolved over a WebSocket.** They were always
+  resolved in `request` scope against `context.request`, which does not exist on
+  a connection that outlives any single request — every subscription failed with
+  "cannot resolve request-scoped provider without a request context". HTTP keeps
+  request scope; a socket resolves as a singleton.
+
+### Changed
+
+- **Subscription resolvers are attached to the executable schema**, so
+  introspection now describes a Subscription type whose fields can actually
+  run. Previously they were deliberately left off.
+- A subscription resolver that returns something that is not an async iterable
+  fails with a message naming the class and method, instead of graphql-js's
+  generic "Subscription field must return Async Iterable".
+
 ## [3.3.0] - 2026-09-07
 
 ### Added — the `@On('event')` decorator

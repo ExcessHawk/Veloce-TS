@@ -121,24 +121,46 @@ export class HonoAdapter implements Adapter {
         // trust client-supplied X-Forwarded-For headers.
         return hono.fetch(req, { server: bunServer, upgrade: bunServer.upgrade.bind(bunServer) });
       },
+      // Bun routes every socket through these four callbacks, so anything that
+      // upgrades has to identify itself through `ws.data`. Sockets carrying
+      // `handlers` (the GraphQL subscription endpoint, or any caller that needs
+      // its own protocol) are dispatched there; the rest belong to
+      // WebSocketPlugin's manager.
       websocket: {
         open(ws: any) {
-          const { manager, metadata } = ws.data ?? {};
+          const { manager, metadata, handlers } = ws.data ?? {};
+          if (handlers) {
+            handlers.open?.(ws);
+            return;
+          }
           if (!manager || !metadata) return;
           const connection = manager.handleConnectionBun(ws, metadata);
           ws.data._connection = connection;
         },
         message(ws: any, message: string | Buffer) {
-          const { manager, metadata, _connection } = ws.data ?? {};
+          const { manager, metadata, _connection, handlers } = ws.data ?? {};
+          if (handlers) {
+            handlers.message?.(ws, message);
+            return;
+          }
           if (!manager || !metadata || !_connection) return;
           manager.handleMessageBun(message, _connection, metadata);
         },
         close(ws: any, code: number, reason: string) {
-          const { manager, metadata, _connection } = ws.data ?? {};
+          const { manager, metadata, _connection, handlers } = ws.data ?? {};
+          if (handlers) {
+            handlers.close?.(ws, code, reason);
+            return;
+          }
           if (!manager || !metadata || !_connection) return;
           manager.handleDisconnectBun(_connection, metadata);
         },
         error(ws: any, error: Error) {
+          const { handlers } = ws.data ?? {};
+          if (handlers?.error) {
+            handlers.error(ws, error);
+            return;
+          }
           console.error('[WS] Bun WebSocket error:', error);
         },
       },
@@ -149,11 +171,16 @@ export class HonoAdapter implements Adapter {
     }
 
     return {
-      port,
       close: async () => {
         server.stop();
       },
-      ...server
+      ...server,
+      // Assigned after the spread, which only copies own enumerable properties:
+      // `port` and `hostname` live on Bun's server prototype, so the spread
+      // leaves the requested value in place. With `listen(0)` that is literally
+      // 0, and a caller has no way to learn the port the OS actually assigned.
+      port: server.port ?? port,
+      raw: server,
     };
   }
 
@@ -163,22 +190,31 @@ export class HonoAdapter implements Adapter {
   private listenDeno(port: number, callback?: () => void): ServerInstance {
     // Deno.serve returns a promise, so we handle it appropriately
     const ac = new AbortController();
-    
-    Deno.serve(
+
+    // The bound port is only known from onListen, which fires synchronously
+    // during Deno.serve() — so reading it back afterwards is safe, and is the
+    // only way a caller passing port 0 can learn what it got.
+    let boundPort = port;
+
+    const server = Deno.serve(
       {
         port,
         signal: ac.signal,
-        onListen: callback
+        onListen: (address: { port: number }) => {
+          boundPort = address?.port ?? port;
+          callback?.();
+        }
       },
       this.hono.fetch
     );
 
     // Return an object with a close method for consistency
     return {
-      port,
+      port: boundPort,
       close: async () => {
         ac.abort();
       },
+      raw: server,
     };
   }
 
@@ -217,14 +253,18 @@ export class HonoAdapter implements Adapter {
       callback
     );
 
+    const address = typeof server.address === 'function' ? server.address() : undefined;
+
     return {
-      port,
       close: async () => {
         return new Promise<void>((resolve) => {
           server.close(() => resolve());
         });
       },
       ...server,
+      // See the Bun branch: with `listen(0)` the requested port is 0, and the
+      // assigned one is only readable from the server's address().
+      port: (address && typeof address === 'object' ? address.port : undefined) ?? port,
       // The spread above copies own enumerable properties, which drops the
       // http.Server prototype — so anything needing the real server object
       // (notably @hono/node-ws's injectWebSocket) cannot use the spread copy.

@@ -4,15 +4,12 @@ import type { VeloceTS } from '../core/application.js';
 import { WebSocketManager } from './manager.js';
 import type { WebSocketConnection, WebSocketLike } from './connection.js';
 import { getLogger } from '../logging/logger.js';
-
-const isBunRuntime = (): boolean => typeof (globalThis as any).Bun !== 'undefined';
-const isDenoRuntime = (): boolean => typeof (globalThis as any).Deno !== 'undefined';
-
-/** The slice of `@hono/node-ws` this plugin uses. */
-interface NodeWebSocketLike {
-  upgradeWebSocket: (handler: (c: any) => Record<string, unknown>) => any;
-  injectWebSocket: (server: unknown) => void;
-}
+import {
+  getNodeWebSocketAdapter,
+  injectNodeWebSocket,
+  needsNodeWebSocketAdapter,
+  type NodeWebSocketAdapter,
+} from './node-adapter.js';
 
 /**
  * Configuration options for {@link WebSocketPlugin}.
@@ -84,7 +81,7 @@ export class WebSocketPlugin implements Plugin {
   private manager: WebSocketManager;
 
   /** Set only on Node, where upgrades go through @hono/node-ws. */
-  private nodeWs?: NodeWebSocketLike;
+  private nodeWs?: NodeWebSocketAdapter;
 
   constructor(config: WebSocketPluginConfig = {}) {
     this.manager = new WebSocketManager(config);
@@ -102,8 +99,10 @@ export class WebSocketPlugin implements Plugin {
     // Node has no built-in upgrade path, so it borrows @hono/node-ws. That has
     // to be wired up before any route is registered, because the routes
     // themselves are what the returned `upgradeWebSocket` middleware attaches to.
-    if (!isBunRuntime() && !isDenoRuntime()) {
-      await this.setupNodeWebSockets(app);
+    if (needsNodeWebSocketAdapter()) {
+      // Shared with the GraphQL subscription endpoint: two instances would
+      // fight over the server's 'upgrade' event.
+      this.nodeWs = await getNodeWebSocketAdapter(app);
     }
 
     for (const ws of websockets) {
@@ -132,31 +131,7 @@ export class WebSocketPlugin implements Plugin {
       );
     }
 
-    this.nodeWs.injectWebSocket(raw as any);
-  }
-
-  /**
-   * Load @hono/node-ws and keep its `upgradeWebSocket` middleware for the route
-   * registration that follows.
-   */
-  private async setupNodeWebSockets(app: VeloceTS): Promise<void> {
-    let createNodeWebSocket: (init: { app: any }) => NodeWebSocketLike;
-
-    try {
-      // Specifier in a variable: the package is an optional peer, so neither tsc
-      // nor the bundler should try to resolve it at build time.
-      const specifier = '@hono/node-ws';
-      ({ createNodeWebSocket } = await import(specifier));
-    } catch (error) {
-      throw new Error(
-        'WebSocket support on Node requires the @hono/node-ws package. ' +
-        'Install it with: npm install @hono/node-ws\n' +
-        '(Bun and Deno upgrade natively and need no extra package.)',
-        { cause: error }
-      );
-    }
-
-    this.nodeWs = createNodeWebSocket({ app: app.getHono() });
+    injectNodeWebSocket(app, raw);
   }
 
   /**

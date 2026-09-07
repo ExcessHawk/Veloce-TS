@@ -2,7 +2,68 @@
 import type { Plugin } from '../core/plugin.js';
 import type { VeloceTS } from '../core/application.js';
 import { GraphQLSchemaBuilder } from './schema-builder.js';
-import type { GraphQLContext } from './schema-builder.js';
+import type { GraphQLContext, GraphQLSubscriptionResolver } from './schema-builder.js';
+import {
+  GraphQLWSHandler,
+  GRAPHQL_TRANSPORT_WS_PROTOCOL,
+  type GraphQLExecutionModule,
+  type GraphQLWSConnectionContext,
+} from './ws-protocol.js';
+import {
+  getNodeWebSocketAdapter,
+  injectNodeWebSocket,
+  needsNodeWebSocketAdapter,
+  type NodeWebSocketAdapter,
+} from '../websocket/node-adapter.js';
+import { getLogger } from '../logging/logger.js';
+
+const isBunRuntime = (): boolean => typeof (globalThis as any).Bun !== 'undefined';
+const isDenoRuntime = (): boolean => typeof (globalThis as any).Deno !== 'undefined';
+
+/** Subscription transport configuration. */
+export interface GraphQLSubscriptionOptions {
+  /**
+   * Path the WebSocket endpoint listens on.
+   *
+   * Defaults to the GraphQL path itself, which is what Apollo Client, urql and
+   * GraphiQL assume — they point their socket at the same URL as the HTTP
+   * endpoint. An upgrade request and a POST can share a path because they are
+   * different methods.
+   */
+  path?: string;
+
+  /**
+   * Gate the connection when the client sends `connection_init`.
+   *
+   * Return `false` to refuse it (closed 4403). This is where a token is
+   * checked: a browser WebSocket cannot send an `Authorization` header, so
+   * credentials arrive in `connectionParams` instead.
+   *
+   * @example
+   * ```typescript
+   * onConnect: ({ connectionParams }) => Boolean(verify(connectionParams?.token))
+   * ```
+   */
+  onConnect?: (
+    connection: GraphQLWSConnectionContext
+  ) => boolean | void | Record<string, unknown> | Promise<boolean | void | Record<string, unknown>>;
+
+  /**
+   * Build the `context` resolvers receive, once per connection.
+   *
+   * Distinct from the HTTP `context` option: a socket has no per-request
+   * `Context`, and lives across many operations.
+   */
+  context?: (connection: GraphQLWSConnectionContext) => unknown | Promise<unknown>;
+
+  /**
+   * How long a client may take to send `connection_init` before being closed
+   * with 4408.
+   *
+   * @default 3000
+   */
+  connectionInitWaitTimeout?: number;
+}
 
 /**
  * GraphQL Plugin Options
@@ -32,6 +93,29 @@ export interface GraphQLPluginOptions {
    * ```
    */
   resolvers?: any[];
+
+  /**
+   * Serve subscriptions over WebSocket, using the **graphql-transport-ws**
+   * subprotocol that Apollo Client, urql and GraphiQL speak.
+   *
+   * `true` enables it on the GraphQL path with the defaults; pass an object to
+   * configure. Off by default — enabling it opens a WebSocket endpoint, which
+   * should be a deliberate choice.
+   *
+   * Requires the `graphql` package, and on Node also `@hono/node-ws`. On Node
+   * the app must be served with `app.listen()`.
+   *
+   * @example
+   * ```typescript
+   * app.usePlugin(new GraphQLPlugin({
+   *   resolvers: [ChatResolver],
+   *   subscriptions: {
+   *     onConnect: ({ connectionParams }) => verify(connectionParams?.token),
+   *   },
+   * }));
+   * ```
+   */
+  subscriptions?: boolean | GraphQLSubscriptionOptions;
 }
 
 /**
@@ -50,10 +134,20 @@ export class GraphQLPlugin implements Plugin {
   name = 'graphql';
   version = '1.0.0';
 
-  private options: Required<GraphQLPluginOptions>;
+  private options: Required<Omit<GraphQLPluginOptions, 'subscriptions'>>;
   private schema?: { typeDefs: string; resolvers: any };
   /** Executable graphql-js schema with resolvers attached (built lazily, cached). */
   private executableSchema?: any;
+  /** The loaded `graphql` package, cached across requests and sockets. */
+  private graphqlModule?: GraphQLExecutionModule;
+
+  /** Undefined when subscriptions are off. */
+  private readonly subscriptions?: Required<Pick<GraphQLSubscriptionOptions, 'path'>> &
+    GraphQLSubscriptionOptions;
+  /** Set only on Node, where upgrades go through the shared @hono/node-ws adapter. */
+  private nodeWs?: NodeWebSocketAdapter;
+  /** Live protocol handlers, so shutdown can end every open subscription. */
+  private readonly connections = new Set<GraphQLWSHandler>();
 
   constructor(options?: GraphQLPluginOptions) {
     this.options = {
@@ -63,6 +157,11 @@ export class GraphQLPlugin implements Plugin {
       context: options?.context || ((request: any) => ({ request })),
       resolvers: options?.resolvers || []
     };
+
+    if (options?.subscriptions) {
+      const config = options.subscriptions === true ? {} : options.subscriptions;
+      this.subscriptions = { ...config, path: config.path || this.options.path };
+    }
   }
 
   async install(app: VeloceTS): Promise<void> {
@@ -75,6 +174,19 @@ export class GraphQLPlugin implements Plugin {
     this.schema = schemaBuilder.build();
     // Invalidate any cached executable schema (install may be called again)
     this.executableSchema = undefined;
+
+    // Node borrows @hono/node-ws, whose upgradeWebSocket() middleware owns the
+    // route — so the adapter has to exist before the route is registered.
+    if (this.subscriptions && needsNodeWebSocketAdapter()) {
+      this.nodeWs = await getNodeWebSocketAdapter(app);
+    }
+
+    // The WebSocket endpoint goes first when it shares a path with the HTTP
+    // one: on Node the upgrade middleware must see the request before the GET
+    // handler answers it.
+    if (this.subscriptions) {
+      this.registerSubscriptionEndpoint(app);
+    }
 
     // Register GraphQL endpoint
     app.post(this.options.path, {
@@ -132,6 +244,263 @@ export class GraphQLPlugin implements Plugin {
           tags: ['GraphQL']
         }
       });
+    }
+  }
+
+  /**
+   * Attach the WebSocket handler to the running HTTP server (Node only).
+   *
+   * `@hono/node-ws` needs the real `http.Server`, which does not exist until
+   * `listen()` has run. The injection is shared and idempotent, so it does not
+   * matter whether WebSocketPlugin got there first.
+   */
+  async onStart(app: VeloceTS): Promise<void> {
+    if (!this.nodeWs) return;
+
+    const server = app.getServer();
+    const raw = (server as any)?.raw ?? server;
+    if (!raw) {
+      throw new Error(
+        'GraphQL subscriptions could not reach the HTTP server to attach WebSocket support. ' +
+        'This is expected when the app is served through getFetchHandler() instead of listen(); ' +
+        'WebSocket upgrades need a real server.'
+      );
+    }
+
+    injectNodeWebSocket(app, raw);
+  }
+
+  /**
+   * End every open subscription. Without it the async iterators behind them
+   * stay attached to their PubSub, keeping listeners alive past shutdown.
+   */
+  async onStop(): Promise<void> {
+    for (const handler of Array.from(this.connections)) {
+      handler.close();
+    }
+    this.connections.clear();
+  }
+
+  /** Open subscription connections. */
+  get connectionCount(): number {
+    return this.connections.size;
+  }
+
+  // --------------------------------------------------------------------------
+  // Subscription transport
+  // --------------------------------------------------------------------------
+
+  private registerSubscriptionEndpoint(app: VeloceTS): void {
+    const hono = app.getHono();
+    const path = this.subscriptions!.path;
+
+    if (this.nodeWs) {
+      this.registerNodeSubscriptions(hono, path);
+      return;
+    }
+
+    hono.get(path, async (c: any, next: () => Promise<void>) => {
+      if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
+        // Not an upgrade. Hand the request on: the GET query handler shares
+        // this path, and returning a response here (even a 404) would end it.
+        return next();
+      }
+
+      const handlerOptions = await this.buildHandlerOptions();
+      if (!handlerOptions) {
+        return c.text('GraphQL subscriptions require the "graphql" package', 501);
+      }
+
+      return isBunRuntime()
+        ? this.upgradeBun(c, handlerOptions)
+        : this.upgradeDeno(c, handlerOptions);
+    });
+  }
+
+  /**
+   * Bun upgrade. The subprotocol has to be echoed by hand — unlike `ws`, Bun
+   * does not do it for you, and a browser aborts a connection whose offered
+   * subprotocol comes back unconfirmed.
+   */
+  private upgradeBun(c: any, options: any): Response {
+    if (!c.env?.upgrade) {
+      return c.text('WebSocket upgrade not supported in this environment', 501);
+    }
+
+    let handler: GraphQLWSHandler | undefined;
+    const self = this;
+
+    const success = c.env.upgrade(c.req.raw, {
+      headers: { 'Sec-WebSocket-Protocol': GRAPHQL_TRANSPORT_WS_PROTOCOL },
+      data: {
+        handlers: {
+          open(ws: any) {
+            handler = new GraphQLWSHandler(
+              {
+                protocol: GRAPHQL_TRANSPORT_WS_PROTOCOL,
+                send: (data: string) => ws.send(data),
+                close: (code: number, reason: string) => ws.close(code, reason),
+              },
+              options,
+              { request: c.req.raw }
+            );
+            self.connections.add(handler);
+          },
+          message(_ws: any, message: string | Uint8Array) {
+            void handler?.handleMessage(message as any);
+          },
+          close() {
+            if (handler) {
+              handler.close();
+              self.connections.delete(handler);
+              handler = undefined;
+            }
+          },
+          error(_ws: any, error: Error) {
+            getLogger().error('GraphQL subscription socket error', error, { path: c.req.path });
+          },
+        },
+      },
+    });
+
+    if (!success) {
+      return c.text('WebSocket upgrade failed', 500);
+    }
+
+    // Bun has already sent the 101; the return value is ignored, but Hono
+    // requires a Response.
+    return new Response(null, { status: 101 });
+  }
+
+  /** Deno upgrade. `protocol` is what makes Deno echo the subprotocol header. */
+  private upgradeDeno(c: any, options: any): Response {
+    const Deno = (globalThis as any).Deno;
+    const { socket, response } = Deno.upgradeWebSocket(c.req.raw, {
+      protocol: GRAPHQL_TRANSPORT_WS_PROTOCOL,
+    });
+
+    let handler: GraphQLWSHandler | undefined;
+
+    socket.onopen = () => {
+      handler = new GraphQLWSHandler(
+        {
+          protocol: GRAPHQL_TRANSPORT_WS_PROTOCOL,
+          send: (data: string) => socket.send(data),
+          close: (code: number, reason: string) => socket.close(code, reason),
+        },
+        options,
+        { request: c.req.raw }
+      );
+      this.connections.add(handler);
+    };
+
+    socket.onmessage = (event: MessageEvent) => {
+      void handler?.handleMessage(event.data);
+    };
+
+    socket.onclose = () => {
+      if (handler) {
+        handler.close();
+        this.connections.delete(handler);
+        handler = undefined;
+      }
+    };
+
+    socket.onerror = (error: unknown) => {
+      getLogger().error(
+        'GraphQL subscription socket error',
+        error instanceof Error ? error : new Error(String(error)),
+        { path: c.req.path }
+      );
+    };
+
+    return response;
+  }
+
+  /**
+   * Node upgrade, through the shared @hono/node-ws adapter.
+   *
+   * `ws` echoes the first subprotocol the client offers, so no explicit
+   * negotiation is needed here — but it also means the handler must verify what
+   * was negotiated, which it does from `ctx.protocol`.
+   */
+  private registerNodeSubscriptions(hono: any, path: string): void {
+    hono.get(
+      path,
+      this.nodeWs!.upgradeWebSocket((c: any) => {
+        let handler: GraphQLWSHandler | undefined;
+        const self = this;
+
+        return {
+          async onOpen(_evt: unknown, ws: any) {
+            const options = await self.buildHandlerOptions();
+            if (!options) {
+              ws.close(1011, 'GraphQL subscriptions require the "graphql" package');
+              return;
+            }
+
+            handler = new GraphQLWSHandler(
+              {
+                protocol: ws.protocol || GRAPHQL_TRANSPORT_WS_PROTOCOL,
+                send: (data: string) => ws.send(data),
+                close: (code: number, reason: string) => ws.close(code, reason),
+              },
+              options,
+              { request: c.req.raw }
+            );
+            self.connections.add(handler);
+          },
+
+          async onMessage(evt: { data: unknown }) {
+            await handler?.handleMessage(evt.data as any);
+          },
+
+          onClose() {
+            if (handler) {
+              handler.close();
+              self.connections.delete(handler);
+              handler = undefined;
+            }
+          },
+
+          onError(error: unknown) {
+            getLogger().error(
+              'GraphQL subscription socket error',
+              error instanceof Error ? error : new Error(String(error)),
+              { path }
+            );
+          },
+        };
+      })
+    );
+  }
+
+  /** Options for a new protocol handler, or undefined if `graphql` is missing. */
+  private async buildHandlerOptions() {
+    const graphql = await this.loadGraphQL();
+    if (!graphql) return undefined;
+
+    const schema = this.getExecutableSchema(graphql);
+    if (!schema) return undefined;
+
+    return {
+      schema,
+      graphql,
+      onConnect: this.subscriptions!.onConnect,
+      context: this.subscriptions!.context,
+      connectionInitWaitTimeout: this.subscriptions!.connectionInitWaitTimeout,
+    };
+  }
+
+  /** Load the optional `graphql` peer once. */
+  private async loadGraphQL(): Promise<GraphQLExecutionModule | undefined> {
+    if (this.graphqlModule) return this.graphqlModule;
+    try {
+      const specifier = 'graphql';
+      this.graphqlModule = (await import(specifier)) as unknown as GraphQLExecutionModule;
+      return this.graphqlModule;
+    } catch {
+      return undefined;
     }
   }
 
@@ -207,13 +576,8 @@ export class GraphQLPlugin implements Plugin {
     context: GraphQLContext,
     operationName?: string
   ): Promise<GraphQLResponse> {
-    let graphqlModule: any;
-    try {
-      // graphql is an optional peer dependency
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      graphqlModule = await import('graphql');
-    } catch {
+    const graphqlModule = await this.loadGraphQL();
+    if (!graphqlModule) {
       return {
         data: null,
         errors: [{
@@ -231,27 +595,11 @@ export class GraphQLPlugin implements Plugin {
     }
 
     try {
-      const { graphql: execute, buildSchema } = graphqlModule;
-
-      // Build the executable schema once and cache it. buildSchema() is
-      // SDL-first and produces fields without resolvers, so we attach the
-      // resolver functions generated by GraphQLSchemaBuilder directly onto
-      // the schema fields. (Passing the nested {Query, Mutation} map as
-      // rootValue would NOT work: graphql-js resolves root fields against
-      // rootValue.<fieldName>, not rootValue.Query.<fieldName>.)
-      if (!this.executableSchema) {
-        const schema = buildSchema(this.schema.typeDefs);
-        this.attachResolvers(schema.getQueryType(), this.schema.resolvers.Query);
-        this.attachResolvers(schema.getMutationType(), this.schema.resolvers.Mutation);
-        // NOTE: Subscription resolvers are intentionally NOT attached.
-        // Subscription execution requires a WebSocket (or SSE) transport,
-        // which this HTTP plugin does not provide (out of scope). The
-        // Subscription type still appears in the SDL for documentation.
-        this.executableSchema = schema;
-      }
+      const schema = this.getExecutableSchema(graphqlModule);
+      const execute = (graphqlModule as any).graphql;
 
       const result = await execute({
-        schema: this.executableSchema,
+        schema,
         source: query,
         contextValue: context,
         variableValues: variables,
@@ -264,6 +612,30 @@ export class GraphQLPlugin implements Plugin {
         errors: [{ message: error.message || 'GraphQL execution error', extensions: { code: 'INTERNAL_SERVER_ERROR' } }]
       };
     }
+  }
+
+  /**
+   * Build the executable schema once and cache it.
+   *
+   * `buildSchema()` is SDL-first and produces fields without resolvers, so the
+   * functions generated by GraphQLSchemaBuilder are attached onto the schema
+   * fields directly. (Passing the nested `{Query, Mutation}` map as `rootValue`
+   * would NOT work: graphql-js resolves root fields against
+   * `rootValue.<fieldName>`, not `rootValue.Query.<fieldName>`.)
+   */
+  private getExecutableSchema(graphqlModule: any): any {
+    if (this.executableSchema) return this.executableSchema;
+    if (!this.schema) return undefined;
+
+    const schema = graphqlModule.buildSchema(this.schema.typeDefs);
+    this.attachResolvers(schema.getQueryType(), this.schema.resolvers.Query);
+    this.attachResolvers(schema.getMutationType(), this.schema.resolvers.Mutation);
+    this.attachSubscriptionResolvers(
+      schema.getSubscriptionType(),
+      this.schema.resolvers.Subscription
+    );
+    this.executableSchema = schema;
+    return schema;
   }
 
   /**
@@ -281,6 +653,29 @@ export class GraphQLPlugin implements Plugin {
       if (fields[fieldName]) {
         fields[fieldName].resolve = resolverFn;
       }
+    }
+  }
+
+  /**
+   * Attach subscription fields, which are a pair rather than a single
+   * function: `subscribe` produces the event stream and `resolve` maps each
+   * payload to the field value.
+   *
+   * Attached whether or not the WebSocket transport is enabled — a schema that
+   * is complete makes introspection honest, and an SDL-only Subscription type
+   * would advertise fields that cannot run.
+   */
+  private attachSubscriptionResolvers(
+    rootType: any,
+    resolverMap: Record<string, GraphQLSubscriptionResolver> | undefined
+  ): void {
+    if (!rootType || !resolverMap) return;
+
+    const fields = rootType.getFields();
+    for (const [fieldName, pair] of Object.entries(resolverMap)) {
+      if (!fields[fieldName]) continue;
+      fields[fieldName].subscribe = pair.subscribe;
+      fields[fieldName].resolve = pair.resolve;
     }
   }
 

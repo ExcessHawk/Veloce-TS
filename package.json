@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
@@ -161,7 +161,8 @@
     "test:package": "bun run scripts/test-package.ts",
     "test:templates": "node scripts/smoke-templates.mjs",
     "benchmark": "bun run benchmarks/run.ts",
-    "test:websocket": "node scripts/smoke-websocket-node.mjs"
+    "test:websocket": "node scripts/smoke-websocket-node.mjs",
+    "test:graphql-subscriptions": "node scripts/smoke-graphql-subscriptions.mjs"
   },
   "keywords": [
     "veloce-ts",
@@ -253,13 +254,15 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/ws": "^8.18.1",
     "graphql": "^17.0.2",
+    "graphql-ws": "^6.2.1",
     "typescript": "^5.9.3",
     "ws": "^8.21.3"
   },
   "peerDependencies": {
     "@hono/node-server": ">=1.0.0",
     "@hono/node-ws": ">=1.0.0",
-    "typescript": ">=5.0.0"
+    "typescript": ">=5.0.0",
+    "graphql": ">=16.0.0"
   },
   "peerDependenciesMeta": {
     "@hono/node-server": {
@@ -275,6 +278,9 @@
       "optional": true
     },
     "pino-pretty": {
+      "optional": true
+    },
+    "graphql": {
       "optional": true
     }
   }
