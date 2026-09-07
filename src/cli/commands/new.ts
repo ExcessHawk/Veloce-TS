@@ -187,24 +187,32 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
     type: 'module',
     main: './dist/index.js',
     scripts: {
-      dev: 'bun --watch src/index.ts',
-      build: 'bun build src/index.ts --outdir dist --target bun',
-      start: 'bun run dist/index.js',
-      'generate:openapi': 'bun run node_modules/veloce-ts/bin/veloce.ts generate openapi',
-      'generate:client': 'bun run node_modules/veloce-ts/bin/veloce.ts generate client',
+      // Routed through the veloce binary so the same script works under Bun and
+      // Node — the CLI picks the right runner instead of hardcoding `bun`.
+      dev: 'veloce dev',
+      build: 'veloce build',
+      start: 'node dist/index.js',
+      typecheck: 'tsc --noEmit',
+      'generate:openapi': 'veloce generate openapi',
+      'generate:client': 'veloce generate client',
     },
     dependencies: {
       'veloce-ts': `^${latestVersion}`,
+      // Required for app.listen() under Node; Bun and Deno serve natively.
+      '@hono/node-server': '^1.19.0',
       hono: '^4.0.0',
       'reflect-metadata': '^0.2.0',
       zod: '^3.22.0',
     },
     devDependencies: {
-      '@types/bun': 'latest',
+      '@types/node': '^22.0.0',
+      // Node has no built-in TypeScript runner that handles decorators, so the
+      // dev server falls back to tsx when Bun is not installed.
+      tsx: '^4.19.0',
       typescript: '^5.3.0',
     },
     engines: {
-      node: '>=18.0.0',
+      node: '>=20.0.0',
       bun: '>=1.0.0',
     },
   };
@@ -221,6 +229,11 @@ async function generateTsConfig(projectPath: string): Promise<void> {
       target: 'ES2022',
       module: 'ESNext',
       lib: ['ES2022'],
+      // 'bundler' resolution, but the templates still write the '.js' extension
+      // on relative imports. tsc emits those specifiers verbatim, and Node's ESM
+      // loader requires the extension — without it `node dist/index.js` dies with
+      // ERR_MODULE_NOT_FOUND. Bun resolves '.js' back to the '.ts' source, so the
+      // same sources run on both runtimes.
       moduleResolution: 'bundler',
       experimentalDecorators: true,
       emitDecoratorMetadata: true,
@@ -319,15 +332,18 @@ async function generateRestTemplate(projectPath: string): Promise<void> {
   // Create main entry point
   const mainFile = `import 'reflect-metadata';
 import { Veloce, OpenAPIPlugin } from 'veloce-ts';
-import { UserController } from './controllers/user.controller';
+import { UserController } from './controllers/user.controller.js';
 
 const app = new Veloce({
   title: 'My REST API',
   version: '1.0.0',
   description: 'A REST API built with VeloceTS',
   docs: true,
+  // A wildcard origin cannot be combined with credentials — browsers reject such
+  // responses, and veloce-ts refuses the combination at startup. List the origins
+  // that are allowed to send cookies or an Authorization header.
   cors: {
-    origin: '*',
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(','),
     credentials: true,
   },
 });
@@ -410,7 +426,7 @@ async function generateGraphQLTemplate(projectPath: string): Promise<void> {
 
   const mainFile = `import 'reflect-metadata';
 import { Veloce, GraphQLPlugin } from 'veloce-ts';
-import { UserResolver } from './resolvers/user.resolver';
+import { UserResolver } from './resolvers/user.resolver.js';
 
 const app = new Veloce({ title: 'My GraphQL API', version: '1.0.0' });
 
@@ -467,17 +483,18 @@ async function generateWebSocketTemplate(projectPath: string): Promise<void> {
   const mainFile = `import 'reflect-metadata';
 import { Veloce } from 'veloce-ts';
 import { WebSocketPlugin } from 'veloce-ts/plugins';
-import { ChatWebSocket } from './websockets/chat.websocket';
+import { ChatWebSocket } from './websockets/chat.websocket.js';
 
 const app = new Veloce({
   title: 'My WebSocket API',
   version: '1.0.0',
 });
 
-// Enable WebSocket
-app.usePlugin(new WebSocketPlugin({
-  handlers: [ChatWebSocket],
-}));
+// Register the gateway, then enable the plugin. Gateways go through
+// app.include() like controllers do — WebSocketPlugin takes connection options
+// (heartbeat, idle timeout, max message size), not a list of handlers.
+app.include(ChatWebSocket);
+app.usePlugin(new WebSocketPlugin());
 
 // Compile routes
 await app.compile();
@@ -540,17 +557,20 @@ async function generateFullstackTemplate(projectPath: string): Promise<void> {
   const mainFile = `import 'reflect-metadata';
 import { Veloce, OpenAPIPlugin } from 'veloce-ts';
 import { GraphQLPlugin, WebSocketPlugin } from 'veloce-ts/plugins';
-import { UserController } from './controllers/user.controller';
-import { UserResolver } from './resolvers/user.resolver';
-import { ChatWebSocket } from './websockets/chat.websocket';
+import { UserController } from './controllers/user.controller.js';
+import { UserResolver } from './resolvers/user.resolver.js';
+import { ChatWebSocket } from './websockets/chat.websocket.js';
 
 const app = new Veloce({
   title: 'My Fullstack API',
   version: '1.0.0',
   description: 'A fullstack API with REST, GraphQL, and WebSocket support',
   docs: true,
+  // A wildcard origin cannot be combined with credentials — browsers reject such
+  // responses, and veloce-ts refuses the combination at startup. List the origins
+  // that are allowed to send cookies or an Authorization header.
   cors: {
-    origin: '*',
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(','),
     credentials: true,
   },
 });
@@ -568,10 +588,10 @@ app.usePlugin(new GraphQLPlugin({
   playground: true,
 }));
 
-// WebSocket — registers the chat handler
-app.usePlugin(new WebSocketPlugin({
-  handlers: [ChatWebSocket],
-}));
+// WebSocket — the gateway is registered with include(), like a controller;
+// the plugin itself takes connection options, not a list of handlers.
+app.include(ChatWebSocket);
+app.usePlugin(new WebSocketPlugin());
 
 // REST API
 app.include(UserController);

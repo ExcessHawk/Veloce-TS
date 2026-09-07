@@ -169,8 +169,8 @@ export class ${pascal}Controller {
       const src = resolveSrcDir();
       const moduleDir = join(src, 'modules', kebab);
       const controllerContent = `import { Controller, Get, Post, Put, Delete, Body, Param } from 'veloce-ts';
-import { Create${pascal}Dto, type Create${pascal}Input } from './${kebab}.dto';
-import { ${pascal}Service } from './${kebab}.service';
+import { Create${pascal}Dto, type Create${pascal}Input } from './${kebab}.dto.js';
+import { ${pascal}Service } from './${kebab}.service.js';
 
 @Controller('/${kebab}s')
 export class ${pascal}Controller {
@@ -236,9 +236,9 @@ export const Update${pascal}Dto = Create${pascal}Dto.partial();
 export type Create${pascal}Input = z.infer<typeof Create${pascal}Dto>;
 export type Update${pascal}Input = z.infer<typeof Update${pascal}Dto>;
 `;
-      const barrelContent = `export { ${pascal}Controller } from './${kebab}.controller';
-export { ${pascal}Service } from './${kebab}.service';
-export * from './${kebab}.dto';
+      const barrelContent = `export { ${pascal}Controller } from './${kebab}.controller.js';
+export { ${pascal}Service } from './${kebab}.service.js';
+export * from './${kebab}.dto.js';
 `;
       await writeGenerated(join(moduleDir, `${kebab}.controller.ts`), controllerContent, opts.dryRun ?? false);
       await writeGenerated(join(moduleDir, `${kebab}.service.ts`), serviceContent, opts.dryRun ?? false);
@@ -246,7 +246,7 @@ export * from './${kebab}.dto';
       await writeGenerated(join(moduleDir, `${kebab}.module.ts`), barrelContent, opts.dryRun ?? false);
       if (!opts.dryRun) {
         console.log(`\nModule created at src/modules/${kebab}/`);
-        console.log(`Register in your app:\n  import { ${pascal}Controller } from './modules/${kebab}/${kebab}.module';\n  app.include(${pascal}Controller);`);
+        console.log(`Register in your app:\n  import { ${pascal}Controller } from './modules/${kebab}/${kebab}.module.js';\n  app.include(${pascal}Controller);`);
       }
     });
 
@@ -574,7 +574,7 @@ export function generateClientCode(spec: OpenAPISpec): string {
   let code = `// Generated TypeScript client for ${spec.info.title}
 // Version: ${spec.info.version}
 
-import type * as Types from './types';
+import type * as Types from './types.js';
 
 export class APIClient {
   constructor(private baseUrl: string = '${baseUrl}') {}

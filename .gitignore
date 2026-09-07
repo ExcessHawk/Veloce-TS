@@ -53,3 +53,4 @@ examples/**/*.db-wal
 REVIEW-*.md
 DECORATORS-TC39.md
 IMPROVEMENT-PLAN.md
+BACKLOG.md

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the CLI produced projects that could not run
+
+- **`veloce new` scaffolded an app that crashed on startup.** The `rest` and `fullstack`
+  templates emitted `cors: { origin: '*', credentials: true }` — the combination 3.0.0 started
+  rejecting at construction time — so a freshly created project died before serving a request.
+  Templates now list explicit origins (overridable through `CORS_ORIGINS`).
+- **`veloce build` failed under Node** with `ReferenceError: Bun is not defined`: it called
+  `Bun.build` unconditionally. It now compiles with the project's own `tsc` when not running
+  under Bun. Note that `Bun.build` is an in-process API, so the Bun path requires the CLI itself
+  to be running under Bun — having the binary on `PATH` is not enough.
+- **`veloce dev` only ever spawned `bun`.** It now detects the runtime and falls back to `tsx`,
+  which transpiles the decorators Node's own type stripping cannot handle.
+- **Compiled output was unloadable by Node.** Templates imported relative modules without a file
+  extension, which `tsc` emits verbatim and Node's ESM loader rejects — `node dist/index.js`
+  died with `ERR_MODULE_NOT_FOUND`. Templates (and `veloce generate` output) now write the `.js`
+  extension, which Bun resolves back to the `.ts` source.
+- **The `websocket` and `fullstack` templates passed a `handlers` option that does not exist** on
+  `WebSocketPluginConfig`, so a generated project failed to type-check. Gateways are registered
+  with `app.include()`, like controllers.
+- `veloce dev` no longer spawns with `shell: true`, which concatenates rather than escapes
+  arguments — Node reports it as DEP0190, and project paths routinely contain spaces.
+
+### Added
+
+- **`--runtime <auto|bun|node>`** on `veloce dev` and `veloce build`. `auto` prefers Bun when it
+  is usable and otherwise runs the Node path.
+- Generated projects are now runtime-agnostic: scripts route through the `veloce` binary instead
+  of hardcoding `bun`, `engines.node` is `>=20`, `@hono/node-server` is included so `listen()`
+  works under Node, `tsx` is a devDependency for the Node dev server, and a `typecheck` script
+  is included. The `generate:*` scripts pointed at `bin/veloce.ts`, the Bun-only legacy entry.
+
 ## [3.0.1] - 2026-09-05
 
 ### Fixed
