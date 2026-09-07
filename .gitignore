@@ -47,3 +47,9 @@ app-ejemplo
 examples/**/*.db
 examples/**/*.db-shm
 examples/**/*.db-wal
+# Internal working documents — this repo is public, these are notes for the
+# maintainer only (audit trackers, analysis write-ups). Keep them on disk,
+# out of git.
+REVIEW-*.md
+DECORATORS-TC39.md
+IMPROVEMENT-PLAN.md
