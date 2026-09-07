@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository';
-import { DrizzleRepositoryOptions, DrizzleDatabase, DrizzleTable, DrizzleOperators } from './types';
+import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository.js';
+import { DrizzleRepositoryOptions, DrizzleDatabase, DrizzleTable, DrizzleOperators } from './types.js';
 
 // Drizzle operator cache — loaded on first use
 let _drizzleOps: any = null;

@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { getGlobalTransactionManager, TransactionMetadata } from './transaction-manager';
+import { getGlobalTransactionManager, TransactionMetadata } from './transaction-manager.js';
 
 /**
  * Transaction interceptor for automatic transaction handling

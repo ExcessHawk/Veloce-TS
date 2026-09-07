@@ -2,43 +2,43 @@
  * @module veloce-ts/orm
  * @description Abstraction layer over repositories, pagination, transactions and plugins (Drizzle, Prisma, TypeORM).
  */
-export * from './errors';
-export * from './base-repository';
-export * from './repository-factory';
-export * from './query-builder';
-export * from './pagination';
+export * from './errors.js';
+export * from './base-repository.js';
+export * from './repository-factory.js';
+export * from './query-builder.js';
+export * from './pagination.js';
 
 // Transaction Management
 export type {
   TransactionContext,
   ITransactionManager
-} from './transaction-manager';
+} from './transaction-manager.js';
 
 export {
   BaseTransactionManager,
   InMemoryTransactionManager,
   getGlobalTransactionManager,
   setGlobalTransactionManager
-} from './transaction-manager';
+} from './transaction-manager.js';
 
 export type {
   TransactionMetadata,
   RepositoryMetadata
-} from './decorators';
+} from './decorators.js';
 
 export {
   Repository,
   Transactional,
   Entity,
   Column
-} from './decorators';
+} from './decorators.js';
 
-export * from './transaction-interceptor';
-export * from './transaction-propagation';
-export * from './transaction-events';
-export * from './transaction-plugin';
+export * from './transaction-interceptor.js';
+export * from './transaction-propagation.js';
+export * from './transaction-events.js';
+export * from './transaction-plugin.js';
 
 // ORM Integrations
-export * from './prisma';
-export * from './typeorm';
-export * from './drizzle';
+export * from './prisma/index.js';
+export * from './typeorm/index.js';
+export * from './drizzle/index.js';

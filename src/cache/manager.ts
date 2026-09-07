@@ -2,10 +2,10 @@
  * Cache manager for managing cache stores and providing utilities
  */
 
-import type { CacheStore, CacheOptions } from './types';
-import type { Context } from '../types';
-import { parseTTL } from './types';
-import { MemoryCacheStore } from './memory-store';
+import type { CacheStore, CacheOptions } from './types.js';
+import type { Context } from '../types/index.js';
+import { parseTTL } from './types.js';
+import { MemoryCacheStore } from './memory-store.js';
 
 /**
  * Global cache manager

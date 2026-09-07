@@ -4,7 +4,7 @@
  * Supports **RFC 9457** (`application/problem+json`) or the **legacy** shape (`error` / `statusCode`), per configuration.
  */
 
-import type { Context } from '../types';
+import type { Context } from '../types/index.js';
 import { HTTPException } from './exceptions.js';
 import { ValidationException } from '../validation/exceptions.js';
 import { getLogger } from '../logging/logger.js';

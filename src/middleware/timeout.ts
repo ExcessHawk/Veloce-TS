@@ -4,7 +4,7 @@
  * aborts with 408 when it is exceeded. Shared by the `@Timeout` decorator and the
  * functional API's `timeout` option (`app.get(path, { timeout })`).
  */
-import type { Middleware } from '../types';
+import type { Middleware } from '../types/index.js';
 
 /**
  * Create a middleware that races the downstream handler against a timer,

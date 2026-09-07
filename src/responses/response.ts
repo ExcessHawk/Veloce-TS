@@ -3,7 +3,7 @@
  * @description HTTP response helpers (`JSONResponse`, `HTMLResponse`, `FileResponse`, `RedirectResponse`)
  * and {@link ResponseSerializer}, used by the route compiler to normalise handler return values.
  */
-import type { Context } from '../types';
+import type { Context } from '../types/index.js';
 
 export interface FileOptions {
   filename?: string;

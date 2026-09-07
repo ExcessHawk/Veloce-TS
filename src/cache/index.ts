@@ -4,12 +4,12 @@
  */
 
 // Types
-export type { CacheStore, CacheEntry, CacheOptions } from './types';
-export { parseTTL } from './types';
+export type { CacheStore, CacheEntry, CacheOptions } from './types.js';
+export { parseTTL } from './types.js';
 
 // Stores
-export { MemoryCacheStore } from './memory-store';
-export { RedisCacheStore, createRedisCacheStore, type RedisClient } from './redis-store';
+export { MemoryCacheStore } from './memory-store.js';
+export { RedisCacheStore, createRedisCacheStore, type RedisClient } from './redis-store.js';
 
 // Manager and utilities
 export { 
@@ -19,5 +19,5 @@ export {
   deleteCache, 
   invalidateCache, 
   clearCache 
-} from './manager';
+} from './manager.js';
 

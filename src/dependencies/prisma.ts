@@ -21,7 +21,7 @@
  * ```
  */
 
-import type { VeloceTS } from '../core/application';
+import type { VeloceTS } from '../core/application.js';
 
 /** Default injection token for a Prisma client registered with `registerPrisma()`. */
 export const PRISMA_TOKEN = Symbol('veloce:prisma');

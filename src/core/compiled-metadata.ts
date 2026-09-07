@@ -3,7 +3,7 @@
  * @description {@link MetadataCompiler}: precomputes dense parameter/dependency arrays and the maximum
  * argument index from {@link RouteMetadata} to speed up dispatch in {@link RouterCompiler}.
  */
-import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types';
+import type { RouteMetadata, ParameterMetadata, DependencyMetadata } from '../types/index.js';
 
 /**
  * Compiled route metadata with pre-computed values for performance.

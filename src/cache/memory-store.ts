@@ -4,7 +4,7 @@
  * For distributed systems, use Redis store
  */
 
-import type { CacheStore, CacheEntry } from './types';
+import type { CacheStore, CacheEntry } from './types.js';
 
 export class MemoryCacheStore implements CacheStore {
   private cache: Map<string, CacheEntry> = new Map();

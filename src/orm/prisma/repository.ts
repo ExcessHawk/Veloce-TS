@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository';
-import { PrismaRepositoryOptions, PrismaDelegate, PrismaClientLike } from './types';
+import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository.js';
+import { PrismaRepositoryOptions, PrismaDelegate, PrismaClientLike } from './types.js';
 
 /**
  * Prisma-specific repository implementation

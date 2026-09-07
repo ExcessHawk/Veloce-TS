@@ -3,8 +3,8 @@
  * @description `@Controller`, `@Get`, `@Post`, `@HttpCode`, per-route rate limiting and friends - decorators
  * that record metadata in {@link MetadataRegistry} for the route compiler.
  */
-import { MetadataRegistry } from '../core/metadata';
-import type { HTTPMethod, Middleware, RateLimitOptions } from '../types';
+import { MetadataRegistry } from '../core/metadata.js';
+import type { HTTPMethod, Middleware, RateLimitOptions } from '../types/index.js';
 import type { ZodSchema } from 'zod';
 import { createRateLimitMiddleware } from '../middleware/rate-limit.js';
 import { createTimeoutMiddleware } from '../middleware/timeout.js';

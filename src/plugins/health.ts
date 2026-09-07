@@ -4,10 +4,10 @@
  * Adds health check endpoints for monitoring and orchestration
  */
 
-import type { Plugin } from '../core/plugin';
-import type { VeloceTS } from '../core/application';
-import type { Context } from '../types';
-import { getLogger } from '../logging';
+import type { Plugin } from '../core/plugin.js';
+import type { VeloceTS } from '../core/application.js';
+import type { Context } from '../types/index.js';
+import { getLogger } from '../logging/index.js';
 
 export interface HealthCheckOptions {
   path?: string;

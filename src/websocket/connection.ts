@@ -1,5 +1,5 @@
 // WebSocket connection wrapper
-import type { WebSocketManager } from './manager';
+import type { WebSocketManager } from './manager.js';
 
 /**
  * WebSocketConnection wraps a native WebSocket with helper methods

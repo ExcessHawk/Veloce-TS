@@ -1,4 +1,4 @@
-import type { Context, Middleware, RateLimitOptions, RateLimitStore, RateLimitHit } from '../types';
+import type { Context, Middleware, RateLimitOptions, RateLimitStore, RateLimitHit } from '../types/index.js';
 
 /**
  * In-memory rate-limit store. Suitable for a single instance; for a fleet,

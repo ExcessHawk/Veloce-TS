@@ -31,8 +31,8 @@
  * expressApp.listen(3000);
  * ```
  */
-import type { Adapter, ServerInstance } from './base';
-import type { VeloceTS } from '../core/application';
+import type { Adapter, ServerInstance } from './base.js';
+import type { VeloceTS } from '../core/application.js';
 
 /**
  * Minimal structural shape of an Express application — just what this

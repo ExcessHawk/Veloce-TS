@@ -1,5 +1,5 @@
-import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager';
-import { DataSourceLike, EntityManagerLike, QueryRunnerLike } from './types';
+import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager.js';
+import { DataSourceLike, EntityManagerLike, QueryRunnerLike } from './types.js';
 
 /**
  * TypeORM-specific transaction manager

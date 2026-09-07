@@ -1,6 +1,6 @@
 // Zod to JSON Schema converter with support for reusable schemas (OpenAPI 3.1)
 import type { ZodSchema } from 'zod';
-import type { OpenAPISpec } from '../types';
+import type { OpenAPISpec } from '../types/index.js';
 import { zodToJsonSchema as baseZodToJsonSchema } from 'zod-to-json-schema';
 
 /**

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository';
+import { BaseRepository, FindOptions, FilterOptions, SortOptions, PaginationOptions, PaginatedResult } from '../base-repository.js';
 
 // TypeORM operator cache — loaded on first use via getTypeORMOps()
 let _typeormOps: any = null;
@@ -14,7 +14,7 @@ function getTypeORMOps() {
   }
   return _typeormOps;
 }
-import { TypeORMRepositoryOptions, DataSourceLike, RepositoryLike, EntityManagerLike } from './types';
+import { TypeORMRepositoryOptions, DataSourceLike, RepositoryLike, EntityManagerLike } from './types.js';
 
 /**
  * TypeORM-specific repository implementation

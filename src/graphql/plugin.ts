@@ -1,8 +1,8 @@
 // GraphQL Plugin - Enables GraphQL support for Veloce-TS
-import type { Plugin } from '../core/plugin';
-import type { VeloceTS } from '../core/application';
-import { GraphQLSchemaBuilder } from './schema-builder';
-import type { GraphQLContext } from './schema-builder';
+import type { Plugin } from '../core/plugin.js';
+import type { VeloceTS } from '../core/application.js';
+import { GraphQLSchemaBuilder } from './schema-builder.js';
+import type { GraphQLContext } from './schema-builder.js';
 
 /**
  * GraphQL Plugin Options

@@ -5,10 +5,10 @@ import type {
   ParameterMetadata,
   ResponseMetadata,
   OpenAPIOptions 
-} from '../types';
-import type { MetadataRegistry } from '../core/metadata';
+} from '../types/index.js';
+import type { MetadataRegistry } from '../core/metadata.js';
 import type { ZodSchema } from 'zod';
-import { ZodToJsonSchemaConverter } from './zod-to-json-schema';
+import { ZodToJsonSchemaConverter } from './zod-to-json-schema.js';
 
 /**
  * OpenAPIGenerator generates OpenAPI 3.1 specification from route metadata

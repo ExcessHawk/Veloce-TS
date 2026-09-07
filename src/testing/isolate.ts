@@ -1,4 +1,4 @@
-import { VeloceTS } from '../core/application';
+import { VeloceTS } from '../core/application.js';
 
 /**
  * Resets stateful singletons that leak between tests in the same Bun process.
@@ -6,7 +6,7 @@ import { VeloceTS } from '../core/application';
  */
 export async function isolate(app?: VeloceTS): Promise<void> {
   try {
-    const { CacheManager } = await import('../cache/manager');
+    const { CacheManager } = await import('../cache/manager.js');
     if (typeof (CacheManager as any).reset === 'function') {
       (CacheManager as any).reset();
     }

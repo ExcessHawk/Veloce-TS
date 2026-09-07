@@ -1,7 +1,7 @@
 // Parameter decorators
 import type { ZodSchema } from 'zod';
-import { MetadataRegistry } from '../core/metadata';
-import type { ParameterMetadata } from '../types';
+import { MetadataRegistry } from '../core/metadata.js';
+import type { ParameterMetadata } from '../types/index.js';
 
 /**
  * Body decorator - extracts and validates request body

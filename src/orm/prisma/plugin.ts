@@ -1,11 +1,11 @@
-import { Plugin } from '../../core/plugin';
-import { VeloceTS } from '../../core/application';
-import { PrismaConfig, PrismaClientLike, PrismaModelMetadata } from './types';
-import { PrismaZodSchemaGenerator } from './schema-generator';
-import { PrismaRepository as PrismaRepositoryClass } from './repository';
-import { PrismaTransactionManager } from './transaction-manager';
-import { setGlobalTransactionManager } from '../transaction-manager';
-import { Repository } from '../decorators';
+import { Plugin } from '../../core/plugin.js';
+import { VeloceTS } from '../../core/application.js';
+import { PrismaConfig, PrismaClientLike, PrismaModelMetadata } from './types.js';
+import { PrismaZodSchemaGenerator } from './schema-generator.js';
+import { PrismaRepository as PrismaRepositoryClass } from './repository.js';
+import { PrismaTransactionManager } from './transaction-manager.js';
+import { setGlobalTransactionManager } from '../transaction-manager.js';
+import { Repository } from '../decorators.js';
 import fs from 'fs';
 import path from 'path';
 

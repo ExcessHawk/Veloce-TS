@@ -1,6 +1,6 @@
 // Middleware decorators
-import type { Middleware } from '../types';
-import { MetadataRegistry } from '../core/metadata';
+import type { Middleware } from '../types/index.js';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /**
  * UseMiddleware decorator - applies middleware to a specific route

@@ -6,8 +6,8 @@
  * framework (request context middleware, ErrorHandler).
  */
 
-export * from './logger';
-export * from './middleware';
-export * from './types';
+export * from './logger.js';
+export * from './middleware.js';
+export * from './types.js';
 
 

@@ -4,8 +4,8 @@
  * transient scopes; circular-dependency detection and resolution statistics.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { Provider, Scope, Context, ProviderConfig, Class } from '../types';
-import { MetadataRegistry } from '../core/metadata';
+import type { Provider, Scope, Context, ProviderConfig, Class } from '../types/index.js';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /**
  * Dependency Injection Container

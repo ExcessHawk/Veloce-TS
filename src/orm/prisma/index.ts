@@ -1,6 +1,6 @@
 // Prisma ORM Integration
-export { PrismaPlugin, createPrismaPlugin } from './plugin';
-export { PrismaRepository } from './repository';
-export { PrismaTransactionManager } from './transaction-manager';
-export { PrismaZodSchemaGenerator } from './schema-generator';
-export * from './types';
+export { PrismaPlugin, createPrismaPlugin } from './plugin.js';
+export { PrismaRepository } from './repository.js';
+export { PrismaTransactionManager } from './transaction-manager.js';
+export { PrismaZodSchemaGenerator } from './schema-generator.js';
+export * from './types.js';

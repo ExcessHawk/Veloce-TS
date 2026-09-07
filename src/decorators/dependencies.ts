@@ -1,6 +1,6 @@
 // Dependency injection decorators
-import type { Provider, Scope } from '../types';
-import { MetadataRegistry } from '../core/metadata';
+import type { Provider, Scope } from '../types/index.js';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /**
  * @Depends decorator for dependency injection

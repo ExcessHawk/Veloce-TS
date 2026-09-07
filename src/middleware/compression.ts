@@ -1,4 +1,4 @@
-import type { Context, Middleware, CompressionOptions } from '../types';
+import type { Context, Middleware, CompressionOptions } from '../types/index.js';
 
 /**
  * Create compression middleware

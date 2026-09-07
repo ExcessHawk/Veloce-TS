@@ -4,7 +4,7 @@
  * Consumed by the request-context middleware and by {@link ErrorHandler} for 5xx errors.
  */
 
-import type { Logger, LoggerConfig, LogContext } from './types';
+import type { Logger, LoggerConfig, LogContext } from './types.js';
 
 // Lazy import para Pino (optional dependency – falls back to console logger if not installed)
 let pino: any;

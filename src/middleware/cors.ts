@@ -1,4 +1,4 @@
-import type { Context, Middleware, CorsOptions } from '../types';
+import type { Context, Middleware, CorsOptions } from '../types/index.js';
 
 /**
  * Clave en el contexto Hono donde se guarda una copia de las cabeceras CORS aplicables

@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { detectRunner, describeRunner, resolveLocalTool, TOOL_ENTRIES, type Runner } from './runtime';
+import { detectRunner, describeRunner, resolveLocalTool, TOOL_ENTRIES, type Runner } from './runtime.js';
 
 interface DevOptions {
   port?: number;

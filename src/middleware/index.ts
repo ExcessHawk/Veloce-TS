@@ -7,18 +7,18 @@ export {
   mergeVeloceCorsHeaders,
   VELOCE_CORS_HEADERS_KEY,
   type VeloceCorsHeadersSnapshot,
-} from './cors';
+} from './cors.js';
 export {
   createRateLimitMiddleware,
   MemoryRateLimitStore,
   RedisRateLimitStore,
-} from './rate-limit';
-export { createCompressionMiddleware } from './compression';
-export { createTimeoutMiddleware } from './timeout';
+} from './rate-limit.js';
+export { createCompressionMiddleware } from './compression.js';
+export { createTimeoutMiddleware } from './timeout.js';
 export { 
   createRequestContextMiddleware, 
   createSimpleRequestIdMiddleware,
   type RequestContextMiddlewareOptions 
-} from './request-context';
-export type { CacheMiddlewareOptions } from './cache';
-export { createCacheMiddleware, createCacheInvalidationMiddleware } from './cache';
+} from './request-context.js';
+export type { CacheMiddlewareOptions } from './cache.js';
+export { createCacheMiddleware, createCacheInvalidationMiddleware } from './cache.js';

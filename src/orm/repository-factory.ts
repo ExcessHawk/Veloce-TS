@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { BaseRepository, IBaseRepository } from './base-repository';
-import { PrismaRepository } from './prisma/repository';
-import { TypeORMRepository } from './typeorm/repository';
-import { DrizzleRepository } from './drizzle/repository';
+import { BaseRepository, IBaseRepository } from './base-repository.js';
+import { PrismaRepository } from './prisma/repository.js';
+import { TypeORMRepository } from './typeorm/repository.js';
+import { DrizzleRepository } from './drizzle/repository.js';
 
 // Repository factory interface
 export interface IRepositoryFactory {

@@ -36,10 +36,10 @@ program
 
 // Import and register subcommands
 async function main() {
-  const { registerNewCommand } = await import('./commands/new');
-  const { registerDevCommand } = await import('./commands/dev');
-  const { registerBuildCommand } = await import('./commands/build');
-  const { registerGenerateCommand } = await import('./commands/generate');
+  const { registerNewCommand } = await import('./commands/new.js');
+  const { registerDevCommand } = await import('./commands/dev.js');
+  const { registerBuildCommand } = await import('./commands/build.js');
+  const { registerGenerateCommand } = await import('./commands/generate.js');
 
   registerNewCommand(program);
   registerDevCommand(program);

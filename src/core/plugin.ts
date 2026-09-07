@@ -3,7 +3,7 @@
  * @description The {@link Plugin} contract, {@link PluginManager} and install ordering: core extensions
  * (OpenAPI, GraphQL, WebSocket, ORM, auth) applied before {@link VeloceTS.compile}.
  */
-import type { VeloceTS } from './application';
+import type { VeloceTS } from './application.js';
 
 /**
  * Plugin interface that all plugins must implement

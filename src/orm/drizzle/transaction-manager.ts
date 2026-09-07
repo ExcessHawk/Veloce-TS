@@ -1,5 +1,5 @@
-import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager';
-import { DrizzleDatabase } from './types';
+import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager.js';
+import { DrizzleDatabase } from './types.js';
 
 /**
  * Drizzle-specific transaction manager

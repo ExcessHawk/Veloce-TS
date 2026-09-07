@@ -1,9 +1,9 @@
 // WebSocket manager for connection tracking and room management
-import type { WebSocketMetadata } from '../types';
-import type { DIContainer } from '../dependencies/container';
-import type { WebSocketPluginConfig } from './plugin';
-import { WebSocketConnection } from './connection';
-import { getLogger } from '../logging/logger';
+import type { WebSocketMetadata } from '../types/index.js';
+import type { DIContainer } from '../dependencies/container.js';
+import type { WebSocketPluginConfig } from './plugin.js';
+import { WebSocketConnection } from './connection.js';
+import { getLogger } from '../logging/logger.js';
 
 /** Default heartbeat ping interval (30 seconds). */
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
@@ -136,7 +136,11 @@ export class WebSocketManager {
    * Bun-specific: handle an incoming message. Called from websocket.message in HonoAdapter.
    */
   async handleMessageBun(
-    message: string | Buffer,
+    // `Uint8Array`, not `Buffer`: this signature is part of the published
+    // declarations, and naming `Buffer` there forces every consumer to install
+    // @types/node just to type-check an import of veloce-ts. Buffer extends
+    // Uint8Array, so what Bun actually hands us still fits.
+    message: string | Uint8Array,
     connection: WebSocketConnection,
     metadata: WebSocketMetadata
   ): Promise<void> {

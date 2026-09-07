@@ -1,7 +1,7 @@
 // WebSocket Plugin
-import type { Plugin } from '../core/plugin';
-import type { VeloceTS } from '../core/application';
-import { WebSocketManager } from './manager';
+import type { Plugin } from '../core/plugin.js';
+import type { VeloceTS } from '../core/application.js';
+import { WebSocketManager } from './manager.js';
 
 /**
  * Configuration options for {@link WebSocketPlugin}.
@@ -195,7 +195,7 @@ export class WebSocketPlugin implements Plugin {
     const Deno = (globalThis as any).Deno;
     const { socket, response } = Deno.upgradeWebSocket(c.req.raw);
 
-    let connection: import('./connection').WebSocketConnection | undefined;
+    let connection: import('./connection.js').WebSocketConnection | undefined;
 
     socket.onopen = () => {
       connection = this.manager.openConnection(socket as any, metadata);

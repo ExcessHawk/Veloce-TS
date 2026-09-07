@@ -1,7 +1,7 @@
 // WebSocket decorators
 import 'reflect-metadata';
 import type { ZodSchema } from 'zod';
-import { MetadataRegistry } from '../core/metadata';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /**
  * @WebSocket decorator - Marks a class as a WebSocket handler

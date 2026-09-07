@@ -2,10 +2,10 @@
  * Cache middleware for functional API routes
  */
 
-import type { Context, Middleware } from '../types';
-import type { CacheOptions } from '../cache/types';
-import { CacheManager } from '../cache/manager';
-import { parseTTL } from '../cache/types';
+import type { Context, Middleware } from '../types/index.js';
+import type { CacheOptions } from '../cache/types.js';
+import { CacheManager } from '../cache/manager.js';
+import { parseTTL } from '../cache/types.js';
 
 export interface CacheMiddlewareOptions extends CacheOptions {
   /**
@@ -125,7 +125,7 @@ export function createCacheMiddleware(options: CacheMiddlewareOptions): Middlewa
  */
 export function createCacheInvalidationMiddleware(
   pattern: string | string[],
-  store?: import('../cache/types').CacheStore
+  store?: import('../cache/types.js').CacheStore
 ): Middleware {
   const patterns = Array.isArray(pattern) ? pattern : [pattern];
 

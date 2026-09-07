@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PrismaModelMetadata, PrismaFieldMetadata } from './types';
+import { PrismaModelMetadata, PrismaFieldMetadata } from './types.js';
 
 /**
  * Generates Zod schemas from Prisma schema metadata

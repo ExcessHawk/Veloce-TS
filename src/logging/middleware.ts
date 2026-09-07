@@ -2,8 +2,8 @@
  * Logging middleware para Veloce-TS
  */
 
-import type { Context, Middleware } from '../types';
-import { createChildLogger } from './logger';
+import type { Context, Middleware } from '../types/index.js';
+import { createChildLogger } from './logger.js';
 
 /**
  * Request logging middleware

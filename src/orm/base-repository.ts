@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { NotImplementedError } from './errors';
+import { NotImplementedError } from './errors.js';
 
 // Base interfaces for repository pattern
 export interface PaginationOptions {

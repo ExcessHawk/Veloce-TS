@@ -1,4 +1,4 @@
-import { TransactionContext, TransactionMetadata } from './transaction-manager';
+import { TransactionContext, TransactionMetadata } from './transaction-manager.js';
 
 // Transaction propagation types
 export enum TransactionPropagation {
@@ -144,7 +144,7 @@ export function TransactionalWithPropagation(options?: EnhancedTransactionMetada
     
     descriptor.value = async function (...args: any[]) {
       // Import here to avoid circular dependencies
-      const { getGlobalTransactionManager } = await import('./transaction-manager');
+      const { getGlobalTransactionManager } = await import('./transaction-manager.js');
       const transactionManager = getGlobalTransactionManager();
       
       // Handle transaction based on propagation behavior

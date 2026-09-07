@@ -3,9 +3,9 @@
  * Automatically initializes request context with UUID and integrates with logging
  */
 
-import type { Context, Middleware } from '../types';
-import { initializeRequestContext, cleanupRequestContext, getRequestId, getRequestDuration } from '../context/request-context';
-import { getLogger } from '../logging';
+import type { Context, Middleware } from '../types/index.js';
+import { initializeRequestContext, cleanupRequestContext, getRequestId, getRequestDuration } from '../context/request-context.js';
+import { getLogger } from '../logging/index.js';
 
 export interface RequestContextMiddlewareOptions {
   /**

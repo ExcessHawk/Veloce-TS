@@ -6,7 +6,7 @@ import type {
   GraphQLFieldMetadata,
   GraphQLArgumentMetadata,
   GraphQLOperationType
-} from '../types';
+} from '../types/index.js';
 
 // Metadata keys for reflect-metadata
 const GRAPHQL_RESOLVER_KEY = Symbol('graphql:resolver');

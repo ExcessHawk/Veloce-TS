@@ -5,21 +5,21 @@
  */
 import { Hono } from 'hono';
 import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
-import { MetadataRegistry } from './metadata';
-import { PayloadTooLargeException } from '../errors/exceptions';
-import { DIContainer } from '../dependencies/container';
-import { RouterCompiler } from './router-compiler';
-import { ValidationEngine } from '../validation/validator';
-import { ErrorHandler, type CustomErrorHandler } from '../errors/handler';
-import { PluginManager, type Plugin } from './plugin';
-import { FilterManager, type ExceptionFilter } from '../errors/exception-filter';
-import { InterceptorManager, type Interceptor } from './interceptor-manager';
-import { createCorsMiddleware } from '../middleware/cors';
-import { createRateLimitMiddleware } from '../middleware/rate-limit';
-import { createCompressionMiddleware } from '../middleware/compression';
-import { createTimeoutMiddleware } from '../middleware/timeout';
-import { getLogger } from '../logging';
-import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql';
+import { MetadataRegistry } from './metadata.js';
+import { PayloadTooLargeException } from '../errors/exceptions.js';
+import { DIContainer } from '../dependencies/container.js';
+import { RouterCompiler } from './router-compiler.js';
+import { ValidationEngine } from '../validation/validator.js';
+import { ErrorHandler, type CustomErrorHandler } from '../errors/handler.js';
+import { PluginManager, type Plugin } from './plugin.js';
+import { FilterManager, type ExceptionFilter } from '../errors/exception-filter.js';
+import { InterceptorManager, type Interceptor } from './interceptor-manager.js';
+import { createCorsMiddleware } from '../middleware/cors.js';
+import { createRateLimitMiddleware } from '../middleware/rate-limit.js';
+import { createCompressionMiddleware } from '../middleware/compression.js';
+import { createTimeoutMiddleware } from '../middleware/timeout.js';
+import { getLogger } from '../logging/index.js';
+import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql.js';
 import type {
   VeloceTSConfig,
   Class,
@@ -31,7 +31,7 @@ import type {
   CompressionOptions,
   HTTPMethod,
   Context
-} from '../types';
+} from '../types/index.js';
 
 /** Default maximum request body size: 1 MiB. Override with `bodyLimit`. */
 const DEFAULT_BODY_LIMIT_BYTES = 1_048_576;

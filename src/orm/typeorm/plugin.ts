@@ -1,9 +1,9 @@
-import { Plugin } from '../../core/plugin';
-import { VeloceTS } from '../../core/application';
-import { TypeORMConfig, DataSourceLike, TypeORMEntityMetadata } from './types';
-import { TypeORMRepository } from './repository';
-import { TypeORMTransactionManager } from './transaction-manager';
-import { setGlobalTransactionManager } from '../transaction-manager';
+import { Plugin } from '../../core/plugin.js';
+import { VeloceTS } from '../../core/application.js';
+import { TypeORMConfig, DataSourceLike, TypeORMEntityMetadata } from './types.js';
+import { TypeORMRepository } from './repository.js';
+import { TypeORMTransactionManager } from './transaction-manager.js';
+import { setGlobalTransactionManager } from '../transaction-manager.js';
 import fs from 'fs';
 import path from 'path';
 

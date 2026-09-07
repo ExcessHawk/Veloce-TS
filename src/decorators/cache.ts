@@ -3,8 +3,8 @@
  * Automatically caches responses based on route and parameters
  */
 
-import type { CacheOptions } from '../cache/types';
-import { MetadataRegistry } from '../core/metadata';
+import type { CacheOptions } from '../cache/types.js';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /**
  * Cache decorator - caches route responses

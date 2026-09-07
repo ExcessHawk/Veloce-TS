@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-09-07
+
+### Fixed — the published types were unusable on `node16`/`nodenext`
+
+- **Every relative specifier in the declarations lacked a file extension**, so any consumer on
+  `moduleResolution: node16` or `nodenext` got nothing but `TS2834` ("Relative import paths need
+  explicit file extensions") from `node_modules/veloce-ts` and lost all types. The 332 relative
+  specifiers across `src/` now carry an explicit `.js`, which Bun resolves back to the `.ts`
+  source and `bundler` resolution accepts unchanged.
+- **`require('veloce-ts')` was rejected by TypeScript** with `TS1479` ("the referenced file is an
+  ECMAScript module and cannot be imported with 'require'") even though it works at runtime. One
+  declaration tree was shared by both conditions, and TypeScript infers a `.d.ts` file's module
+  kind from the nearest `package.json` — the root says `"type": "module"`, so the types claimed
+  ESM while `require` resolved to `dist/cjs`. The build now emits `dist/types-cjs` with a
+  `commonjs` marker and each `exports` condition carries its own `types`.
+- **`WebSocketManager.handleMessageBun` typed a parameter as `Buffer`**, which forced consumers to
+  install `@types/node` just to type-check an import of the package. It is `Uint8Array` now —
+  `Buffer` extends it, so what Bun passes still fits.
+
+### Added
+
+- `test:package` now verifies that each `import`/`require` condition serves declarations of the
+  matching module system, so a types/runtime mismatch fails the build instead of reaching npm.
+
 ## [3.1.0] - 2026-09-07
 
 ### Fixed — the CLI produced projects that could not run
@@ -1137,7 +1161,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/ExcessHawk/veloce-ts/compare/v2.0.2...v3.0.0

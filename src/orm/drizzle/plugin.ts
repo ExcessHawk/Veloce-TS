@@ -1,14 +1,14 @@
-import { Plugin } from '../../core/plugin';
-import { VeloceTS } from '../../core/application';
-import { DrizzleConfig, DrizzleDatabase, DrizzleTable, DrizzleTableMetadata } from './types';
-import { DrizzleRepository as DrizzleRepositoryClass } from './repository';
-import { DrizzleTransactionManager } from './transaction-manager';
-import { setGlobalTransactionManager } from '../transaction-manager';
-import { DrizzleZodSchemaConverter } from './schema-converter';
-import { createChildLogger } from '../../logging';
+import { Plugin } from '../../core/plugin.js';
+import { VeloceTS } from '../../core/application.js';
+import { DrizzleConfig, DrizzleDatabase, DrizzleTable, DrizzleTableMetadata } from './types.js';
+import { DrizzleRepository as DrizzleRepositoryClass } from './repository.js';
+import { DrizzleTransactionManager } from './transaction-manager.js';
+import { setGlobalTransactionManager } from '../transaction-manager.js';
+import { DrizzleZodSchemaConverter } from './schema-converter.js';
+import { createChildLogger } from '../../logging/index.js';
 
 // Re-export repository class for convenience
-export { DrizzleRepository } from './repository';
+export { DrizzleRepository } from './repository.js';
 
 /**
  * Drizzle ORM integration plugin for VeloceTS

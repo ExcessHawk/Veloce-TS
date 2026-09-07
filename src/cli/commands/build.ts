@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { rm, mkdir } from 'fs/promises';
 import { spawnSync } from 'child_process';
-import { detectRunner, describeRunner, resolveLocalTool, TOOL_ENTRIES, type Runner } from './runtime';
+import { detectRunner, describeRunner, resolveLocalTool, TOOL_ENTRIES, type Runner } from './runtime.js';
 
 interface BuildOptions {
   minify?: boolean;

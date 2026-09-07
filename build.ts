@@ -180,6 +180,8 @@ async function build(options: BuildOptions = {}) {
     console.log('✅ Type declarations generated\n');
   }
 
+  await emitCjsDeclarations();
+
   // Verify tree-shaking
   if (production) {
     console.log('🌲 Verifying tree-shaking...');
@@ -192,6 +194,39 @@ async function build(options: BuildOptions = {}) {
   console.log(`   Minified: ${minify || production ? 'Yes' : 'No'}`);
   console.log(`   Sourcemaps: ${production ? 'External' : 'Inline'}`);
   console.log(`   Tree-shaking: Enabled`);
+}
+
+/**
+ * Emit a CommonJS-flavoured copy of the declarations.
+ *
+ * TypeScript decides whether a `.d.ts` describes an ES module or a CommonJS one
+ * from the nearest `package.json`. The root declares `"type": "module"`, so the
+ * single `dist/types` tree reads as ESM — and a consumer on
+ * `moduleResolution: node16` that `require()`s the package got:
+ *
+ *   TS1479: The current file is a CommonJS module whose imports will produce
+ *   'require' calls; however, the referenced file is an ECMAScript module.
+ *
+ * even though `require('veloce-ts')` works perfectly at runtime, because the
+ * `require` condition resolves to `dist/cjs` (which does carry a
+ * `{"type":"commonjs"}` marker). The types were describing the wrong module
+ * system for that path.
+ *
+ * The declaration *content* is identical either way, so this copies the tree and
+ * drops a `commonjs` marker beside it; the exports map then points each
+ * condition at the matching flavour.
+ */
+async function emitCjsDeclarations() {
+  const { cp } = await import('fs/promises');
+
+  console.log('📝 Emitting CommonJS declaration copy...');
+  rmSync('./dist/types-cjs', { recursive: true, force: true });
+  await cp('./dist/types', './dist/types-cjs', { recursive: true });
+  await writeFile(
+    join('./dist/types-cjs', 'package.json'),
+    JSON.stringify({ type: 'commonjs' }, null, 2) + '\n'
+  );
+  console.log('✅ dist/types-cjs written ({ "type": "commonjs" })\n');
 }
 
 async function verifyTreeShaking() {

@@ -1,4 +1,4 @@
-import { FilterOptions, SortOptions, PaginationOptions } from './base-repository';
+import { FilterOptions, SortOptions, PaginationOptions } from './base-repository.js';
 
 // Query builder interfaces
 export interface IQueryBuilder<T> {

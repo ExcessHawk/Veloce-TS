@@ -1,7 +1,7 @@
 /**
  * @module veloce-ts/testing/test-client
  * @description Test HTTP client over `app.getHono().request()` with chainable assertions (`expectStatus`, `expectJson`, ...).*/
-import type { VeloceTS } from '../core/application';
+import type { VeloceTS } from '../core/application.js';
 import type { Hono } from 'hono';
 
 // ---------------------------------------------------------------------------

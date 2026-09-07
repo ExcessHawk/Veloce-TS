@@ -4,7 +4,7 @@
  * Suitable for distributed applications
  */
 
-import type { CacheStore } from './types';
+import type { CacheStore } from './types.js';
 
 export interface RedisClient {
   get(key: string): Promise<string | null>;

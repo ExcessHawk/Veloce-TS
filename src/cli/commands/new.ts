@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { mkdir, writeFile } from 'fs/promises';
-import { bunAvailable } from './runtime';
+import { bunAvailable } from './runtime.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 

@@ -2,7 +2,7 @@
  * Cache system types
  */
 
-import type { Context } from '../types';
+import type { Context } from '../types/index.js';
 
 /**
  * Cache entry with data and expiration

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { MetadataRegistry } from '../core/metadata';
-import { getGlobalTransactionManager } from './transaction-manager';
+import { MetadataRegistry } from '../core/metadata.js';
+import { getGlobalTransactionManager } from './transaction-manager.js';
 
 // Repository decorator metadata
 export interface RepositoryMetadata {

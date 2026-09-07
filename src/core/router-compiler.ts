@@ -5,23 +5,23 @@
  */
 import type { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
-import type { Context } from '../types';
-import { MetadataRegistry } from './metadata';
-import { DIContainer } from '../dependencies/container';
-import { ValidationEngine } from '../validation/validator';
-import { ResponseSerializer } from '../responses/response';
-import { ErrorHandler } from '../errors/handler';
-import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata';
-import type { ParameterMetadata, DependencyMetadata } from '../types';
-import { BadRequestException, HTTPException } from '../errors/exceptions';
-import { getLogger } from '../logging/logger';
-import type { FilterManager } from '../errors/exception-filter';
-import { InterceptorManager, getInterceptors, type ExecutionContext } from './interceptor-manager';
-import { isSSE, getStreamContentType } from '../decorators/stream';
-import { CacheManager } from '../cache/manager';
-import { parseTTL } from '../cache/types';
-import { AuthenticationException } from '../auth/exceptions';
-import { getRequestId, getAbortSignal } from '../context/request-context';
+import type { Context } from '../types/index.js';
+import { MetadataRegistry } from './metadata.js';
+import { DIContainer } from '../dependencies/container.js';
+import { ValidationEngine } from '../validation/validator.js';
+import { ResponseSerializer } from '../responses/response.js';
+import { ErrorHandler } from '../errors/handler.js';
+import { MetadataCompiler, type CompiledRouteMetadata } from './compiled-metadata.js';
+import type { ParameterMetadata, DependencyMetadata } from '../types/index.js';
+import { BadRequestException, HTTPException } from '../errors/exceptions.js';
+import { getLogger } from '../logging/logger.js';
+import type { FilterManager } from '../errors/exception-filter.js';
+import { InterceptorManager, getInterceptors, type ExecutionContext } from './interceptor-manager.js';
+import { isSSE, getStreamContentType } from '../decorators/stream.js';
+import { CacheManager } from '../cache/manager.js';
+import { parseTTL } from '../cache/types.js';
+import { AuthenticationException } from '../auth/exceptions.js';
+import { getRequestId, getAbortSignal } from '../context/request-context.js';
 
 /** Shared encoder — allocating one per chunk showed up in streaming profiles. */
 const TEXT_ENCODER = new TextEncoder();

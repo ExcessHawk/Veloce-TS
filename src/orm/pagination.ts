@@ -1,4 +1,4 @@
-import { PaginationOptions, PaginatedResult, FindOptions } from './base-repository';
+import { PaginationOptions, PaginatedResult, FindOptions } from './base-repository.js';
 
 // Enhanced pagination interfaces
 export interface CursorPaginationOptions {

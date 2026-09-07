@@ -2,9 +2,9 @@
  * @module veloce-ts/plugins
  * @description Plugins oficiales re-exportados: OpenAPI/Swagger, WebSocket, GraphQL y health checks.
  */
-export { OpenAPIPlugin } from './openapi';
-export type { OpenAPIPluginOptions, SwaggerUIAssets } from './openapi';
-export { WebSocketPlugin } from '../websocket/plugin';
-export { GraphQLPlugin } from '../graphql/plugin';
-export { HealthCheckPlugin, HealthCheckers } from './health';
-export type { HealthCheckOptions, HealthCheckResult, CheckResult, HealthChecker } from './health';
+export { OpenAPIPlugin } from './openapi.js';
+export type { OpenAPIPluginOptions, SwaggerUIAssets } from './openapi.js';
+export { WebSocketPlugin } from '../websocket/plugin.js';
+export { GraphQLPlugin } from '../graphql/plugin.js';
+export { HealthCheckPlugin, HealthCheckers } from './health.js';
+export type { HealthCheckOptions, HealthCheckResult, CheckResult, HealthChecker } from './health.js';

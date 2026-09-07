@@ -3,7 +3,7 @@
  * @description {@link HonoAdapter}: detects the runtime (Bun/Node/Deno/Workers) and exposes `listen` over the Hono instance.
  */
 import type { Hono } from 'hono';
-import type { Adapter, ServerInstance } from './base';
+import type { Adapter, ServerInstance } from './base.js';
 
 // Type declarations for runtime globals
 declare const Deno: any;

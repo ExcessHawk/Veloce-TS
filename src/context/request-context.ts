@@ -3,7 +3,7 @@
  * @description Contexto por request: `requestId`, `AbortSignal`, timeouts y helpers almacenados en el `Context` de Hono.
  */
 
-import type { Context } from '../types';
+import type { Context } from '../types/index.js';
 
 /**
  * Request Context stored in Hono's context

@@ -26,7 +26,7 @@ import type {
   ResourcePermissionMetadata,
   SessionMetadata,
   CSRFMetadata
-} from '../types';
+} from '../types/index.js';
 
 // Metadata keys for reflect-metadata
 const ROUTE_METADATA_KEY = Symbol('route:metadata');

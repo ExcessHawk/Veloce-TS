@@ -5,8 +5,8 @@
  */
 import type { Context as HonoContext, Hono, MiddlewareHandler } from 'hono';
 import type { ZodSchema, z } from 'zod';
-import type { Plugin } from '../core/plugin';
-import type { CacheStore } from '../cache/types';
+import type { Plugin } from '../core/plugin.js';
+import type { CacheStore } from '../cache/types.js';
 
 // Re-export Zod's infer helper for user convenience
 export { z } from 'zod';
@@ -35,7 +35,7 @@ export type Context = HonoContext;
 declare module 'hono' {
   interface ContextVariableMap {
     /** Payload of the verified access token, set by the auth middleware. */
-    'auth.user': import('../auth/jwt-provider').TokenPayload | null;
+    'auth.user': import('../auth/jwt-provider.js').TokenPayload | null;
     /** Raw bearer token as presented by the client. */
     'auth.token': string | null;
     /** Why authentication failed, when it did. */
@@ -43,27 +43,27 @@ declare module 'hono' {
     /** Whether the request carries valid credentials. */
     'auth.authenticated': boolean;
     /** The AuthService instance, exposed by AuthPlugin. */
-    'authService': import('../auth/auth-service').AuthService;
+    'authService': import('../auth/auth-service.js').AuthService;
     /** Current session, set by the session middleware. */
-    'session': import('../auth/session').SessionData | null;
+    'session': import('../auth/session.js').SessionData | null;
     /** SessionManager instance, exposed by SessionPlugin. */
-    'sessionManager': import('../auth/session').SessionManager | null;
+    'sessionManager': import('../auth/session.js').SessionManager | null;
     /** CSRFProtection instance, when CSRF is enabled. */
-    'csrfProtection': import('../auth/session').CSRFProtection | undefined;
+    'csrfProtection': import('../auth/session.js').CSRFProtection | undefined;
     /** CSRF token for the current session. */
     'csrf.token': string | null;
     /** PermissionManager instance, exposed by PermissionPlugin. */
-    'permissionManager': import('../auth/permissions').PermissionManager | null;
+    'permissionManager': import('../auth/permissions.js').PermissionManager | null;
     /** RBACManager instance, exposed by RBACPlugin. */
-    'rbacManager': import('../auth/rbac').RBACManager | null;
+    'rbacManager': import('../auth/rbac.js').RBACManager | null;
     /** OAuth profile / token, set by the OAuth middleware. */
-    'oauth.user': import('../auth/oauth-provider').OAuthUser | null;
-    'oauth.token': import('../auth/oauth-provider').OAuthTokens | null;
+    'oauth.user': import('../auth/oauth-provider.js').OAuthUser | null;
+    'oauth.token': import('../auth/oauth-provider.js').OAuthTokens | null;
     /** Resource and attribute set filtered by the permission middleware. */
     'filtered.resource': unknown;
     'filtered.attributes': string[];
     /** Compiled metadata for the route currently executing. */
-    'routeMetadata': import('../core/compiled-metadata').CompiledRouteMetadata | null;
+    'routeMetadata': import('../core/compiled-metadata.js').CompiledRouteMetadata | null;
     /** CORS headers captured for the current request. */
     'veloce:corsHeaders': Record<string, string>;
   }

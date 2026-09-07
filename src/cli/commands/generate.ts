@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { existsSync } from 'fs';
-import { OpenAPIGenerator } from '../../docs';
-import type { OpenAPISpec } from '../../types';
+import { OpenAPIGenerator } from '../../docs/index.js';
+import type { OpenAPISpec } from '../../types/index.js';
 
 // ── Scaffolding helpers ──────────────────────────────────────────────────────
 

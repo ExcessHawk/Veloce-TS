@@ -1,7 +1,7 @@
 // GraphQL Schema Builder for Veloce-TS
-import type { DIContainer } from '../dependencies/container';
-import type { GraphQLFieldMetadata, Context } from '../types';
-import { getResolverMetadata, getFieldsMetadata, getArgumentsMetadata } from '../decorators/graphql';
+import type { DIContainer } from '../dependencies/container.js';
+import type { GraphQLFieldMetadata, Context } from '../types/index.js';
+import { getResolverMetadata, getFieldsMetadata, getArgumentsMetadata } from '../decorators/graphql.js';
 import {
   zodToGraphQLType,
   isNullable,
@@ -9,9 +9,9 @@ import {
   getZodTypeName,
   zodObjectToGraphQLType,
   zodObjectToGraphQLInput
-} from './zod-to-graphql';
-import { getReturnTypeMetadata, type GraphQLReturnTypeMetadata } from './returns';
-import { ValidationEngine } from '../validation/validator';
+} from './zod-to-graphql.js';
+import { getReturnTypeMetadata, type GraphQLReturnTypeMetadata } from './returns.js';
+import { ValidationEngine } from '../validation/validator.js';
 
 /**
  * GraphQL Schema Builder

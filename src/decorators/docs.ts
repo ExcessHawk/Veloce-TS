@@ -1,6 +1,6 @@
 // Documentation decorators for OpenAPI documentation
-import { MetadataRegistry } from '../core/metadata';
-import type { RouteDocumentation, ResponseMetadata } from '../types';
+import { MetadataRegistry } from '../core/metadata.js';
+import type { RouteDocumentation, ResponseMetadata } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
 // Shorthand decorators — simpler alternatives to @ApiDoc({...})

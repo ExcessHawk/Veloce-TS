@@ -1,4 +1,4 @@
-import { TransactionContext } from './transaction-manager';
+import { TransactionContext } from './transaction-manager.js';
 
 // Transaction event types
 export enum TransactionEventType {

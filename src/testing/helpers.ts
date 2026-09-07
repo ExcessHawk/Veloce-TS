@@ -2,9 +2,9 @@
  * @module veloce-ts/testing/helpers
  * @description The `createTestApp` / `setupTestApp` factories and DI-container mocking helpers for tests.
  */
-import { VeloceTS } from '../core/application';
-import { TestClient } from './test-client';
-import type { VeloceTSConfig, Provider, ProviderConfig } from '../types';
+import { VeloceTS } from '../core/application.js';
+import { TestClient } from './test-client.js';
+import type { VeloceTSConfig, Provider, ProviderConfig } from '../types/index.js';
 
 /**
  * Create a test instance of VeloceTS application

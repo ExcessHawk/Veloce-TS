@@ -4,7 +4,7 @@
  * Defines `type` URIs, per-status titles, the `instance` value derived from the request, and the legacy format.
  */
 
-import type { Context } from '../types';
+import type { Context } from '../types/index.js';
 
 /** Media type oficial para cuerpos Problem Details (RFC 9457). */
 export const PROBLEM_JSON_MEDIA_TYPE = 'application/problem+json';

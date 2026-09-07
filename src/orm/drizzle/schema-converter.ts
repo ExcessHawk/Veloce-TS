@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DrizzleTable, DrizzleColumn, DrizzleTableMetadata, DrizzleColumnMetadata } from './types';
+import { DrizzleTable, DrizzleColumn, DrizzleTableMetadata, DrizzleColumnMetadata } from './types.js';
 
 /**
  * Converts Drizzle schemas to Zod schemas for validation

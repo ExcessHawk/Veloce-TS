@@ -42,8 +42,7 @@ async function verifyExportsFilesExist(packageJson: any): Promise<void> {
       continue;
     }
 
-    const conditions = typeof target === 'string' ? { default: target } : (target as Record<string, string>);
-    for (const [condition, relativePath] of Object.entries(conditions)) {
+    for (const [condition, relativePath] of flattenConditions(target)) {
       checked++;
       const abs = join(process.cwd(), relativePath);
       if (!existsSync(abs)) {
@@ -63,13 +62,42 @@ async function verifyExportsFilesExist(packageJson: any): Promise<void> {
 }
 
 /**
+ * Flatten an exports target into `[conditionPath, file]` pairs.
+ *
+ * Conditions nest: each of `import`/`require` carries its own `types` so that a
+ * `require()` consumer is handed CommonJS declarations rather than the ESM tree.
+ * A flat walk would hand `join()` an object and blow up.
+ */
+function flattenConditions(target: unknown, prefix = ''): Array<[string, string]> {
+  if (typeof target === 'string') {
+    return [[prefix || 'default', target]];
+  }
+  if (target && typeof target === 'object') {
+    return Object.entries(target as Record<string, unknown>).flatMap(([condition, value]) =>
+      flattenConditions(value, prefix ? `${prefix}.${condition}` : condition)
+    );
+  }
+  return [];
+}
+
+/** The declaration file an ESM consumer resolves for a given exports target. */
+function findEsmTypes(target: unknown): string | undefined {
+  if (typeof target === 'string') return target;
+  if (!target || typeof target !== 'object') return undefined;
+
+  const entry = target as Record<string, unknown>;
+  if (typeof entry.types === 'string') return entry.types;
+  return findEsmTypes(entry.import ?? entry.default);
+}
+
+/**
  * For a glob subpath like "./adapters/*", derive the concrete basenames from
  * the matching src/ files (base.ts, hono.ts, express.ts, ...) and verify the
  * glob pattern in each condition expands to a real file for each of them.
  */
 async function verifyGlobExport(
   subpath: string,
-  conditions: Record<string, string>,
+  conditions: unknown,
   missing: string[]
 ): Promise<void> {
   // "./adapters/*" -> src dir "adapters"
@@ -85,7 +113,7 @@ async function verifyGlobExport(
     return;
   }
 
-  for (const [condition, patternPath] of Object.entries(conditions)) {
+  for (const [condition, patternPath] of flattenConditions(conditions)) {
     for (const basename of basenames) {
       const concretePath = patternPath.replace('*', basename);
       const abs = join(process.cwd(), concretePath);
@@ -94,6 +122,62 @@ async function verifyGlobExport(
       }
     }
   }
+}
+
+// ── declaration/runtime module-kind agreement ────────────────────────────────
+
+/**
+ * The declarations a condition serves must describe the same module system the
+ * runtime files use.
+ *
+ * TypeScript infers a `.d.ts` file's module kind from the nearest package.json.
+ * The root declares `"type": "module"`, so a single shared declaration tree
+ * reads as ESM everywhere — and a `require()` consumer on `moduleResolution:
+ * node16` was told the package was ESM (TS1479) even though `require` resolves
+ * to `dist/cjs`, which works fine at runtime. Types claiming one module system
+ * while the runtime hands you another is the whole "masquerading" class of bug.
+ */
+async function verifyModuleKindMatchesRuntime(packageJson: any): Promise<void> {
+  console.log('\n✅ Verifying declarations match the runtime module system...');
+
+  const exportsMap = packageJson.exports as Record<string, any>;
+  const problems: string[] = [];
+
+  for (const [subpath, target] of Object.entries(exportsMap)) {
+    if (subpath === './package.json' || typeof target === 'string') continue;
+
+    for (const condition of ['import', 'require'] as const) {
+      const entry = (target as Record<string, any>)[condition];
+      if (!entry || typeof entry === 'string') continue;
+
+      const typesPath: string | undefined = entry.types;
+      if (!typesPath) {
+        problems.push(`"${subpath}".${condition} has no "types"`);
+        continue;
+      }
+
+      // dist/types -> ESM (inherits the root "type": "module")
+      // dist/types-cjs -> CommonJS (carries its own marker)
+      const declaresCjs = typesPath.includes('/types-cjs/');
+      const wantsCjs = condition === 'require';
+      if (declaresCjs !== wantsCjs) {
+        problems.push(
+          `"${subpath}".${condition} -> ${typesPath} describes ` +
+          `${declaresCjs ? 'CommonJS' : 'ESM'} but the condition serves ` +
+          `${wantsCjs ? 'CommonJS' : 'ESM'}`
+        );
+      }
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `${problems.length} exports condition(s) serve mismatched declarations:\n  ` +
+        problems.join('\n  ')
+    );
+  }
+
+  console.log('   ✓ Every import/require condition serves matching declarations');
 }
 
 // ── consumer type-check ──────────────────────────────────────────────────────
@@ -120,8 +204,10 @@ async function verifyConsumerTypecheck(packageJson: any): Promise<void> {
 
     for (const [subpath, target] of Object.entries(exportsMap)) {
       if (subpath === './package.json' || subpath.includes('*')) continue;
-      const conditions = typeof target === 'string' ? { types: target } : target;
-      const typesPath: string | undefined = conditions.types;
+      // `types` now lives inside each condition (import/require), so pick the
+      // ESM one; a flat `target.types` lookup silently matched nothing and
+      // quietly shrank this check from 15 entrypoints to 3.
+      const typesPath = findEsmTypes(target);
       if (!typesPath) continue;
 
       // '../dist/types/index' style relative import from .package-test-tmp/consumer.ts
@@ -294,6 +380,8 @@ async function testPackage() {
 
     // A real consumer file must type-check cleanly against dist/types.
     await verifyConsumerTypecheck(packageJson);
+
+    await verifyModuleKindMatchesRuntime(packageJson);
 
     console.log('\n🎉 Package structure validation complete!');
     console.log('\n✅ Package can be packed successfully');

@@ -22,7 +22,7 @@
  * ```
  */
 
-import type { VeloceTS } from '../core/application';
+import type { VeloceTS } from '../core/application.js';
 
 /** Default injection token for a TypeORM DataSource registered with `registerTypeORM()`. */
 export const TYPEORM_TOKEN = Symbol('veloce:typeorm');

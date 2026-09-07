@@ -1,5 +1,5 @@
-import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager';
-import { PrismaClientLike } from './types';
+import { BaseTransactionManager, TransactionContext, TransactionMetadata } from '../transaction-manager.js';
+import { PrismaClientLike } from './types.js';
 
 /**
  * Prisma-specific transaction manager

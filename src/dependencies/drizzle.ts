@@ -32,8 +32,8 @@
  * ```
  */
 
-import type { VeloceTS } from '../core/application';
-import { MetadataRegistry } from '../core/metadata';
+import type { VeloceTS } from '../core/application.js';
+import { MetadataRegistry } from '../core/metadata.js';
 
 /** Default token used when no custom name is provided. */
 export const DB_TOKEN = Symbol('veloce:db');

@@ -1,8 +1,8 @@
-import { Plugin } from '../core/plugin';
-import { VeloceTS } from '../core/application';
-import { transactionMiddleware } from './transaction-interceptor';
-import { globalTransactionEventManager, TransactionLoggingListener, TransactionMetricsListener } from './transaction-events';
-import { setGlobalTransactionManager, getGlobalTransactionManager, InMemoryTransactionManager } from './transaction-manager';
+import { Plugin } from '../core/plugin.js';
+import { VeloceTS } from '../core/application.js';
+import { transactionMiddleware } from './transaction-interceptor.js';
+import { globalTransactionEventManager, TransactionLoggingListener, TransactionMetricsListener } from './transaction-events.js';
+import { setGlobalTransactionManager, getGlobalTransactionManager, InMemoryTransactionManager } from './transaction-manager.js';
 
 /**
  * Transaction plugin configuration

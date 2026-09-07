@@ -1,6 +1,6 @@
 {
   "name": "veloce-ts",
-  "version": "3.1.0",
+  "version": "3.1.1",
   "description": "A modern, fast web framework for TypeScript with authentication, RBAC, GraphQL, WebSockets, and response caching",
   "type": "module",
   "main": "./dist/cjs/src/index.js",
@@ -12,70 +12,135 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./dist/esm/src/index.js",
-      "require": "./dist/cjs/src/index.js",
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/src/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/index.d.ts",
+        "default": "./dist/cjs/src/index.js"
+      },
       "default": "./dist/esm/src/index.js"
     },
     "./validation": {
-      "types": "./dist/types/validation/index.d.ts",
-      "import": "./dist/esm/src/validation/index.js",
-      "require": "./dist/cjs/src/validation/index.js"
+      "import": {
+        "types": "./dist/types/validation/index.d.ts",
+        "default": "./dist/esm/src/validation/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/validation/index.d.ts",
+        "default": "./dist/cjs/src/validation/index.js"
+      }
     },
     "./middleware": {
-      "types": "./dist/types/middleware/index.d.ts",
-      "import": "./dist/esm/src/middleware/index.js",
-      "require": "./dist/cjs/src/middleware/index.js"
+      "import": {
+        "types": "./dist/types/middleware/index.d.ts",
+        "default": "./dist/esm/src/middleware/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/middleware/index.d.ts",
+        "default": "./dist/cjs/src/middleware/index.js"
+      }
     },
     "./testing": {
-      "types": "./dist/types/testing/index.d.ts",
-      "import": "./dist/esm/src/testing/index.js",
-      "require": "./dist/cjs/src/testing/index.js"
+      "import": {
+        "types": "./dist/types/testing/index.d.ts",
+        "default": "./dist/esm/src/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/testing/index.d.ts",
+        "default": "./dist/cjs/src/testing/index.js"
+      }
     },
     "./errors": {
-      "types": "./dist/types/errors/index.d.ts",
-      "import": "./dist/esm/src/errors/index.js",
-      "require": "./dist/cjs/src/errors/index.js"
+      "import": {
+        "types": "./dist/types/errors/index.d.ts",
+        "default": "./dist/esm/src/errors/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/errors/index.d.ts",
+        "default": "./dist/cjs/src/errors/index.js"
+      }
     },
     "./types": {
-      "types": "./dist/types/types/index.d.ts",
-      "import": "./dist/esm/src/types/index.js",
-      "require": "./dist/cjs/src/types/index.js"
+      "import": {
+        "types": "./dist/types/types/index.d.ts",
+        "default": "./dist/esm/src/types/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/types/index.d.ts",
+        "default": "./dist/cjs/src/types/index.js"
+      }
     },
     "./docs": {
-      "types": "./dist/types/docs/index.d.ts",
-      "import": "./dist/esm/src/docs/index.js",
-      "require": "./dist/cjs/src/docs/index.js"
+      "import": {
+        "types": "./dist/types/docs/index.d.ts",
+        "default": "./dist/esm/src/docs/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/docs/index.d.ts",
+        "default": "./dist/cjs/src/docs/index.js"
+      }
     },
     "./graphql": {
-      "types": "./dist/types/graphql/index.d.ts",
-      "import": "./dist/esm/src/graphql/index.js",
-      "require": "./dist/cjs/src/graphql/index.js"
+      "import": {
+        "types": "./dist/types/graphql/index.d.ts",
+        "default": "./dist/esm/src/graphql/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/graphql/index.d.ts",
+        "default": "./dist/cjs/src/graphql/index.js"
+      }
     },
     "./websocket": {
-      "types": "./dist/types/websocket/index.d.ts",
-      "import": "./dist/esm/src/websocket/index.js",
-      "require": "./dist/cjs/src/websocket/index.js"
+      "import": {
+        "types": "./dist/types/websocket/index.d.ts",
+        "default": "./dist/esm/src/websocket/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/websocket/index.d.ts",
+        "default": "./dist/cjs/src/websocket/index.js"
+      }
     },
     "./plugins": {
-      "types": "./dist/types/plugins/index.d.ts",
-      "import": "./dist/esm/src/plugins/index.js",
-      "require": "./dist/cjs/src/plugins/index.js"
+      "import": {
+        "types": "./dist/types/plugins/index.d.ts",
+        "default": "./dist/esm/src/plugins/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/plugins/index.d.ts",
+        "default": "./dist/cjs/src/plugins/index.js"
+      }
     },
     "./cli": {
-      "types": "./dist/types/cli/index.d.ts",
-      "import": "./dist/esm/src/cli/index.js",
-      "require": "./dist/cjs/src/cli/index.js"
+      "import": {
+        "types": "./dist/types/cli/index.d.ts",
+        "default": "./dist/esm/src/cli/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/cli/index.d.ts",
+        "default": "./dist/cjs/src/cli/index.js"
+      }
     },
     "./auth": {
-      "types": "./dist/types/auth/index.d.ts",
-      "import": "./dist/esm/src/auth/index.js",
-      "require": "./dist/cjs/src/auth/index.js"
+      "import": {
+        "types": "./dist/types/auth/index.d.ts",
+        "default": "./dist/esm/src/auth/index.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/auth/index.d.ts",
+        "default": "./dist/cjs/src/auth/index.js"
+      }
     },
     "./adapters/*": {
-      "types": "./dist/types/adapters/*.d.ts",
-      "import": "./dist/esm/src/adapters/*.js",
-      "require": "./dist/cjs/src/adapters/*.js"
+      "import": {
+        "types": "./dist/types/adapters/*.d.ts",
+        "default": "./dist/esm/src/adapters/*.js"
+      },
+      "require": {
+        "types": "./dist/types-cjs/adapters/*.d.ts",
+        "default": "./dist/cjs/src/adapters/*.js"
+      }
     },
     "./package.json": "./package.json"
   },
@@ -153,6 +218,7 @@
     "dist/esm",
     "dist/cjs",
     "dist/types",
+    "dist/types-cjs",
     "bin",
     "README.md",
     "LICENSE",

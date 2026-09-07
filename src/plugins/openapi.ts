@@ -1,8 +1,8 @@
 // OpenAPI Plugin - Generates OpenAPI 3.1 specification and serves Swagger UI
-import type { Plugin } from '../core/plugin';
-import type { VeloceTS } from '../core/application';
-import type { OpenAPIOptions } from '../types';
-import { OpenAPIGenerator } from '../docs';
+import type { Plugin } from '../core/plugin.js';
+import type { VeloceTS } from '../core/application.js';
+import type { OpenAPIOptions } from '../types/index.js';
+import { OpenAPIGenerator } from '../docs/index.js';
 
 /**
  * Where Swagger UI's static assets (CSS + JS bundle) are loaded from.
