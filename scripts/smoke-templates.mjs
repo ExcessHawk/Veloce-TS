@@ -16,9 +16,8 @@
  *   3. installs, type-checks and builds it,
  *   4. boots the built output and asserts it answers a real request.
  *
- * Step 4 is skipped for templates that need a WebSocket upgrade: `WebSocketPlugin`
- * throws on Node by design (Bun/Deno only). Those are still built, so a broken
- * template is caught even where it cannot run.
+ * All four templates boot as of 3.2.0. The two WebSocket ones used to be built
+ * but never started, because `WebSocketPlugin` threw on Node by design.
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -29,12 +28,15 @@ import { fileURLToPath } from 'node:url';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(REPO, 'bin', 'veloce.mjs');
 
-/** `boots: false` — needs a WebSocket upgrade, which Node does not support yet. */
+// Every template boots under Node as of 3.2.0 — WebSocket upgrades used to be
+// Bun/Deno only, so the two WebSocket templates were built but never started.
 const TEMPLATES = [
   { name: 'rest', boots: true, path: '/users' },
   { name: 'graphql', boots: true, path: '/graphql' },
-  { name: 'websocket', boots: false },
-  { name: 'fullstack', boots: false },
+  // No HTTP route of its own; the upgrade endpoint answers 426 to a plain GET,
+  // which is proof enough that the plugin installed and the route is live.
+  { name: 'websocket', boots: true, path: '/ws' },
+  { name: 'fullstack', boots: true, path: '/users' },
 ];
 
 const BOOT_TIMEOUT_MS = 30_000;
@@ -141,11 +143,6 @@ async function checkTemplate(template, workdir, tarball) {
   error = run(process.execPath, [CLI, 'build', '--runtime', 'node'], dir, 'build');
   if (error) return error;
   console.log('  ok   - builds under Node');
-
-  if (!template.boots) {
-    console.log('  skip - boot (needs a WebSocket upgrade; Bun/Deno only)');
-    return null;
-  }
 
   const bootError = await boots(dir, template.path);
   if (bootError) return `boot failed\n${bootError}`;

@@ -65,6 +65,9 @@ async function build(options: BuildOptions = {}) {
     'typeorm',
     'prisma',
     '@prisma/client',
+    '@hono/node-server',
+    '@hono/node-ws',
+    'ws',
     'graphql',
     'express',
     // Node builtins referenced via bare specifiers

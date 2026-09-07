@@ -224,7 +224,13 @@ export class HonoAdapter implements Adapter {
           server.close(() => resolve());
         });
       },
-      ...server
+      ...server,
+      // The spread above copies own enumerable properties, which drops the
+      // http.Server prototype — so anything needing the real server object
+      // (notably @hono/node-ws's injectWebSocket) cannot use the spread copy.
+      // Keep an untouched reference. Assigned after the spread so a stray
+      // `raw` property on the server cannot shadow it.
+      raw: server,
     };
   }
 }

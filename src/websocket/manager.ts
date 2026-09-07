@@ -2,7 +2,7 @@
 import type { WebSocketMetadata } from '../types/index.js';
 import type { DIContainer } from '../dependencies/container.js';
 import type { WebSocketPluginConfig } from './plugin.js';
-import { WebSocketConnection } from './connection.js';
+import { WebSocketConnection, type WebSocketLike } from './connection.js';
 import { getLogger } from '../logging/logger.js';
 
 /** Default heartbeat ping interval (30 seconds). */
@@ -76,11 +76,11 @@ export class WebSocketManager {
    * @param metadata - WebSocket route metadata
    * @returns The created WebSocketConnection
    */
-  handleConnection(ws: WebSocket, metadata: WebSocketMetadata): WebSocketConnection {
+  handleConnection(ws: WebSocketLike, metadata: WebSocketMetadata): WebSocketConnection {
     const connection = this.openConnection(ws, metadata);
 
     // Set up message handler
-    ws.addEventListener('message', async (event) => {
+    ws.addEventListener('message', async (event: MessageEvent) => {
       await this.handleMessage(event, connection, metadata);
     });
 
@@ -90,7 +90,7 @@ export class WebSocketManager {
     });
 
     // Set up error handler
-    ws.addEventListener('error', (error) => {
+    ws.addEventListener('error', (error: unknown) => {
       getLogger().error(
         'WebSocket transport error',
         error instanceof Error ? error : new Error(String(error)),
@@ -107,7 +107,7 @@ export class WebSocketManager {
    * websocket handlers, Deno's `socket.onmessage`/`onclose` assignments).
    * Starts heartbeat/idle timers and runs the onConnect handler.
    */
-  openConnection(ws: WebSocket, metadata: WebSocketMetadata): WebSocketConnection {
+  openConnection(ws: WebSocketLike, metadata: WebSocketMetadata): WebSocketConnection {
     const connection = new WebSocketConnection(ws, this);
     this.connections.set(connection.id, connection);
 

@@ -2,15 +2,38 @@
 import type { WebSocketManager } from './manager.js';
 
 /**
+ * `readyState` value for an open socket (RFC 6455 / WHATWG).
+ *
+ * Hardcoded rather than read from a global `WebSocket.OPEN`: the global only
+ * became stable in Node 22, so on Node 20 — which `engines` still supports —
+ * touching it throws a ReferenceError. The numeric values are fixed by the
+ * standard and are identical across Bun, Deno, `ws` and browsers.
+ */
+const OPEN = 1;
+
+/**
+ * The subset of a socket this wrapper actually uses. Deliberately structural so
+ * it fits a Bun socket, a Deno one, and the `WSContext` that `@hono/node-ws`
+ * hands us on Node.
+ */
+export interface WebSocketLike {
+  readyState: number;
+  send(data: string | ArrayBufferLike | ArrayBufferView): void;
+  close(code?: number, reason?: string): void;
+  ping?(): void;
+  [key: string]: any;
+}
+
+/**
  * WebSocketConnection wraps a native WebSocket with helper methods
  * for sending messages, broadcasting, and managing rooms
  */
 export class WebSocketConnection {
   public readonly id: string;
-  private _ws: WebSocket | null;
+  private _ws: WebSocketLike | null;
 
   constructor(
-    ws: WebSocket,
+    ws: WebSocketLike,
     private manager: WebSocketManager,
     id?: string
   ) {
@@ -23,7 +46,7 @@ export class WebSocketConnection {
    * @param data - Data to send (will be JSON stringified)
    */
   send(data: any): void {
-    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+    if (!this._ws || this._ws.readyState !== OPEN) {
       return;
     }
 
@@ -62,7 +85,7 @@ export class WebSocketConnection {
    * @param reason - Optional close reason
    */
   close(code?: number, reason?: string): void {
-    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+    if (this._ws && this._ws.readyState === OPEN) {
       this._ws.close(code, reason);
     }
   }
@@ -70,7 +93,7 @@ export class WebSocketConnection {
   /**
    * Get the native WebSocket instance
    */
-  get native(): WebSocket | null {
+  get native(): WebSocketLike | null {
     return this._ws;
   }
 
@@ -89,7 +112,7 @@ export class WebSocketConnection {
    * Check if the connection is open
    */
   get isOpen(): boolean {
-    return this._ws !== null && this._ws.readyState === WebSocket.OPEN;
+    return this._ws !== null && this._ws.readyState === OPEN;
   }
 
   /**

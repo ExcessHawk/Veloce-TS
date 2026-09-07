@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-07
+
+### Added — WebSockets work on Node
+
+`WebSocketPlugin` threw at startup on Node ("requires Bun or Deno runtime"), which made the
+`@WebSocket` / `@OnConnect` / `@OnMessage` decorators — and the `websocket` and `fullstack`
+templates — unusable there. It was the framework's number-one documented limitation.
+
+Node now upgrades through [`@hono/node-ws`](https://www.npmjs.com/package/@hono/node-ws), an
+optional peer dependency. Bun and Deno are untouched: they still upgrade natively and need no
+extra package.
+
+```bash
+npm install @hono/node-ws   # only needed on Node
+```
+
+The whole gateway surface is verified end-to-end on Node in CI (`npm run test:websocket`):
+upgrade handshake, `@OnConnect`, `@OnMessage`, rooms, `broadcast()` and `@OnDisconnect`. The
+template smoke test now boots all four templates instead of skipping the two that could not run.
+
+`authorizeUpgrade()` still runs, with one difference worth knowing: on Bun and Deno an
+unauthorized client is refused during the handshake with **401**, while `@hono/node-ws` owns the
+route and hands the socket over already open, so on Node the connection is accepted and then
+closed with **1008 Policy Violation**.
+
+### Fixed
+
+- **`WebSocketConnection` read `WebSocket.OPEN` off the global**, which only became stable in
+  Node 22 — on Node 20, which `engines` still supports, touching it threw a `ReferenceError`. It
+  now uses the numeric constant fixed by the standard.
+- The manager's socket parameters are typed structurally (`WebSocketLike`) instead of against the
+  DOM `WebSocket`, so a Bun socket, a Deno one and node-ws's `WSContext` all fit.
+
+### Added — internals
+
+- `VeloceTS.getServer()` exposes the running server, and `ServerInstance.raw` carries the
+  runtime's own object. The Node backend's returned instance is a spread copy that has lost
+  `http.Server`'s prototype, so anything needing the real server — attaching a WebSocket upgrade
+  listener, for one — has to use `raw`.
+
 ## [3.1.2] - 2026-09-07
 
 ### Changed
@@ -1183,7 +1223,8 @@ This release brings powerful performance optimization features to Veloce-TS:
 - Type safety with full TypeScript support
 - Performance optimizations with metadata compilation and schema caching
 
-[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.2...HEAD
+[Unreleased]: https://github.com/ExcessHawk/veloce-ts/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.2...v3.2.0
 [3.1.2]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.1...v3.1.2
 [3.1.1]: https://github.com/ExcessHawk/veloce-ts/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/ExcessHawk/veloce-ts/compare/v3.0.1...v3.1.0

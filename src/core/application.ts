@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
 import { MetadataRegistry } from './metadata.js';
 import { PayloadTooLargeException } from '../errors/exceptions.js';
+import type { ServerInstance } from '../adapters/base.js';
 import { DIContainer } from '../dependencies/container.js';
 import { RouterCompiler } from './router-compiler.js';
 import { ValidationEngine } from '../validation/validator.js';
@@ -679,6 +680,18 @@ export class VeloceTS {
   }
 
   /**
+   * The running server, or `null` before `listen()`.
+   *
+   * Plugins that must reach the underlying server — such as attaching a
+   * WebSocket upgrade listener on Node — should read this from `onStart()`,
+   * which runs once the server is accepting connections. `raw` carries the
+   * runtime's own server object.
+   */
+  getServer(): ServerInstance | null {
+    return this.serverInstance;
+  }
+
+  /**
    * Get a `fetch(request, env, ctx)` handler bound to this app — the export
    * shape serverless/edge runtimes expect instead of `listen()`. This is the
    * deploy path for **Cloudflare Workers** (and any other fetch-per-request
@@ -782,7 +795,7 @@ export class VeloceTS {
     this.registerShutdownSignals();
   }
 
-  private serverInstance: any = null;
+  private serverInstance: ServerInstance | null = null;
 
   /**
    * Start the server and listen on the specified port

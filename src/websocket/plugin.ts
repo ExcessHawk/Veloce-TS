@@ -2,6 +2,17 @@
 import type { Plugin } from '../core/plugin.js';
 import type { VeloceTS } from '../core/application.js';
 import { WebSocketManager } from './manager.js';
+import type { WebSocketConnection, WebSocketLike } from './connection.js';
+import { getLogger } from '../logging/logger.js';
+
+const isBunRuntime = (): boolean => typeof (globalThis as any).Bun !== 'undefined';
+const isDenoRuntime = (): boolean => typeof (globalThis as any).Deno !== 'undefined';
+
+/** The slice of `@hono/node-ws` this plugin uses. */
+interface NodeWebSocketLike {
+  upgradeWebSocket: (handler: (c: any) => Record<string, unknown>) => any;
+  injectWebSocket: (server: unknown) => void;
+}
 
 /**
  * Configuration options for {@link WebSocketPlugin}.
@@ -72,21 +83,14 @@ export class WebSocketPlugin implements Plugin {
 
   private manager: WebSocketManager;
 
+  /** Set only on Node, where upgrades go through @hono/node-ws. */
+  private nodeWs?: NodeWebSocketLike;
+
   constructor(config: WebSocketPluginConfig = {}) {
     this.manager = new WebSocketManager(config);
   }
 
   async install(app: VeloceTS): Promise<void> {
-    const isBun = typeof Bun !== 'undefined';
-    const isDeno = typeof (globalThis as any).Deno !== 'undefined';
-    if (!isBun && !isDeno) {
-      throw new Error(
-        'WebSocketPlugin requires Bun or Deno runtime. ' +
-        'Node.js WebSocket support is not yet implemented in Veloce-TS. ' +
-        'Run your app with Bun (https://bun.sh) or Deno.'
-      );
-    }
-
     const metadata = app.getMetadata();
     const websockets = metadata.getWebSockets();
     const container = app.getContainer();
@@ -95,6 +99,13 @@ export class WebSocketPlugin implements Plugin {
     // the application uses, instead of instantiating targets directly.
     this.manager.setContainer(container);
 
+    // Node has no built-in upgrade path, so it borrows @hono/node-ws. That has
+    // to be wired up before any route is registered, because the routes
+    // themselves are what the returned `upgradeWebSocket` middleware attaches to.
+    if (!isBunRuntime() && !isDenoRuntime()) {
+      await this.setupNodeWebSockets(app);
+    }
+
     for (const ws of websockets) {
       ws.instance = await container.resolve(ws.target);
       this.registerWebSocket(app, ws);
@@ -102,10 +113,62 @@ export class WebSocketPlugin implements Plugin {
   }
 
   /**
+   * Attach the WebSocket server to the running HTTP server.
+   *
+   * `@hono/node-ws` needs the real `http.Server`, which only exists once
+   * `listen()` has run — hence `onStart`, which fires after the server is
+   * accepting connections.
+   */
+  async onStart(app: VeloceTS): Promise<void> {
+    if (!this.nodeWs) return;
+
+    const server = app.getServer();
+    const raw = server?.raw ?? server;
+    if (!raw) {
+      throw new Error(
+        'WebSocketPlugin could not reach the HTTP server to attach WebSocket support. ' +
+        'This is expected when the app is served through getFetchHandler() instead of listen(); ' +
+        'WebSocket upgrades need a real server.'
+      );
+    }
+
+    this.nodeWs.injectWebSocket(raw as any);
+  }
+
+  /**
+   * Load @hono/node-ws and keep its `upgradeWebSocket` middleware for the route
+   * registration that follows.
+   */
+  private async setupNodeWebSockets(app: VeloceTS): Promise<void> {
+    let createNodeWebSocket: (init: { app: any }) => NodeWebSocketLike;
+
+    try {
+      // Specifier in a variable: the package is an optional peer, so neither tsc
+      // nor the bundler should try to resolve it at build time.
+      const specifier = '@hono/node-ws';
+      ({ createNodeWebSocket } = await import(specifier));
+    } catch (error) {
+      throw new Error(
+        'WebSocket support on Node requires the @hono/node-ws package. ' +
+        'Install it with: npm install @hono/node-ws\n' +
+        '(Bun and Deno upgrade natively and need no extra package.)',
+        { cause: error }
+      );
+    }
+
+    this.nodeWs = createNodeWebSocket({ app: app.getHono() });
+  }
+
+  /**
    * Register a WebSocket route with the application
    */
   private registerWebSocket(app: VeloceTS, metadata: any): void {
     const hono = app.getHono();
+
+    if (this.nodeWs) {
+      this.registerNodeWebSocket(hono, metadata);
+      return;
+    }
 
     // Register WebSocket upgrade endpoint
     hono.get(metadata.path, async (c) => {
@@ -137,6 +200,67 @@ export class WebSocketPlugin implements Plugin {
       // Handle WebSocket upgrade based on runtime
       return this.handleUpgrade(c, metadata);
     });
+  }
+
+  /**
+   * Register a gateway on Node through @hono/node-ws.
+   *
+   * Unlike Bun and Deno — where the handler decides at request time whether to
+   * upgrade — node-ws supplies a middleware that owns the route, so the
+   * `authorizeUpgrade` check has to run inside its handler factory. Returning
+   * no event handlers is how a rejected connection is expressed there.
+   */
+  private registerNodeWebSocket(hono: any, metadata: any): void {
+    const manager = this.manager;
+
+    hono.get(
+      metadata.path,
+      this.nodeWs!.upgradeWebSocket((c: any) => {
+        let connection: WebSocketConnection | undefined;
+        let authorized = true;
+
+        return {
+          async onOpen(_evt: unknown, ws: WebSocketLike) {
+            const instance = metadata.instance;
+            if (instance && typeof instance.authorizeUpgrade === 'function') {
+              try {
+                authorized = Boolean(await instance.authorizeUpgrade(c));
+              } catch {
+                authorized = false;
+              }
+              if (!authorized) {
+                // 1008 = Policy Violation. The handshake already completed by
+                // the time node-ws hands us the socket, so an unauthorized
+                // client is closed here rather than refused with a 401.
+                ws.close(1008, 'Unauthorized');
+                return;
+              }
+            }
+            connection = manager.openConnection(ws, metadata);
+          },
+
+          async onMessage(evt: { data: unknown }, _ws: WebSocketLike) {
+            if (!authorized || !connection) return;
+            await manager.handleMessage(evt as MessageEvent, connection, metadata);
+          },
+
+          onClose() {
+            if (connection) {
+              manager.handleDisconnect(connection, metadata);
+              connection = undefined;
+            }
+          },
+
+          onError(error: unknown) {
+            getLogger().error(
+              'WebSocket transport error',
+              error instanceof Error ? error : new Error(String(error)),
+              { path: metadata.path, connectionId: connection?.id }
+            );
+          },
+        };
+      })
+    );
   }
 
   /**

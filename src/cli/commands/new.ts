@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import { mkdir, writeFile } from 'fs/promises';
-import { bunAvailable } from './runtime.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -160,14 +159,6 @@ async function createProject(name: string, options: ProjectOptions): Promise<voi
     console.log('   http://localhost:3000');
     console.log('   http://localhost:3000/docs (API Documentation)');
 
-    // WebSocket upgrades are Bun/Deno only. Say so now rather than letting the
-    // app throw on first start.
-    const usesWebSockets = options.template === 'websocket' || options.template === 'fullstack';
-    if (usesWebSockets && !bunAvailable()) {
-      console.log('\n⚠️  This template uses WebSockets, which currently require Bun or Deno.');
-      console.log('   Under Node the app will throw at startup when WebSocketPlugin installs.');
-      console.log('   Install Bun (https://bun.sh), or drop WebSocketPlugin from src/index.ts.');
-    }
   } catch (error) {
     console.error('❌ Error creating project:', error);
 
@@ -210,6 +201,8 @@ async function generatePackageJson(projectPath: string, name: string): Promise<v
       'veloce-ts': `^${latestVersion}`,
       // Required for app.listen() under Node; Bun and Deno serve natively.
       '@hono/node-server': '^1.19.0',
+      // WebSocket upgrades on Node. Unused under Bun/Deno, which upgrade natively.
+      '@hono/node-ws': '^1.3.0',
       hono: '^4.0.0',
       'reflect-metadata': '^0.2.0',
       zod: '^3.22.0',

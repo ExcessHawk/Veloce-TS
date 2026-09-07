@@ -153,6 +153,9 @@ jobs:
       - name: Scaffold, build and boot every template under Node
         run: node scripts/smoke-templates.mjs
 
+      - name: WebSocket gateway works under Node
+        run: node scripts/smoke-websocket-node.mjs
+
   # Best-effort Deno smoke test for the ESM build. Not a supported runtime
   # yet (see continue-on-error below and the inline notes), but this gives
   # early signal without blocking merges on it.

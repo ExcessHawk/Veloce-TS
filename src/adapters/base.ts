@@ -10,6 +10,14 @@
 export interface ServerInstance {
   port: number;
   close(): Promise<void> | void;
+  /**
+   * The runtime's own server object, untouched.
+   *
+   * Present on the Node backend, where the returned instance is a plain copy
+   * that has lost `http.Server`'s prototype — anything that needs the real
+   * object (attaching a WebSocket upgrade listener, for one) must use this.
+   */
+  raw?: unknown;
   [key: string]: any;
 }
 
