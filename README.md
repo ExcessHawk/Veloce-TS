@@ -541,10 +541,10 @@ app.usePlugin(new GraphQLPlugin({
 | **Deno** | ✅ Supported | Use `npm:veloce-ts` |
 | **Cloudflare Workers** | ✅ Supported | Deploy via `getFetchHandler()`, not `listen()`. Requires the `nodejs_compat` flag |
 
-> **WebSockets:** HTTP → WS upgrade is supported on **Bun** and **Deno**. On **Node.js** the built-in WebSocket plugin still returns **501** until a Node upgrade path lands (see **Current limitations** below).
+> **WebSockets:** HTTP → WS upgrade works on **Bun**, **Deno** and — since **v3.2.0** — **Node.js**, where it goes through the optional `@hono/node-ws` peer dependency and the app must be served with `app.listen()`. The decorators and `WebSocketConnection` API are identical on all three.
 
 ```typescript
-// Core HTTP routing works on all runtimes; WebSocket upgrades — check Bun/Deno vs Node.
+// Core HTTP routing and WebSocket upgrades work on all supported runtimes.
 import { Veloce } from 'veloce-ts';
 const app = new Veloce();
 app.listen(3000);
@@ -572,9 +572,9 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 
 | Area | Limitation |
 |------|------------|
-| **WebSockets on Node.js** | `WebSocketPlugin` throws at startup on Node.js with a clear error message directing you to Bun/Deno. WebSocket upgrades are supported on **Bun** and **Deno** only; Node.js support requires a `ws`/HTTP upgrade bridge not yet implemented. |
-| **GraphQL** | Resolver execution and typed object/input generation now work end-to-end (fixed after v1.2.0). Subscriptions are generated in the SDL but have no execution transport yet — implementing one requires a WebSocket bridge. |
+| **GraphQL schema stitching** | Queries, mutations and — as of **v3.4.0** — subscriptions all execute. Composing schemas across services is not hardened; do it at the gateway rather than relying on the plugin. |
 | **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
+| **Test coverage** | Line coverage over `src/` is **~57%**, gated in CI at 55%. The thinnest areas are the cache and request-context middleware, the logging middleware and health plugin, and the OAuth/permission helpers. Treat those with more caution than the core routing and validation surface. |
 | **API stability** | Stable public API since v1.0.0 (semver). Check the [CHANGELOG](CHANGELOG.md) for what changed between releases. |
 
 ## 🔭 Planned updates (roadmap)
@@ -582,8 +582,10 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 Directional priorities—not a release calendar. Items may ship in a different order.
 
 1. **ORM choice** — Make **Drizzle, Prisma, and TypeORM** practical first-class options: clear patterns, docs, and (where it helps) small helpers so teams can **pick one ORM** without fighting the framework.
-2. **WebSockets on Node.js** — Remove the Node **501** path by integrating a real upgrade path (e.g. `ws` or runtime-appropriate APIs) so the same decorator API works on Node as on Bun/Deno.
-3. **GraphQL** — Improve stability and docs **after** REST, caching, WebSockets-on-Node, and ORM stories are in better shape (lower priority than the items above).
+2. **GraphQL schema stitching** — Subscriptions execute as of v3.4.0; composing schemas across services is the part still to harden.
+3. **Raise the coverage floor** — The CI gate sits at 55% to block regressions; the goal is to lift it as the thin areas above get tested.
+
+**Completed in v3.2.0–v3.5.0:** WebSocket upgrades on **Node** (via the optional `@hono/node-ws` peer), **GraphQL subscriptions** over `graphql-transport-ws` on Bun/Deno/Node with a built-in `PubSub`, the `@On('event')` decorator, CLI parity with Node (`--runtime auto|bun|node`, `--install`, `--git`, `generate gateway|listener`), and a published package cut from 1.5 MB to 0.39 MB.
 
 **Completed in v1.2.0:** CLI code generation (`veloce generate controller|service|module|resolver|dto|middleware|plugin`), graceful shutdown, exception filters, interceptors, streaming/SSE responses, event bus, OpenAPI 3.1.
 

@@ -806,6 +806,10 @@ const app = new Veloce({
   },
 });
 
+// The port comes from the environment so "veloce dev --port" and a PORT in
+// .env both work; 3000 is only the fallback.
+const port = Number(process.env.PORT ?? 3000);
+
 // Enable OpenAPI documentation — serves /openapi.json and /docs automatically
 app.usePlugin(new OpenAPIPlugin({
   path: '/openapi.json',
@@ -821,10 +825,10 @@ async function startServer() {
 
     // Awaited on purpose: listen() is async on Node, and without the await a
     // failure to bind becomes an unhandled rejection instead of the error below.
-    await app.listen(3000, () => {
-      console.log('🚀 Server running on http://localhost:3000');
-      console.log('📚 API Docs available at http://localhost:3000/docs');
-      console.log('📄 OpenAPI Spec at http://localhost:3000/openapi.json');
+    await app.listen(port, () => {
+      console.log(\`🚀 Server running on http://localhost:\${port}\`);
+      console.log(\`📚 API Docs available at http://localhost:\${port}/docs\`);
+      console.log(\`📄 OpenAPI Spec at http://localhost:\${port}/openapi.json\`);
     });
   } catch (error) {
     console.error('❌ Error starting server:', error);
@@ -849,6 +853,10 @@ import { UserResolver } from './resolvers/user.resolver.js';
 
 const app = new Veloce({ title: 'My GraphQL API', version: '1.0.0' });
 
+// The port comes from the environment so "veloce dev --port" and a PORT in
+// .env both work; 3000 is only the fallback.
+const port = Number(process.env.PORT ?? 3000);
+
 app.usePlugin(new GraphQLPlugin({
   resolvers: [UserResolver],
   playground: true,
@@ -865,10 +873,10 @@ async function startServer() {
 
     // Awaited on purpose: listen() is async on Node, and the subscription
     // endpoint attaches to the running server once it is up.
-    await app.listen(3000, () => {
-      console.log('🚀 Server running on http://localhost:3000');
-      console.log('🔮 GraphQL playground at http://localhost:3000/graphql/playground');
-      console.log('📡 Subscriptions at ws://localhost:3000/graphql');
+    await app.listen(port, () => {
+      console.log(\`🚀 Server running on http://localhost:\${port}\`);
+      console.log(\`🔮 GraphQL playground at http://localhost:\${port}/graphql/playground\`);
+      console.log(\`📡 Subscriptions at ws://localhost:\${port}/graphql\`);
     });
   } catch (error) {
     console.error('❌ Error starting server:', error);
@@ -897,6 +905,10 @@ const app = new Veloce({
   version: '1.0.0',
 });
 
+// The port comes from the environment so "veloce dev --port" and a PORT in
+// .env both work; 3000 is only the fallback.
+const port = Number(process.env.PORT ?? 3000);
+
 // Register the gateway, then enable the plugin. Gateways go through
 // app.include() like controllers do — WebSocketPlugin takes connection options
 // (heartbeat, idle timeout, max message size), not a list of handlers.
@@ -909,9 +921,9 @@ async function startServer() {
 
     // Awaited on purpose: on Node the WebSocket handler attaches to the real
     // http.Server, which only exists once listen() has resolved.
-    await app.listen(3000, () => {
-      console.log('🚀 Server running on http://localhost:3000');
-      console.log('🔌 WebSocket endpoint at ws://localhost:3000/ws/chat');
+    await app.listen(port, () => {
+      console.log(\`🚀 Server running on http://localhost:\${port}\`);
+      console.log(\`🔌 WebSocket endpoint at ws://localhost:\${port}/ws/chat\`);
     });
   } catch (error) {
     console.error('❌ Error starting server:', error);
@@ -952,6 +964,10 @@ const app = new Veloce({
   },
 });
 
+// The port comes from the environment so "veloce dev --port" and a PORT in
+// .env both work; 3000 is only the fallback.
+const port = Number(process.env.PORT ?? 3000);
+
 // OpenAPI docs — serves /openapi.json and /docs
 app.usePlugin(new OpenAPIPlugin({
   path: '/openapi.json',
@@ -980,13 +996,13 @@ async function startServer() {
 
     // Awaited on purpose: on Node both WebSocket surfaces attach to the real
     // http.Server, which only exists once listen() has resolved.
-    await app.listen(3000, () => {
-      console.log('🚀 Server running on http://localhost:3000');
-      console.log('📚 REST API docs  → http://localhost:3000/docs');
-      console.log('📄 OpenAPI spec   → http://localhost:3000/openapi.json');
-      console.log('🔮 GraphQL        → http://localhost:3000/graphql');
-      console.log('📡 Subscriptions  → ws://localhost:3000/graphql');
-      console.log('🔌 WebSocket      → ws://localhost:3000/ws/chat');
+    await app.listen(port, () => {
+      console.log(\`🚀 Server running on http://localhost:\${port}\`);
+      console.log(\`📚 REST API docs  → http://localhost:\${port}/docs\`);
+      console.log(\`📄 OpenAPI spec   → http://localhost:\${port}/openapi.json\`);
+      console.log(\`🔮 GraphQL        → http://localhost:\${port}/graphql\`);
+      console.log(\`📡 Subscriptions  → ws://localhost:\${port}/graphql\`);
+      console.log(\`🔌 WebSocket      → ws://localhost:\${port}/ws/chat\`);
     });
   } catch (error) {
     console.error('❌ Error starting server:', error);

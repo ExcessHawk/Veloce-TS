@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.1] - 2026-09-07
+
+### Fixed — documentation that did not match the code
+
+An audit of every documented identifier against the built package, and of every
+documented default against source.
+
+- **The published README described two limitations that no longer existed.** It
+  said `WebSocketPlugin` throws at startup on Node and returns 501, fixed in
+  3.2.0, and that GraphQL subscriptions have no execution transport, fixed in
+  3.4.0. That is the npm landing page, so it was the most-read stale text in the
+  project. The roadmap below it planned both as future work.
+- **`app.includeRouter(router: Router)` does not exist**, and neither does a
+  `Router` class. Removed from the API reference.
+- **`@Query()` was documented as the GraphQL query decorator.** `Query` at the
+  package root is the **HTTP query-parameter** decorator — a resolver method
+  decorated with it never becomes a GraphQL field. The reference now says
+  `@GQLQuery`, with a note about why the short name is not aliased (unlike
+  `Mutation` and `Subscription`, which are).
+- **The GraphQL guide contradicted itself.** Its intro and a caution block still
+  said subscriptions are SDL-only, on the same page as the section describing
+  the transport that runs them.
+- **`compile()` and `listen()` were documented as synchronous.** Both are async.
+- **`VeloceTSConfig` was missing `eventBus`** (added in 3.3.0).
+- **The "thinnest test coverage" list named the wrong files.** Compression
+  middleware sits at 93.5% and the WebSocket manager at 29.6%; the actual
+  thinnest are the cache and request-context middleware (~3%). Replaced with
+  measured figures.
+- **`ExceptionFilter` was imported as a value** in the exception-filters guide;
+  it is a type-only export.
+
+### Fixed — generated projects ignored PORT
+
+`veloce dev --port` sets `PORT` in the child environment and the `.env.example`
+lists it, but the templates called `app.listen(3000)` with a literal — so both
+were decoration. They now read `Number(process.env.PORT ?? 3000)` and print the
+port they actually bound.
+
 ## [3.5.0] - 2026-09-07
 
 ### Fixed — mixing import specifiers silently broke decorators
