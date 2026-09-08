@@ -10,6 +10,7 @@
  * Run against the built output: `node scripts/smoke-websocket-node.mjs`.
  */
 import { WebSocket } from 'ws';
+import { createServer } from 'node:net';
 
 // Everything comes from the built entrypoint — the bundle does not emit a file
 // per source module, and this is the surface a consumer actually imports.
@@ -57,7 +58,32 @@ OnConnect()(ChatGateway.prototype, 'onConnect');
 OnMessage()(ChatGateway.prototype, 'onMessage');
 OnDisconnect()(ChatGateway.prototype, 'onDisconnect');
 
+/**
+ * Refuse to run when something already holds the port.
+ *
+ * These scripts bind a literal port, so a stray server from an earlier run — or
+ * a second copy of this script — answers the probes and the test reports on the
+ * wrong process. That surfaces as an unexplained "timed out waiting for a
+ * frame", which says nothing about the actual cause.
+ */
+async function assertPortFree(port) {
+  const free = await new Promise((resolve) => {
+    const probe = createServer();
+    probe.once('error', () => resolve(false));
+    probe.once('listening', () => probe.close(() => resolve(true)));
+    probe.listen(port, '127.0.0.1');
+  });
+
+  if (!free) {
+    console.error(
+      `\n❌ Port ${port} is already in use. Stop whatever is listening before running this.\n`
+    );
+    process.exit(1);
+  }
+}
+
 const PORT = 3210;
+await assertPortFree(PORT);
 const app = new Veloce({ docs: false });
 app.include(ChatGateway);
 // Heartbeat off: this test asserts messaging, and a 30s ping would only add noise.

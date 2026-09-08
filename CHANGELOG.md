@@ -89,9 +89,11 @@ missing, so a template shipping without that dependency looked healthy.
 - A failing probe is no longer retried. It shared the "not listening yet" catch,
   so a probe that ran a mutation applied it twice and then failed on its own
   effects.
-- The run aborts when port 3000 is already held. The templates listen on a
-  literal port, so a stray server from an earlier run answered the probes and
-  the test reported on the wrong process.
+- The run aborts when the port it needs is already held. Every smoke test binds
+  a literal port, so a stray server from an earlier run answered the probes and
+  the test reported on the wrong process — which showed up as an unexplained
+  "timed out waiting for a frame". Now guarded in all three: templates (3000),
+  WebSockets on Node (3210) and GraphQL subscriptions (3211/3212).
 
 ## [3.4.0] - 2026-09-07
 
