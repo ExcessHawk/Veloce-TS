@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-11-19
+
+### Documentation
+
+The 3.6.0 and 3.7.0 features were only described in this changelog. They are now
+in the README — the package's landing page — and the migration guide.
+
+- **README:** new sections for authentication and access control (class-level
+  `@Auth`/`@Roles`, `@Public`, `requireAuthByDefault`, `@Param` with a schema),
+  multi-tenant applications (`resolveRoles`, `createParamDecorator`, the
+  `afterPlugins` phase, per-tenant transactions) and transactions
+  (`@Transactional`, `runInTransaction`, `transactionPerRequest`, `onBegin`).
+  The WebSocket section covers authenticated gateways, connection tickets and
+  `TestClient.ws()`; the middleware section covers paths, phases, the order of
+  execution, rate-limit keying and `@BodyLimit`; the dependency-injection
+  section covers request-aware factories and the captive-dependency warning.
+- **README, corrected:** the functional-API example passed `body: UserSchema`,
+  which is not an option — it is `schema: { body: UserSchema }`, and the
+  validated body arrives as a handler argument.
+- **README, limitations:** documents what ambient transactions need from a
+  driver (an asynchronous `transaction()` callback; synchronous SQLite drivers
+  are not supported), that the `Sec-WebSocket-Protocol` header is not a
+  supported credential source, and which defaults are kept for compatibility
+  until the next major version.
+- **MIGRATION.md:** a "3.5.x → 3.6.0 and 3.7.0" section listing the seven
+  changes that can alter observable behavior and the three options worth
+  turning on.
+
+### Tests
+
+- `tests/readme-recipes.test.ts` runs the README's multi-tenant recipe end to
+  end, so the example cannot drift from the code. It depends on the ordering of
+  four features, and the first draft of that example had it wrong.
+
 ## [3.7.0] - 2026-11-19
 
 Second batch from the same audit: the pieces a multi-tenant application had to

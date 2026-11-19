@@ -199,9 +199,9 @@ app.get('/users', {
 });
 
 app.post('/users', {
-  body: UserSchema,
-  handler: async (c) => {
-    const user = await c.req.json();
+  schema: { body: UserSchema },
+  // Validated arguments follow the context, in the order body, query, params, headers
+  handler: async (c, user) => {
     return { id: 2, ...user };
   },
 });
@@ -237,6 +237,44 @@ app.include(UserController);
 app.listen(3000);
 ```
 
+A provider can also be built **from the request** (v3.7.0): a `request`-scoped
+factory receives the context and runs once per request, however many places
+inject it.
+
+```typescript
+class Locale {
+  constructor(public readonly code: string) {}
+}
+
+app.getContainer().register(Locale, {
+  scope: 'request',
+  factory: ({ c }) => new Locale(c!.req.header('Accept-Language')?.slice(0, 2) ?? 'en'),
+});
+
+@Get('/greeting')
+greet(@Depends(Locale) locale: Locale) {
+  return { hello: locale.code };
+}
+```
+
+For a plain value derived from the request, a custom parameter decorator is
+lighter still:
+
+```typescript
+import { createParamDecorator } from 'veloce-ts';
+
+export const UserAgent = createParamDecorator<string | undefined>((c) => c.req.header('User-Agent'));
+
+@Get('/whoami')
+whoami(@UserAgent() agent: string) {
+  return { agent };
+}
+```
+
+> Inject request-scoped providers as **handler parameters**. A singleton that
+> takes one in its constructor keeps the first request's instance forever; the
+> container logs a "Captive dependency" warning when it sees that.
+
 </details>
 
 <details>
@@ -271,6 +309,76 @@ class ChatHandler {
 }
 ```
 
+**Authenticated gateways (v3.7.0).** `{ auth: true }` refuses the upgrade with
+401 *before* the handshake unless the client is authenticated, and hands the
+verified user to the gateway. An object returned by `authorizeUpgrade` becomes
+`connection.data`.
+
+```typescript
+import { WebSocket, OnConnect, WebSocketPlugin, type WebSocketConnection, type WebSocketGateway } from 'veloce-ts';
+import type { Context } from 'hono';
+
+@WebSocket('/ws/chat', { auth: true, rateLimit: { max: 20, windowMs: 10_000 } })
+class ChatGateway implements WebSocketGateway<{ room: string }> {
+  // Optional: your own checks, after the framework authenticated the caller
+  authorizeUpgrade(c: Context) {
+    const room = c.req.query('room');
+    return room ? { room } : false;          // false → 401
+  }
+
+  @OnConnect()
+  onConnect(conn: WebSocketConnection<{ room: string }>) {
+    conn.join(conn.data.room);
+    conn.send({ type: 'welcome', user: conn.user?.sub });
+  }
+}
+
+// `auth: {}` enables one-time connection tickets (see below)
+app.usePlugin(new WebSocketPlugin({ auth: {} }));
+```
+
+Browsers cannot set an `Authorization` header on a WebSocket. Rather than put
+the access token in the URL — where it lands in proxy and server logs — trade
+it for a **single-use ticket** first:
+
+```typescript
+// Browser
+const { ticket } = await fetch('/ws/ticket', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${accessToken}` },
+}).then((r) => r.json());
+
+const ws = new WebSocket(`wss://api.example.com/ws/chat?room=general&ticket=${ticket}`);
+```
+
+| `@WebSocket` option | Effect |
+|---|---|
+| `auth: true` | 401 unless authenticated; user available as `connection.user` |
+| `roles: ['admin']` | 403 without one of the roles (uses the RBAC plugin when installed) |
+| `closeOnTokenExpiry` | Close with code `4401` when the token expires (default `true`) |
+| `rateLimit: { max, windowMs }` | Drop inbound messages over the limit, per connection |
+
+`plugin.getManager().disconnectUser(userId)` closes every connection of a user —
+call it on logout or when access is revoked. Credential sources are configurable
+(`auth: { sources: ['header', 'ticket', 'query'] }`; `query`, the token in the URL,
+is off by default), and `auth.ticket.store` takes a shared store when you run
+more than one instance.
+
+**Testing a gateway** needs no server — `TestClient.ws()` goes through the real
+route (middleware, authentication, `authorizeUpgrade`) and replaces only the transport:
+
+```typescript
+import { TestClient } from 'veloce-ts/testing';
+
+const client = new TestClient(app);
+
+const ws = await client.withToken(token).ws('/ws/chat', { query: { room: 'general' } });
+expect(await ws.nextMessage()).toMatchObject({ type: 'welcome' });
+await ws.close();
+
+await expect(client.ws('/ws/chat')).rejects.toMatchObject({ status: 401 });
+```
+
 </details>
 
 <details>
@@ -298,6 +406,218 @@ class UserResolver {
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><b>🔐 Authentication & access control (v3.6.0)</b></summary>
+
+```typescript
+import {
+  Veloce, Controller, Get, Post, Delete, Param,
+  AuthPlugin, RBACPlugin, Auth, Roles, Public, CurrentUser,
+} from 'veloce-ts';
+import { z } from 'zod';
+
+const app = new Veloce();
+
+app.usePlugin(new AuthPlugin({
+  jwt: { secret: process.env.JWT_SECRET! },
+  userProvider,
+  // Deny by default: a route with no access decorator needs a valid token.
+  // Without this, forgetting a decorator silently publishes the route.
+  requireAuthByDefault: true,
+}));
+
+app.usePlugin(new RBACPlugin({
+  useDefaults: false,
+  enableManagementRoutes: false,
+  roles: [
+    { name: 'admin',  permissions: ['*'], level: 100, inherits: ['member'] },
+    { name: 'member', permissions: ['orders:read'], level: 10 },
+  ],
+}));
+
+@Controller('/orders')
+@Roles(['member'])                 // default for every route of the controller
+class OrdersController {
+  @Get('/')                        // members and admins (admin inherits member)
+  list() {}
+
+  @Delete('/:id')
+  @Roles(['admin'])                // a method-level decorator replaces the class one
+  remove(@Param('id', z.string().uuid()) id: string) {}   // malformed id → 422, never reaches the DB
+
+  @Get('/status')
+  @Public()                        // the explicit exception
+  status() { return { ok: true }; }
+}
+```
+
+| You write | You get |
+|---|---|
+| `@Auth()` / `@Roles([...])` on a **class** | The rule applies to every route in it |
+| `@Public()` on a method or class | Open on purpose; overrides the class rule and `requireAuthByDefault` |
+| `requireAuthByDefault: true` | Undecorated routes need a token. Login, refresh, register, health and docs stay public |
+| `@Param('id', schema)` / `@Param(schema)` | Path parameters validated (and coerced) with Zod |
+| `public: true` in `app.get(path, { … })` | `@Public()` for the functional API |
+
+`requireAuthByDefault` covers every route in the registry, including those other
+plugins add. WebSocket gateways declare their own access (`@WebSocket(path, { auth: true })`).
+
+</details>
+
+<details>
+<summary><b>🏢 Multi-tenant applications (v3.6.0 – v3.7.0)</b></summary>
+
+One user, a different role in each organization, and the organization chosen
+per request. A role stored in the token cannot express that — `@Roles(['admin'])`
+would check a role that may belong to a *different* organization. Resolve it per
+request instead:
+
+```typescript
+import {
+  Veloce, Controller, Get, Post, AuthPlugin, RBACPlugin, Roles,
+  ForbiddenException, createParamDecorator, registerDrizzle, InjectDB,
+} from 'veloce-ts';
+import { sql } from 'drizzle-orm';
+
+interface Tenant { id: string; memberId: string; role: string }
+
+declare module 'hono' {
+  interface ContextVariableMap { tenant: Tenant }
+}
+
+const app = new Veloce();
+app.usePlugin(new AuthPlugin({ jwt: { secret: process.env.JWT_SECRET! }, userProvider, requireAuthByDefault: true }));
+
+// 1. Resolve the tenant once per request, after authentication. `afterPlugins`
+//    middleware runs in registration order, so this comes before everything
+//    below that needs the tenant.
+app.use(async (c, next) => {
+  const user = c.get('auth.user');
+  const orgId = c.req.header('X-Org-ID');
+  if (user && orgId) {
+    const member = await findMembership(user.sub, orgId);
+    if (!member) throw new ForbiddenException('Not a member of this organization');
+    c.set('tenant', { id: member.orgId, memberId: member.id, role: member.role });
+  }
+  await next();
+}, { phase: 'afterPlugins' });
+
+app.usePlugin(new RBACPlugin({
+  useDefaults: false,
+  enableManagementRoutes: false,
+  roles: [
+    { name: 'owner',  permissions: ['*'], level: 100, inherits: ['member'] },
+    { name: 'member', permissions: [], level: 10 },
+  ],
+  // 2. Roles come from the membership in the organization being accessed,
+  //    not from the token.
+  resolveRoles: (c) => {
+    const tenant = c.get('tenant');
+    if (!tenant) throw new ForbiddenException('X-Org-ID header required');
+    return [tenant.role];
+  },
+}));
+
+// 3. The tenant reaches handlers as a parameter — no helper to remember to call
+export const CurrentTenant = createParamDecorator<Tenant>((c) => c.get('tenant'));
+
+// 4. Rate-limit per user (or per address when anonymous), not per client-supplied header
+app.useRateLimit({ windowMs: 60_000, max: 300, keyBy: 'user-or-ip', trustedProxyHops: 1 });
+
+// 5. Every transaction tells PostgreSQL which tenant it serves, so row-level
+//    security policies can enforce isolation even if a query forgets its filter.
+//    Registered after the tenant middleware, so the tenant is known at BEGIN.
+registerDrizzle(app, db, {
+  transactionPerRequest: (c) => c.req.method !== 'GET',
+  onBegin: async (tx, c) => {
+    const tenant = c?.get('tenant');
+    if (tenant) await tx.execute(sql`select set_config('app.tenant_id', ${tenant.id}, true)`);
+  },
+});
+
+@Controller('/projects')
+@Roles(['member'])
+class ProjectsController {
+  constructor(@InjectDB() private db: typeof db) {}
+
+  @Get('/')
+  list(@CurrentTenant() tenant: Tenant) {
+    return this.db.select().from(projects).where(eq(projects.orgId, tenant.id));
+  }
+
+  @Post('/')
+  @Roles(['owner'])                 // owner *of this organization*
+  create(@CurrentTenant() tenant: Tenant) { /* … */ }
+}
+```
+
+Application middleware that needs the authenticated user goes in the
+`afterPlugins` phase — see [Middleware](#middleware).
+
+</details>
+
+<details>
+<summary><b>🗄️ Transactions (v3.7.0)</b></summary>
+
+`registerDrizzle()` injects a transaction-aware handle. Inside a transaction,
+every query made through it — by your method, or by any service it awaits — is
+part of that transaction. Nothing is passed around, and a class that stored
+`this.db` in its constructor needs no change.
+
+```typescript
+import { registerDrizzle, InjectDB, Transactional, runInTransaction, Inject } from 'veloce-ts';
+
+registerDrizzle(app, db);
+
+class Inventory {
+  constructor(@InjectDB() private db: typeof db) {}
+
+  async reserve(items: Item[]) {
+    for (const item of items) {
+      await this.db.update(stock).set({ reserved: sql`${stock.reserved} + ${item.qty}` }).where(eq(stock.sku, item.sku));
+    }
+  }
+}
+
+class Orders {
+  constructor(@InjectDB() private db: typeof db, @Inject(Inventory) private inventory: Inventory) {}
+
+  @Transactional()                       // commit on return, roll back on throw
+  async place(order: NewOrder) {
+    await this.db.insert(orders).values(order);
+    await this.inventory.reserve(order.items);   // same transaction, no `tx` argument
+    if (order.total > order.creditLimit) throw new BadRequestException('Credit limit exceeded');
+  }
+
+  // Or a block:
+  async cancel(id: string) {
+    await runInTransaction(this.db, async () => {
+      await this.db.update(orders).set({ status: 'cancelled' }).where(eq(orders.id, id));
+      await this.inventory.release(id);
+    });
+  }
+}
+```
+
+| | |
+|---|---|
+| Nested call | Joins the active transaction. `@Transactional({ nested: true })` / `{ nested: true }` opens a savepoint instead |
+| `this.db.transaction(cb)` | Ambient too: queries on `this.db` inside `cb` are part of it |
+| `transactionPerRequest` | `registerDrizzle(app, db, { transactionPerRequest: true \| (c) => boolean })` wraps a request in one transaction; rolled back when the request fails. Off by default — it holds a pool connection for the whole request |
+| `onBegin(tx, c)` | Runs at the start of every outermost transaction, inside it: set per-transaction session state (e.g. the tenant for row-level security) |
+
+Two things to know:
+
+- Only **awaited** work is covered. A promise you start and do not await may run
+  after the commit; it then uses the plain database, never the finished transaction.
+- The driver must run the transaction callback asynchronously. This is verified
+  against Drizzle's PostgreSQL dialect; other async drivers follow the same
+  contract but are not covered by tests. Synchronous SQLite drivers
+  (`bun:sqlite`, `better-sqlite3`) commit before an `await` inside the callback
+  resolves, so do not use ambient transactions with them.
 
 </details>
 
@@ -448,6 +768,18 @@ const UserSchema = z.object({
 type User = z.infer<typeof UserSchema>; // Automatic type inference
 ```
 
+Schemas attach to the body, the query string and — since v3.6.0 — path parameters:
+
+```typescript
+@Get('/:id')
+getUser(@Param('id', z.string().uuid()) id: string) {}          // one parameter
+
+@Get('/:year/:month')
+archive(@Param(z.object({ year: z.coerce.number(), month: z.coerce.number().min(1).max(12) })) p: { year: number; month: number }) {}
+```
+
+A value that fails validation is a `422` before the handler runs.
+
 ### Middleware
 
 ```typescript
@@ -456,6 +788,18 @@ app.use(async (c, next) => {
   console.log(`${c.req.method} ${c.req.url}`);
   await next();
 });
+
+// Scoped to a path (v3.7.0)
+app.use('/admin/*', auditMiddleware);
+
+// After the middleware plugins install (v3.7.0): runs once the request is
+// authenticated, so it can read `auth.user`. A plain app.use() runs before
+// authentication and never sees the user.
+app.use(async (c, next) => {
+  const user = c.get('auth.user');
+  // …
+  await next();
+}, { phase: 'afterPlugins' });
 
 // Built-in middleware
 app.useCors({ origin: '*' });
@@ -474,6 +818,39 @@ import { createCacheMiddleware, InMemoryCacheStore } from 'veloce-ts';
 app.use(createCacheMiddleware({
   store: new InMemoryCacheStore({ maxSize: 1000 })
 }));
+```
+
+**Order of execution:** body-size limit → CORS → `app.use()` (early) → plugin
+middleware (auth, RBAC, session) → `app.use(…, { phase: 'afterPlugins' })` →
+route guards (`@Auth`, `@Roles`) → controller and route middleware → handler.
+
+**Rate limiting** (v3.7.0) can key on who is calling rather than only on where from:
+
+```typescript
+app.useRateLimit({
+  windowMs: 60_000,
+  max: 300,
+  keyBy: 'user-or-ip',        // 'ip' (default) | 'user' | 'user-or-ip'
+  trustedProxyHops: 1,        // proxies YOU run in front of the app; 0 = none
+  skip: (c) => c.req.path.startsWith('/health'),
+});
+```
+
+`trustedProxyHops` reads the client address from the `X-Forwarded-For` entry
+written by your own proxy, counted from the right — the leftmost entry is
+whatever the client typed. The same logic is exported as
+`clientIp(c, { trustedProxyHops })`. The default store is in-memory and
+per-process; pass `store: new RedisRateLimitStore(…)` when you run several instances.
+
+**Body size** is limited to 1 MiB application-wide (`new Veloce({ bodyLimit })`).
+Override it per route, in either direction (v3.7.0):
+
+```typescript
+@Put('/upload')
+@BodyLimit(25 * 1024 * 1024)
+upload() {}
+
+app.post('/import', { handler, bodyLimit: 5 * 1024 * 1024 });
 ```
 
 ### Error Handling
@@ -573,7 +950,10 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 | Area | Limitation |
 |------|------------|
 | **GraphQL schema stitching** | Queries, mutations and — as of **v3.4.0** — subscriptions all execute. Composing schemas across services is not hardened; do it at the gateway rather than relying on the plugin. |
-| **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
+| **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`) and, since **v3.7.0**, ambient transactions (`@Transactional`, `runInTransaction`, per-request transactions). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
+| **Ambient transactions** | Need a driver whose `transaction()` callback is asynchronous. Verified against Drizzle's PostgreSQL dialect; other async drivers are untested. **Synchronous SQLite drivers** (`bun:sqlite`, `better-sqlite3`) are not supported: they commit before an `await` inside the callback resolves. |
+| **WebSocket credentials** | Authenticated gateways accept the `Authorization` header, a one-time ticket, or (opt-in) the token in the query string. Carrying the token in the **`Sec-WebSocket-Protocol`** header is not supported. `requireAuthByDefault` does not cover gateways — declare `@WebSocket(path, { auth: true })`. |
+| **Defaults kept for compatibility** | `RBACPlugin` still registers its `/rbac/*` management routes and a set of default roles unless you pass `enableManagementRoutes: false` and `useDefaults: false`; routes are public unless decorated, unless you turn on `requireAuthByDefault`; unexpected errors include their message and stack unless `NODE_ENV` is exactly `production`. These flip in the next major version. |
 | **Test coverage** | Line coverage over `src/` is **~57%**, gated in CI at 55%. The thinnest areas are the cache and request-context middleware, the logging middleware and health plugin, and the OAuth/permission helpers. Treat those with more caution than the core routing and validation surface. |
 | **API stability** | Stable public API since v1.0.0 (semver). Check the [CHANGELOG](CHANGELOG.md) for what changed between releases. |
 
@@ -584,6 +964,8 @@ Directional priorities—not a release calendar. Items may ship in a different o
 1. **ORM choice** — Make **Drizzle, Prisma, and TypeORM** practical first-class options: clear patterns, docs, and (where it helps) small helpers so teams can **pick one ORM** without fighting the framework.
 2. **GraphQL schema stitching** — Subscriptions execute as of v3.4.0; composing schemas across services is the part still to harden.
 3. **Raise the coverage floor** — The CI gate sits at 55% to block regressions; the goal is to lift it as the thin areas above get tested.
+
+**Completed in v3.6.0–v3.7.0:** request-scoped roles for multi-tenant apps (`resolveRoles`), class-level `@Auth`/`@Roles`, `@Public`, deny-by-default (`requireAuthByDefault`), `@Param` with a schema, middleware phases and paths, per-route `@BodyLimit`, `createParamDecorator`, context-aware provider factories, a rate limiter keyed by user or by real client address, authenticated WebSocket gateways with one-time tickets and an in-process `TestClient.ws()`, and ambient transactions for Drizzle. Driven by an audit of a real multi-tenant application; the suite grew from 647 to 880+ tests.
 
 **Completed in v3.2.0–v3.5.0:** WebSocket upgrades on **Node** (via the optional `@hono/node-ws` peer), **GraphQL subscriptions** over `graphql-transport-ws` on Bun/Deno/Node with a built-in `PubSub`, the `@On('event')` decorator, CLI parity with Node (`--runtime auto|bun|node`, `--install`, `--git`, `generate gateway|listener`), and a published package cut from 1.5 MB to 0.39 MB.
 

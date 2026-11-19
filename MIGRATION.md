@@ -1,5 +1,133 @@
 # Migration Guide
 
+## 3.5.x → 3.6.0 and 3.7.0
+
+Both releases are additive: nothing has to change for an application to keep
+working. Seven fixes and changes can alter observable behavior, though, and
+three new options are worth turning on.
+
+---
+
+### What can behave differently
+
+#### 1. Route middleware runs once (3.6.0)
+
+`@UseMiddleware`, `@RateLimit` and `@Timeout` used to be registered once per
+decorator stacked on the route — twice with `@Post` above `@UseMiddleware`, more
+with `@Roles`, `@HttpCode` and friends. A per-route rate limiter therefore
+allowed **half** the configured requests.
+
+After upgrading, limits are the ones you wrote. If you had doubled `max` to
+compensate, halve it back.
+
+#### 2. The registered DI scope wins (3.6.0)
+
+```typescript
+container.register(Mailer, { scope: 'singleton', factory: () => new Mailer() });
+
+// Before: @Depends defaults to 'request', which overrode the registration —
+//         a new Mailer per request.
+// After:  one Mailer, as registered.
+handler(@Depends(Mailer) mailer: Mailer) {}
+```
+
+The scope passed to `register()` is now the provider's lifetime. The injection
+site's scope only applies to providers registered without one, or not registered
+at all. If you registered a provider as `'transient'` and injected it with
+`@Inject` expecting one shared instance, register it as `'singleton'`.
+
+#### 3. Hono's `HTTPException` keeps its status (3.6.0)
+
+An `HTTPException` imported from `hono/http-exception`, or thrown by Hono
+middleware, used to become a 500. It now returns its own status. Code that
+treated those 500s as failures to retry will see 4xx instead.
+
+#### 4. Graceful shutdown exits 1 when it times out (3.6.0)
+
+It used to exit 0 even when the drain did not finish. Supervisors that restart
+on non-zero exit will now notice a truncated shutdown.
+
+#### 5. WebSocket upgrades pass through global middleware (3.7.0)
+
+Gateway routes are registered after global middleware instead of before it, so
+the auth middleware — and your own `afterPlugins` middleware — run for upgrade
+requests. Two consequences:
+
+- `c.get('auth.user')` is available in `authorizeUpgrade(c)` when the client
+  sent an `Authorization` header.
+- A global middleware that rejects requests without credentials now rejects
+  such upgrades too. Browser clients cannot send that header: exempt the
+  gateway path in your middleware, or switch the gateway to
+  `@WebSocket(path, { auth: true })` with [connection tickets](README.md).
+
+On **Node**, an unauthorized upgrade now gets an HTTP 401 before the handshake,
+as on Bun and Deno. It used to be accepted and then closed with code 1008;
+clients that looked for that close code should handle the failed connection instead.
+
+#### 6. `@Transactional()` really is transactional (3.7.0)
+
+With a database registered through `registerDrizzle()`, the decorator used to
+open a transaction and leave the method's `this.db` queries **outside** it. They
+are now inside. A method that threw after writing used to keep its writes; they
+are now rolled back, which is what the decorator always claimed.
+
+`registerDrizzle()` also injects a proxy of your database rather than the object
+itself. It behaves identically, but `injected === db` is no longer true — compare
+through the proxy, or keep a reference to what `registerDrizzle()` returns.
+
+#### 7. New warnings (3.7.0)
+
+None of these change behavior; they point at configuration that is probably not
+doing what you want.
+
+| Warning | Meaning | Fix |
+|---|---|---|
+| `Captive dependency: singleton "X" injects request-scoped "Y"` | `X` keeps the `Y` of the first request for its whole lifetime. Becomes an error in 4.0 | Inject `Y` as a handler parameter, or give `X` the `'request'` scope |
+| `Rate limit: trustProxy: true reads the leftmost X-Forwarded-For entry` | That entry is client-controlled | `trustedProxyHops: <number of proxies you run>` |
+| `Rate limit: the client address could not be determined` | All requests share the key `unknown` | Set `trustedProxyHops`, or `keyBy` / `keyGenerator` |
+| `Rate limit: using the in-memory store in production` | Counters are per process | `store: new RedisRateLimitStore(…)` |
+
+The default rate-limit key is now prefixed (`ip:<address>`), so counters kept in
+a shared store restart once when you deploy the upgrade.
+
+---
+
+### Worth turning on
+
+#### Deny by default
+
+```typescript
+new AuthPlugin({ jwt, userProvider, requireAuthByDefault: true });
+```
+
+A route with no access decorator then requires a token instead of being public.
+Mark the intentionally open ones with `@Public()` (or `public: true` in the
+functional API). The framework's login, refresh, register, logout, OAuth, health
+and documentation routes are already marked. Expect 401s on any route you had
+left undecorated on purpose — that list is exactly what this option exists to surface.
+
+#### Roles per request, in multi-tenant applications
+
+If a user can hold different roles in different organizations and the
+organization is chosen per request, a `roles` claim in the token is the wrong
+source: `@Roles(['admin'])` checks a role that may belong to another
+organization. Configure `RBACPlugin({ resolveRoles })` — see "Multi-tenant
+applications" in the [README](README.md).
+
+#### RBAC defaults you may not want
+
+`RBACPlugin` registers seven `/rbac/*` management routes, reachable by any
+authenticated user, and creates default roles (`guest`, `user`, `moderator`,
+`admin`, `super-admin`) alongside yours. Unless you use them:
+
+```typescript
+new RBACPlugin({ roles, useDefaults: false, enableManagementRoutes: false });
+```
+
+Both defaults flip in 4.0.
+
+---
+
 ## 2.0.x → next (unreleased)
 
 The 2026-09-04 review pass. Most changes are fixes you want silently, but six of them can
