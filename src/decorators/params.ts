@@ -77,17 +77,33 @@ export function Query<T extends ZodSchema>(nameOrSchema?: string | T): Parameter
  * // Or extract all params
  * @Get('/:userId/posts/:postId')
  * getPost(@Param() params: { userId: string, postId: string }) {}
+ *
+ * // Validate one param: a malformed id is a 422 before the handler runs,
+ * // instead of reaching the database
+ * @Get('/:id')
+ * getUser(@Param('id', z.string().uuid()) id: string) {}
+ *
+ * // Validate (and coerce) all params at once
+ * @Get('/:year/:month')
+ * archive(@Param(z.object({ year: z.coerce.number(), month: z.coerce.number() })) p: { year: number; month: number }) {}
  * ```
  */
-export function Param(name?: string): ParameterDecorator {
+export function Param(name?: string): ParameterDecorator;
+export function Param(schema: ZodSchema): ParameterDecorator;
+export function Param(name: string, schema: ZodSchema): ParameterDecorator;
+export function Param(nameOrSchema?: string | ZodSchema, schema?: ZodSchema): ParameterDecorator {
   return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
     if (!propertyKey) return;
+
+    const name = typeof nameOrSchema === 'string' ? nameOrSchema : undefined;
+    const paramSchema = typeof nameOrSchema === 'object' && nameOrSchema !== null ? nameOrSchema : schema;
 
     const metadata: ParameterMetadata = {
       index: parameterIndex,
       type: 'param',
       name,
-      required: true
+      required: true,
+      ...(paramSchema ? { schema: paramSchema } : {})
     };
 
     MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);

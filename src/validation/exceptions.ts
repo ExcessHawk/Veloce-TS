@@ -38,7 +38,13 @@ export class ValidationException extends HTTPException {
    * Cuerpo JSON sin `instance`: RFC 9457 + `violations` + alias legacy (`details`, `error`, `statusCode`).
    */
   toJSON(): Record<string, unknown> {
-    if (!this.zodError?.errors || !Array.isArray(this.zodError.errors)) {
+    // `issues` is the canonical list and the only one Zod 4 exposes; `errors`
+    // is a Zod 3 alias. Reading `errors` alone returned an empty violations
+    // list for any schema built with Zod 4.
+    const issues: ZodError['issues'] | undefined =
+      (this.zodError as any)?.issues ?? (this.zodError as any)?.errors;
+
+    if (!Array.isArray(issues)) {
       return {
         type: problemTypeUri('validation-error'),
         title: resolveProblemTitle(this.statusCode, this.message, 'Validation Error'),
@@ -51,9 +57,9 @@ export class ValidationException extends HTTPException {
       };
     }
 
-    const violations = this.zodError.errors.map((err) => {
+    const violations = issues.map((err) => {
       const row: Record<string, unknown> = {
-        field: formatPath(err.path),
+        field: formatPath(err.path as (string | number)[]),
         message: err.message,
         code: err.code,
       };

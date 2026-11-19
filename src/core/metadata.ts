@@ -53,6 +53,16 @@ const MINIMUM_ROLE_METADATA_KEY = Symbol.for('veloce-ts:minimum-role:metadata');
 const RESOURCE_PERMISSION_METADATA_KEY = Symbol.for('veloce-ts:resource-permission:metadata');
 const SESSION_METADATA_KEY = Symbol.for('veloce-ts:session:metadata');
 const CSRF_METADATA_KEY = Symbol.for('veloce-ts:csrf:metadata');
+const CLASS_ACCESS_METADATA_KEY = Symbol.for('veloce-ts:class-access:metadata');
+
+/** Access rules declared on a controller class; defaults for its routes. */
+export interface ClassAccessMetadata {
+  auth?: AuthMetadata;
+  roles?: RoleMetadata;
+  permissions?: PermissionMetadata;
+  minimumRole?: MinimumRoleMetadata;
+  public?: boolean;
+}
 
 export class MetadataRegistry {
   /**
@@ -236,11 +246,12 @@ export class MetadataRegistry {
       ...metadata,
       target: target.constructor,
       propertyKey,
-      // Merge arrays instead of replacing
-      middleware: [
-        ...(existingMetadata?.middleware || []),
-        ...(metadata.middleware || [])
-      ],
+      // A caller that passes `middleware` passes the COMPLETE list for the
+      // route (every decorator builds it from the existing one), so it replaces
+      // the stored list. Concatenating here registered each middleware once per
+      // decorator stacked on the route: a rate limiter under @Post counted every
+      // request twice.
+      middleware: metadata.middleware ?? existingMetadata?.middleware ?? [],
       parameters: metadata.parameters || existingMetadata?.parameters || [],
       dependencies: metadata.dependencies || existingMetadata?.dependencies || [],
       responses: metadata.responses || existingMetadata?.responses || [],
@@ -534,6 +545,33 @@ export class MetadataRegistry {
   // second reflect lookup. defineRouteAttached() holds that shared body; the
   // public methods below stay as-is so callers and decorators are unaffected.
   // ==========================================================================
+
+  /**
+   * Store access metadata on the controller CLASS (class-level @Auth, @Roles,
+   * @Permissions, @MinimumRole, @Public). `VeloceTS.include()` reads it through
+   * {@link getClassAccess} and applies it to every route that does not declare
+   * its own.
+   */
+  static defineClassAccess<K extends keyof ClassAccessMetadata>(
+    target: Function,
+    field: K,
+    metadata: ClassAccessMetadata[K],
+  ): void {
+    const existing: ClassAccessMetadata =
+      Reflect.getOwnMetadata(CLASS_ACCESS_METADATA_KEY, target) || {};
+    Reflect.defineMetadata(CLASS_ACCESS_METADATA_KEY, { ...existing, [field]: metadata }, target);
+  }
+
+  /** Class-level access metadata (inherited through the class hierarchy). */
+  static getClassAccess(target: Function): ClassAccessMetadata {
+    return Reflect.getMetadata(CLASS_ACCESS_METADATA_KEY, target) || {};
+  }
+
+  /** Mark a route as explicitly public (used by @Public on a method). */
+  static definePublic(target: any, propertyKey: string): void {
+    const routeMetadata = this.getRouteMetadata(target, propertyKey);
+    this.defineRoute(target, propertyKey, { ...routeMetadata, public: true });
+  }
 
   private static defineRouteAttached<K extends keyof RouteMetadata>(
     key: symbol,

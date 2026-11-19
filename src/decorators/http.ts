@@ -68,12 +68,15 @@ function createMethodDecorator(method: HTTPMethod) {
       }
 
       // Check if there's middleware from @UseMiddleware decorator
-      const methodMiddleware = Reflect.getMetadata('route:middleware', target, propertyKey) || [];
+      const methodMiddleware: Middleware[] | undefined =
+        Reflect.getMetadata('route:middleware', target, propertyKey);
 
       MetadataRegistry.defineRoute(target, propertyKey as string, {
         method,
         path: normalizedPath,
-        middleware: methodMiddleware,
+        // Only override when a middleware decorator ran before this one;
+        // otherwise keep whatever the route already carries.
+        ...(methodMiddleware?.length ? { middleware: methodMiddleware } : {}),
         parameters: [],
         dependencies: [],
         responses: []

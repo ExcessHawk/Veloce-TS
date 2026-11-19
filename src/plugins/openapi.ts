@@ -48,6 +48,7 @@ export class OpenAPIPlugin implements Plugin {
       path: options?.path || '/openapi.json',
       docsPath: options?.docsPath || '/docs',
       docs: options?.docs !== false,
+      public: options?.public !== false,
       swaggerAssets: options?.swaggerAssets || 'cdn'
     };
   }
@@ -64,6 +65,7 @@ export class OpenAPIPlugin implements Plugin {
       handler: async () => {
         return this.generateSpec(app);
       },
+      public: this.options.public !== false,
       docs: {
         summary: 'OpenAPI specification',
         description: 'Returns the OpenAPI 3.1 specification for this API',
@@ -82,6 +84,7 @@ export class OpenAPIPlugin implements Plugin {
             headers: { 'Content-Type': 'text/html; charset=utf-8' }
           });
         },
+        public: this.options.public !== false,
         docs: {
           summary: 'Swagger UI',
           description: 'Interactive API documentation',

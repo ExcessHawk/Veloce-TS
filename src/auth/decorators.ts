@@ -5,16 +5,59 @@ import type { AuthConfig, AuthMetadata } from '../types/index.js';
 
 
 /**
- * @Auth() decorator for protecting routes with JWT authentication
+ * @Auth() decorator for protecting routes with JWT authentication.
+ *
+ * On a method it protects that route. On a controller class it protects every
+ * route of the controller; a method can still override it with its own
+ * `@Auth()` or opt out with `@Public()`.
  */
-export function Auth(config?: AuthConfig): MethodDecorator {
-  return (target: any, propertyKey: string | symbol) => {
+export function Auth(config?: AuthConfig): MethodDecorator & ClassDecorator {
+  return (target: any, propertyKey?: string | symbol) => {
     const metadata: AuthMetadata = {
       required: !config?.optional,
       config,
     };
 
+    if (propertyKey === undefined) {
+      MetadataRegistry.defineClassAccess(target, 'auth', metadata);
+      return;
+    }
+
     MetadataRegistry.defineAuth(target, propertyKey as string, metadata);
+  };
+}
+
+/**
+ * @Public() marks a route (or a whole controller) as intentionally reachable
+ * without credentials.
+ *
+ * It matters in two situations:
+ * - the controller carries a class-level `@Auth()` / `@Roles()` and this one
+ *   route must stay open (a login or health endpoint);
+ * - `AuthPlugin` runs with `requireAuthByDefault: true`, where a route with no
+ *   access decorator needs a valid token.
+ *
+ * @example
+ * ```ts
+ * @Controller('/orders')
+ * @Auth()
+ * class OrdersController {
+ *   @Get('/')            // requires a token (inherited)
+ *   list() {}
+ *
+ *   @Get('/status')
+ *   @Public()            // open
+ *   status() {}
+ * }
+ * ```
+ */
+export function Public(): MethodDecorator & ClassDecorator {
+  return (target: any, propertyKey?: string | symbol) => {
+    if (propertyKey === undefined) {
+      MetadataRegistry.defineClassAccess(target, 'public', true);
+      return;
+    }
+    MetadataRegistry.definePublic(target, propertyKey as string);
   };
 }
 

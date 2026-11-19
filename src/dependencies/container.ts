@@ -65,7 +65,9 @@ export class DIContainer {
    * @param config - Configuration including scope and factory
    */
   register(provider: Provider, config?: ProviderConfig): void {
-    this.providers.set(provider, config || { scope: 'transient' });
+    // Store the config as given: an absent `scope` means "not decided here", so
+    // the injection site (or the 'transient' fallback) picks it.
+    this.providers.set(provider, config ?? {});
   }
 
   /**
@@ -94,8 +96,13 @@ export class DIContainer {
     options: { scope?: Scope; context?: Context } | undefined,
     path: Set<Provider>
   ): Promise<T> {
-    const config = this.providers.get(provider) || { scope: options?.scope || 'transient' };
-    const scope = options?.scope || config.scope || 'transient';
+    const config: ProviderConfig = this.providers.get(provider) ?? {};
+    // The scope declared at registration is the provider's lifetime and wins.
+    // The injection site's scope is only a default for providers that were
+    // registered without one (or not registered at all). Previously the
+    // injection site won, so `@Depends(Svc)` — which defaults to 'request' —
+    // silently rebuilt a provider registered as a singleton on every request.
+    const scope: Scope = config.scope ?? options?.scope ?? 'transient';
 
     if (path.has(provider)) {
       throw new Error(`Circular dependency detected: ${this.buildCircularDependencyMessage(path, provider)}`);

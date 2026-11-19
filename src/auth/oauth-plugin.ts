@@ -48,6 +48,8 @@ export class OAuthPlugin implements Plugin {
 
     // OAuth login initiation route
     app.get(routes.login || '/auth/oauth/:provider', {
+      // The OAuth dance happens before the user has a token.
+      public: true,
       handler: async (c: Context) => {
         const provider = c.req.param('provider') as string;
         const oauthProvider = this.config.providers[provider];
@@ -83,6 +85,7 @@ export class OAuthPlugin implements Plugin {
 
     // OAuth callback route
     app.get(routes.callback || '/auth/oauth/:provider/callback', {
+      public: true,
       handler: async (c: Context) => {
         const provider = c.req.param('provider') as string;
         const query = c.req.query();

@@ -6,6 +6,7 @@ import { getCurrentUser } from './decorators.js';
 import { AuthenticationException } from './exceptions.js';
 import { Context } from 'hono';
 import type { Middleware } from '../types/index.js';
+import type { TokenPayload } from './jwt-provider.js';
 
 export interface RBACPluginConfig {
   rbac?: RBACManager;
@@ -17,6 +18,35 @@ export interface RBACPluginConfig {
     userRoles?: string;
   };
   enableManagementRoutes?: boolean;
+  /**
+   * Resolve the roles a user holds FOR THIS REQUEST, instead of trusting the
+   * ones baked into the token.
+   *
+   * A token's `roles` claim is global, but in a multi-tenant application the
+   * same user can be an admin of one organization and a plain member of
+   * another, with the organization chosen per request (a header, a subdomain,
+   * a path segment). Without this hook `@Roles(['admin'])` checks a role that
+   * may not belong to the organization being accessed.
+   *
+   * Called by the route guard after authentication and before any
+   * `@Roles` / `@Permissions` / `@MinimumRole` check. The result is stored in
+   * the context as `rbac.roles` and read back by `getUserRoles(c)`. Throw an
+   * HTTP exception to reject the request (e.g. 403 when the user is not a
+   * member of the requested organization).
+   *
+   * @example
+   * ```ts
+   * new RBACPlugin({
+   *   roles,
+   *   resolveRoles: async (c, user) => {
+   *     const member = await findMembership(user.sub, c.req.header('X-Org-ID'));
+   *     if (!member) throw new ForbiddenException('Not a member of this organization');
+   *     return [member.role];
+   *   },
+   * })
+   * ```
+   */
+  resolveRoles?: (c: Context, user: TokenPayload) => string[] | Promise<string[]>;
 }
 
 export class RBACPlugin implements Plugin {
@@ -62,19 +92,22 @@ export class RBACPlugin implements Plugin {
       scope: 'singleton'
     });
 
-    // Inject RBAC guards into every route that declares role/permission/minimum-role
-    // metadata. This MUST run here (during plugin install) rather than by wrapping
-    // app.compile: install() is itself invoked from inside the already-running
-    // VeloceTS.compile(), so reassigning app.compile at this point is a no-op — the
-    // wrapper never fires and @Roles silently becomes unenforced. Because install()
-    // runs before RouterCompiler.compile(), guards injected into the route metadata
-    // now land on the live Hono routes.
-    this.injectRouteGuards(app);
-
     // Add management routes if enabled
     if (this.config.enableManagementRoutes !== false) {
       this.addManagementRoutes(app);
     }
+  }
+
+  /**
+   * Inject RBAC guards into every route that declares role/permission/minimum-role
+   * metadata. Runs in `beforeCompile`, once every plugin is installed, so routes
+   * registered by plugins installed after this one are covered too; it still runs
+   * before RouterCompiler.compile(), so the guards land on the live Hono routes.
+   * (Wrapping app.compile from install() does not work: install() is invoked from
+   * inside the already-running compile(), so the wrapper would never fire.)
+   */
+  beforeCompile(app: VeloceTS): void {
+    this.injectRouteGuards(app);
   }
 
   private injectRouteGuards(app: VeloceTS): void {
@@ -98,6 +131,7 @@ export class RBACPlugin implements Plugin {
     const rolesConfig = route.roles?.config;
     const permissionsConfig = route.permissions?.config;
     const minimumRoleConfig = route.minimumRole;
+    const resolveRoles = this.config.resolveRoles;
 
     return async (c: Context, next: () => Promise<void>) => {
       const user = getCurrentUser(c);
@@ -107,6 +141,13 @@ export class RBACPlugin implements Plugin {
         // not an authorization failure (403). Returning 403 here mislabels
         // missing/invalid credentials as "forbidden".
         throw new AuthenticationException('Authentication required');
+      }
+
+      if (resolveRoles) {
+        // Request-scoped roles replace the token's for every check below and
+        // for getUserRoles(c) in the handler.
+        const resolved = await resolveRoles(c, user);
+        c.set('rbac.roles', Array.isArray(resolved) ? resolved : []);
       }
 
       if (rolesConfig) {

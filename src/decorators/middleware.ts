@@ -37,7 +37,7 @@ export function UseMiddleware(...middleware: Middleware[]): MethodDecorator {
 
     // 2. Also update MetadataRegistry directly so the middleware is not lost when
     //    @UseMiddleware runs AFTER the HTTP method decorator (bottom-up execution order).
-    //    MetadataRegistry.defineRoute merges middleware arrays, so this is idempotent.
+    //    defineRoute REPLACES the middleware list, so the full list is passed here.
     const existingRoute = MetadataRegistry.getRouteMetadata(target, propertyKey as string);
     MetadataRegistry.defineRoute(target, propertyKey as string, {
       ...existingRoute,

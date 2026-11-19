@@ -5,7 +5,7 @@
  */
 import { Hono } from 'hono';
 import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
-import { MetadataRegistry } from './metadata.js';
+import { MetadataRegistry, type ClassAccessMetadata } from './metadata.js';
 import { PayloadTooLargeException } from '../errors/exceptions.js';
 import type { ServerInstance } from '../adapters/base.js';
 import { DIContainer } from '../dependencies/container.js';
@@ -33,7 +33,8 @@ import type {
   RateLimitOptions,
   CompressionOptions,
   HTTPMethod,
-  Context
+  Context,
+  RouteMetadata
 } from '../types/index.js';
 
 /** Default maximum request body size: 1 MiB. Override with `bodyLimit`. */
@@ -267,6 +268,10 @@ export class VeloceTS {
       this.metadata.registerController(controller, controllerMetadata);
     }
 
+    // Access rules declared on the class itself (@Auth / @Roles / @Public on
+    // the controller). They are the default for every route in it.
+    const classAccess = MetadataRegistry.getClassAccess(controller);
+
     // Get all route methods from the controller
     const routeMethods = MetadataRegistry.getRouteMethods(controller);
 
@@ -299,6 +304,7 @@ export class VeloceTS {
         // responseSchema) are preserved, then override the fields we compute here.
         this.metadata.registerRoute({
           ...routeMetadata,
+          ...this.resolveRouteAccess(routeMetadata, classAccess),
           target: controller,
           propertyKey: methodName,
           method: routeMetadata.method,
@@ -314,6 +320,37 @@ export class VeloceTS {
         });
       }
     }
+  }
+
+  /**
+   * Combine a route's own access metadata with its controller's.
+   *
+   * - A route marked `@Public()` inherits nothing.
+   * - Otherwise each rule (`auth`, `roles`, `permissions`, `minimumRole`) falls
+   *   back to the class-level one when the method does not declare its own, so
+   *   a method-level `@Roles` overrides the class-level `@Roles`.
+   * - A `@Public()` class makes its undecorated routes public.
+   */
+  private resolveRouteAccess(
+    route: Partial<RouteMetadata>,
+    classAccess: ClassAccessMetadata
+  ): Partial<RouteMetadata> {
+    if (route.public) {
+      return { public: true };
+    }
+
+    const access: Partial<RouteMetadata> = {
+      auth: route.auth ?? classAccess.auth,
+      roles: route.roles ?? classAccess.roles,
+      permissions: route.permissions ?? classAccess.permissions,
+      minimumRole: route.minimumRole ?? classAccess.minimumRole,
+    };
+
+    const decided = access.auth || access.roles || access.permissions || access.minimumRole;
+    if (!decided && classAccess.public) {
+      access.public = true;
+    }
+    return access;
   }
 
   // ============================================================================
@@ -446,6 +483,7 @@ export class VeloceTS {
       responses: config.responses || [],
       docs: config.docs,
       cache: config.cache,
+      public: config.public,
       handler: config.handler
     };
 
@@ -661,14 +699,18 @@ export class VeloceTS {
         }
       };
 
+      // Exit non-zero when the drain timed out or threw, so a supervisor
+      // (systemd, Kubernetes, PM2) can tell a clean stop from a truncated one.
+      let exitCode = 0;
       await Promise.race([
         work(),
         new Promise<void>((_, rej) =>
           setTimeout(() => rej(new Error('Shutdown timeout')), this._shutdownTimeout)
         ),
       ]).catch(error => {
+        exitCode = 1;
         logger.error('Graceful shutdown did not complete', error as Error);
-      }).finally(() => process.exit(0));
+      }).finally(() => process.exit(exitCode));
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT',  () => shutdown('SIGINT'));
@@ -851,6 +893,10 @@ export class VeloceTS {
 
     // Install plugins before compiling routes
     await this.pluginManager.install(this);
+
+    // Every plugin is installed, so the route registry is complete: let plugins
+    // inspect it (auth/RBAC inject their guards here).
+    await this.pluginManager.beforeCompile(this);
 
     // Subscribe @On listeners. After plugin install, so a listener can inject
     // anything a plugin registered in the container.

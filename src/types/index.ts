@@ -56,6 +56,12 @@ declare module 'hono' {
     'permissionManager': import('../auth/permissions.js').PermissionManager | null;
     /** RBACManager instance, exposed by RBACPlugin. */
     'rbacManager': import('../auth/rbac.js').RBACManager | null;
+    /**
+     * Roles in effect for this request, set by the RBAC guard when
+     * `RBACPluginConfig.resolveRoles` is configured. Absent otherwise, in which
+     * case the roles are the ones carried by the token (`auth.user.roles`).
+     */
+    'rbac.roles': string[] | undefined;
     /** OAuth profile / token, set by the OAuth middleware. */
     'oauth.user': import('../auth/oauth-provider.js').OAuthUser | null;
     'oauth.token': import('../auth/oauth-provider.js').OAuthTokens | null;
@@ -97,6 +103,12 @@ export interface RouteMetadata {
   csrf?: CSRFMetadata;
   cache?: CacheMetadata;
   cacheInvalidate?: string[];
+  /**
+   * Explicitly public route (`@Public()` or `public: true` in the functional
+   * API). Opts the route out of class-level `@Auth`/`@Roles` and out of
+   * `AuthPlugin`'s `requireAuthByDefault`.
+   */
+  public?: boolean;
 }
 
 // Cache metadata
@@ -298,6 +310,11 @@ export interface RouteConfig<S extends RouteSchemas = RouteSchemas> {
   responses?: ResponseMetadata[];
   cache?: CacheMetadata;
   timeout?: number;
+  /**
+   * Mark the route as intentionally public. Only matters when `AuthPlugin` runs
+   * with `requireAuthByDefault: true`, where every other route needs a valid token.
+   */
+  public?: boolean;
 }
 
 // Provider config
@@ -314,6 +331,13 @@ export interface OpenAPIOptions {
   path?: string;
   docsPath?: string;
   docs?: boolean;
+  /**
+   * Whether the spec and Swagger UI routes are public. Only matters when
+   * `AuthPlugin` runs with `requireAuthByDefault: true`: set this to `false` to
+   * put the documentation behind authentication as well.
+   * @default true
+   */
+  public?: boolean;
 }
 
 export interface OpenAPISpec {

@@ -101,6 +101,17 @@ export class ErrorHandler {
       return mergeVeloceCorsHeaders(c, this.handleHTTPException(error, c));
     }
 
+    // Hono's own HTTPException (thrown by Hono middleware such as bodyLimit,
+    // basicAuth or jwt, or by app code that imported it from 'hono/http-exception')
+    // is a different class from ours, so the instanceof above misses it and it
+    // used to surface as a generic 500. Recognise it structurally — a numeric
+    // `status` in the HTTP error range plus `getResponse()` — and keep its status.
+    const foreignStatus = this.extractForeignHttpStatus(error);
+    if (foreignStatus !== undefined) {
+      const mapped = new HTTPException(foreignStatus, error.message || resolveProblemTitle(foreignStatus, 'HTTP Error'));
+      return mergeVeloceCorsHeaders(c, this.handleHTTPException(mapped, c));
+    }
+
     // Map SQL "data exception" errors (e.g. a non-UUID value supplied for a
     // uuid column, an out-of-range number) to 400 instead of a generic 500.
     // These are caused by malformed client input reaching the database driver
@@ -115,6 +126,18 @@ export class ErrorHandler {
     }
 
     return mergeVeloceCorsHeaders(c, this.handleGenericError(error, c));
+  }
+
+  /**
+   * Status of an HTTP exception that is not ours (Hono's `HTTPException`).
+   * Returns undefined for anything that does not look like one.
+   */
+  private extractForeignHttpStatus(error: any): number | undefined {
+    if (!error || typeof error !== 'object') return undefined;
+    if (typeof error.getResponse !== 'function') return undefined;
+    const status = error.status;
+    if (typeof status !== 'number' || !Number.isInteger(status)) return undefined;
+    return status >= 400 && status <= 599 ? status : undefined;
   }
 
   /**

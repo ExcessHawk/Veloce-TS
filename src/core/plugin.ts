@@ -26,6 +26,14 @@ export interface Plugin {
   install(app: VeloceTS): void | Promise<void>;
 
   /**
+   * Called once every plugin has been installed, right before routes are
+   * compiled. At this point the route registry is complete — including routes
+   * registered by plugins installed later — so this is the place to inspect
+   * or decorate routes (e.g. inject guards).
+   */
+  beforeCompile?(app: VeloceTS): void | Promise<void>;
+
+  /**
    * Called after the server starts listening. Use it to start background
    * work (timers, consumers) that needs the app fully running.
    */
@@ -76,6 +84,16 @@ export class PluginManager {
       this.installed.add(pluginName);
     }
     this.installOrder = order;
+  }
+
+  /** Run beforeCompile hooks in install order (all plugins installed, routes not yet compiled) */
+  async beforeCompile(app: VeloceTS): Promise<void> {
+    for (const name of this.installOrder) {
+      const plugin = this.plugins.get(name)!;
+      if (plugin.beforeCompile) {
+        await plugin.beforeCompile(app);
+      }
+    }
   }
 
   /** Run onStart hooks in install order (after the server starts listening) */

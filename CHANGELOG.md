@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Changes that came out of auditing a real multi-tenant application built on the
+framework.
+
+### Fixed
+
+- **Route middleware ran once per decorator stacked on the route.**
+  `MetadataRegistry.defineRoute` concatenated the stored middleware list with
+  the incoming one, while every decorator already passed the complete list.
+  `@Post` above `@UseMiddleware(x)` registered `[x, x]`, and each further
+  decorator (`@Roles`, `@Auth`, `@HttpCode`, `@Timeout`, `@Cache`, the docs
+  decorators) doubled it again. A per-route rate limiter counted every request
+  twice, halving the documented limit; a non-idempotent middleware would have
+  misbehaved outright. `defineRoute` now replaces the list.
+- **Hono's own `HTTPException` became a 500.** The error handler only matched
+  the framework's class, so an exception thrown by Hono middleware, or by app
+  code that imported it from `hono/http-exception`, lost its status. It is now
+  recognised structurally and its status is kept.
+- **The injection site overrode the registered scope.** `@Depends(Svc)` defaults
+  to `'request'`, so a provider registered as a singleton was rebuilt on every
+  request. The scope given to `container.register()` is now the provider's
+  lifetime; the injection site's scope only applies to providers registered
+  without one, or not registered at all.
+  **Behavior change:** an explicit registration scope is no longer overridden.
+  A provider registered as `'transient'` and injected with `@Inject` (which
+  asks for `'singleton'`) is now built per resolution, and one registered as
+  `'request'` is resolved against the request context even when the injection
+  site asks for a singleton — resolving it where there is no request context
+  throws "Cannot resolve request-scoped provider … without a request context".
+- **`ValidationException` returned no violations for Zod 4 schemas.** It read
+  `error.errors`, a Zod 3 alias; it now reads `issues`.
+- **Graceful shutdown exited 0 after timing out.** It now exits 1 when the drain
+  times out or throws, so a supervisor can tell the two apart.
+
+### Added
+
+- **`RBACPluginConfig.resolveRoles(c, user)`** — resolve the roles a user holds
+  for the current request instead of trusting the token's `roles` claim. In a
+  multi-tenant application the same user can be an admin of one organization and
+  a member of another, with the organization chosen per request; without this
+  hook `@Roles(['admin'])` checked a role that might not belong to the
+  organization being accessed. The result is used by `@Roles`, `@Permissions`
+  and `@MinimumRole`, stored in the context as `rbac.roles`, and returned by
+  `getUserRoles(c)`.
+- **Class-level `@Auth`, `@Roles`, `@Permissions` and `@MinimumRole`.** On a
+  controller class they are the default for every route; a method-level
+  decorator of the same kind replaces it.
+- **`@Public()`**, for a method or a controller, and `public: true` in the
+  functional API: the explicit "this route is open on purpose".
+- **`AuthPluginConfig.requireAuthByDefault`** (default `false`). When on, a route
+  with no access decorator requires a valid token instead of being public. The
+  framework's login, refresh, register, logout, OAuth, health and documentation
+  routes are marked public; `OpenAPIOptions.public: false` puts the docs behind
+  authentication too. WebSocket upgrade routes are outside the route registry
+  and are not covered.
+- **`@Param(name, schema)` and `@Param(schema)`** — validate (and coerce) path
+  parameters with Zod, so a malformed id is a 422 before the handler runs
+  instead of an error from the database.
+- **`Plugin.beforeCompile(app)`** — runs once every plugin is installed and
+  before routes are compiled. `AuthPlugin` and `RBACPlugin` now inject their
+  guards there, so routes registered by plugins installed after them are
+  guarded as well.
+
 ## [3.5.1] - 2026-09-07
 
 ### Fixed — documentation that did not match the code

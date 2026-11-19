@@ -20,6 +20,23 @@ export interface AuthPluginConfig {
     register?: string;
   };
   enableDefaultRoutes?: boolean;
+  /**
+   * Deny by default: every route requires a valid access token unless it is
+   * marked `@Public()` (or `public: true` in the functional API) or declares
+   * `@Auth({ optional: true })`.
+   *
+   * With the default (`false`) a route with no access decorator is public, so a
+   * forgotten decorator silently exposes the route. Turning this on makes the
+   * safe behavior the one you get by omission.
+   *
+   * Applies to every route in the registry, including those registered by other
+   * plugins (GraphQL, OAuth, RBAC management, ...). The framework's own login,
+   * refresh, register, health and documentation routes are marked public.
+   * WebSocket upgrade routes are not in the registry and are not covered.
+   *
+   * @default false
+   */
+  requireAuthByDefault?: boolean;
 }
 
 export class AuthPlugin implements Plugin {
@@ -54,13 +71,18 @@ export class AuthPlugin implements Plugin {
       this.addDefaultRoutes(app);
     }
 
-    // Enforce @Auth() metadata by injecting a guard into each route's middleware.
-    // This MUST happen here, during install(), rather than by wrapping app.compile:
-    // install() is itself invoked from inside the already-running VeloceTS.compile(),
-    // so reassigning app.compile at this point is a no-op — the wrapper never fires
-    // and @Auth() silently becomes unenforced. install() runs before
-    // RouterCompiler.compile(), so guards injected into route metadata now land on
-    // the live Hono routes.
+  }
+
+  /**
+   * Enforce @Auth() metadata by injecting a guard into each route's middleware.
+   * Runs in `beforeCompile`, once every plugin is installed, so routes that
+   * plugins installed after this one registered are seen too — which is what
+   * makes `requireAuthByDefault` trustworthy. It still runs before
+   * RouterCompiler.compile(), so the guards land on the live Hono routes.
+   * (Wrapping app.compile from install() does not work: install() is invoked from
+   * inside the already-running compile(), so the wrapper would never fire.)
+   */
+  beforeCompile(app: VeloceTS): void {
     this.injectRouteGuards(app);
   }
 
@@ -75,7 +97,15 @@ export class AuthPlugin implements Plugin {
       const authMetadata = route.target?.prototype
         ? MetadataRegistry.getAuthMetadata(route.target.prototype, route.propertyKey)
         : undefined;
-      const authRequired = route.auth?.required || authMetadata?.required;
+      const declared = route.auth ?? authMetadata;
+
+      // Deny by default: a route that declares nothing and is not explicitly
+      // public needs a token. `@Auth({ optional: true })` is a declaration and
+      // is respected as-is.
+      const requiredByDefault =
+        this.config.requireAuthByDefault === true && !route.public && !declared;
+
+      const authRequired = (!route.public && declared?.required) || requiredByDefault;
 
       if (!authRequired) continue;
 
@@ -143,6 +173,7 @@ export class AuthPlugin implements Plugin {
           throw this.toAuthFailure(error, 'login', 'Login failed');
         }
       },
+      public: true,
       schema: {
         body: z.object({
           username: z.string().min(1),
@@ -167,6 +198,7 @@ export class AuthPlugin implements Plugin {
           throw this.toAuthFailure(error, 'refresh', 'Token refresh failed');
         }
       },
+      public: true,
       schema: {
         body: z.object({
           refreshToken: z.string().min(1)
@@ -190,6 +222,8 @@ export class AuthPlugin implements Plugin {
           message: 'Logged out successfully'
         };
       },
+      // Logout has always answered without credentials (it is a no-op then).
+      public: true,
       schema: {
         body: z.object({
           refreshToken: z.string().optional()
@@ -220,6 +254,7 @@ export class AuthPlugin implements Plugin {
             throw this.toAuthFailure(error, 'register', 'Registration failed');
           }
         },
+        public: true,
         schema: {
           body: z.object({
             username: z.string().min(1),

@@ -84,6 +84,7 @@ export class HealthCheckPlugin implements Plugin {
       handler: async (c: Context) => {
         return this.handleHealth(c);
       },
+      public: true,
       docs: {
         summary: 'Health Check',
         description: 'Comprehensive health check endpoint',
@@ -96,6 +97,7 @@ export class HealthCheckPlugin implements Plugin {
       handler: async (c: Context) => {
         return this.handleReady(c);
       },
+      public: true,
       docs: {
         summary: 'Readiness Check',
         description: 'Check if the application is ready to serve traffic',
@@ -108,6 +110,7 @@ export class HealthCheckPlugin implements Plugin {
       handler: async (c: Context) => {
         return this.handleLive(c);
       },
+      public: true,
       docs: {
         summary: 'Liveness Check',
         description: 'Check if the application is alive',

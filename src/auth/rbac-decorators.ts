@@ -9,13 +9,20 @@ import type { RolesConfig, PermissionsConfig, RoleMetadata, PermissionMetadata }
 /**
  * @Roles() decorator for role-based access control
  */
-export function Roles(roles: string[] | RolesConfig): MethodDecorator {
-  return (target: any, propertyKey: string | symbol) => {
+export function Roles(roles: string[] | RolesConfig): MethodDecorator & ClassDecorator {
+  return (target: any, propertyKey?: string | symbol) => {
     const config: RolesConfig = Array.isArray(roles) 
       ? { roles, requireAll: false, allowInherited: true }
       : { requireAll: false, allowInherited: true, ...roles };
 
     const metadata: RoleMetadata = { config };
+
+    // On a controller class: the default for every route of the controller.
+    // A method-level @Roles replaces it; @Public() opts a route out.
+    if (propertyKey === undefined) {
+      MetadataRegistry.defineClassAccess(target, 'roles', metadata);
+      return;
+    }
 
     MetadataRegistry.defineRoles(target, propertyKey as string, metadata);
   };
@@ -24,13 +31,18 @@ export function Roles(roles: string[] | RolesConfig): MethodDecorator {
 /**
  * @Permissions() decorator for permission-based access control
  */
-export function Permissions(permissions: string[] | PermissionsConfig): MethodDecorator {
-  return (target: any, propertyKey: string | symbol) => {
+export function Permissions(permissions: string[] | PermissionsConfig): MethodDecorator & ClassDecorator {
+  return (target: any, propertyKey?: string | symbol) => {
     const config: PermissionsConfig = Array.isArray(permissions)
       ? { permissions, requireAll: false }
       : { requireAll: false, ...permissions };
 
     const metadata: PermissionMetadata = { config };
+
+    if (propertyKey === undefined) {
+      MetadataRegistry.defineClassAccess(target, 'permissions', metadata);
+      return;
+    }
 
     MetadataRegistry.definePermissions(target, propertyKey as string, metadata);
   };
@@ -39,38 +51,53 @@ export function Permissions(permissions: string[] | PermissionsConfig): MethodDe
 /**
  * @RequireRole() decorator - shorthand for single role requirement
  */
-export function RequireRole(role: string): MethodDecorator {
+export function RequireRole(role: string): MethodDecorator & ClassDecorator {
   return Roles([role]);
 }
 
 /**
  * @RequirePermission() decorator - shorthand for single permission requirement
  */
-export function RequirePermission(permission: string): MethodDecorator {
+export function RequirePermission(permission: string): MethodDecorator & ClassDecorator {
   return Permissions([permission]);
 }
 
 /**
  * @AdminOnly() decorator - shorthand for admin role requirement
  */
-export function AdminOnly(): MethodDecorator {
+export function AdminOnly(): MethodDecorator & ClassDecorator {
   return RequireRole('admin');
 }
 
 /**
  * @SuperAdminOnly() decorator - shorthand for super-admin role requirement
  */
-export function SuperAdminOnly(): MethodDecorator {
+export function SuperAdminOnly(): MethodDecorator & ClassDecorator {
   return RequireRole('super-admin');
 }
 
 /**
  * @MinimumRole() decorator - requires minimum role level
  */
-export function MinimumRole(roleName: string): MethodDecorator {
-  return (target: any, propertyKey: string | symbol) => {
+export function MinimumRole(roleName: string): MethodDecorator & ClassDecorator {
+  return (target: any, propertyKey?: string | symbol) => {
+    if (propertyKey === undefined) {
+      MetadataRegistry.defineClassAccess(target, 'minimumRole', { roleName });
+      return;
+    }
     MetadataRegistry.defineMinimumRole(target, propertyKey as string, { roleName });
   };
+}
+
+/**
+ * Roles in effect for the current request: the ones produced by
+ * `RBACPluginConfig.resolveRoles` when it is configured, otherwise the roles
+ * carried by the token.
+ */
+function effectiveUserRoles(c: Context): string[] {
+  const resolved = c.get('rbac.roles');
+  if (Array.isArray(resolved)) return resolved;
+  return getCurrentUser(c)?.roles || [];
 }
 
 /**
@@ -99,7 +126,7 @@ export class RBACGuard {
       throw new AuthorizationException('Authentication required for role check');
     }
 
-    const userRoles = user.roles || [];
+    const userRoles = effectiveUserRoles(c);
     
     // Get effective roles if inheritance is allowed
     const effectiveRoles = config.allowInherited 
@@ -133,7 +160,7 @@ export class RBACGuard {
       throw new AuthorizationException('Authentication required for permission check');
     }
 
-    const userRoles = user.roles || [];
+    const userRoles = effectiveUserRoles(c);
     
     // Get all permissions from user roles
     const userPermissions = new Set<string>();
@@ -174,7 +201,7 @@ export class RBACGuard {
       throw new AuthorizationException('Authentication required for role level check');
     }
 
-    const userRoles = user.roles || [];
+    const userRoles = effectiveUserRoles(c);
     const userHighestLevel = this.rbac.getHighestRoleLevel(userRoles);
     
     const requiredRoleObj = this.rbac.getRole(requiredRole);
@@ -200,8 +227,7 @@ export function getRBACManager(c: Context): RBACManager | null {
 }
 
 export function getUserRoles(c: Context): string[] {
-  const user = getCurrentUser(c);
-  return user?.roles || [];
+  return effectiveUserRoles(c);
 }
 
 export function getUserPermissions(c: Context): string[] {

@@ -27,7 +27,8 @@ export class OpenAPIGenerator {
       description: options?.description || 'API built with Veloce-TS',
       path: options?.path || '/openapi.json',
       docsPath: options?.docsPath || '/docs',
-      docs: options?.docs !== false
+      docs: options?.docs !== false,
+      public: options?.public !== false
     };
   }
 
