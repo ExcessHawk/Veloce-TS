@@ -72,7 +72,7 @@ export class RBACPlugin implements Plugin {
       this.rbac.defineRoles(config.roles);
     }
 
-    this.guard = new RBACGuard(this.rbac);
+    this.guard = new RBACGuard(this.rbac, config.resolveRoles);
   }
 
   async install(app: VeloceTS): Promise<void> {
@@ -131,7 +131,6 @@ export class RBACPlugin implements Plugin {
     const rolesConfig = route.roles?.config;
     const permissionsConfig = route.permissions?.config;
     const minimumRoleConfig = route.minimumRole;
-    const resolveRoles = this.config.resolveRoles;
 
     return async (c: Context, next: () => Promise<void>) => {
       const user = getCurrentUser(c);
@@ -143,12 +142,9 @@ export class RBACPlugin implements Plugin {
         throw new AuthenticationException('Authentication required');
       }
 
-      if (resolveRoles) {
-        // Request-scoped roles replace the token's for every check below and
-        // for getUserRoles(c) in the handler.
-        const resolved = await resolveRoles(c, user);
-        c.set('rbac.roles', Array.isArray(resolved) ? resolved : []);
-      }
+      // Request-scoped roles (resolveRoles) replace the token's for every
+      // check below and for getUserRoles(c) in the handler.
+      await guard.resolveRequestRoles(c, user);
 
       if (rolesConfig) {
         guard.checkRoles(c, rolesConfig);

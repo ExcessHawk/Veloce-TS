@@ -15,7 +15,7 @@ export { MetadataCompiler, type CompiledRouteMetadata } from './core/compiled-me
 
 // Decorator exports
 export * from './decorators/http.js';
-export { Body, Param, Header, Cookie, Ctx, Query, Req, RequestId, AbortSignal } from './decorators/params.js';
+export { Body, Param, Header, Cookie, Ctx, Query, Req, RequestId, AbortSignal, createParamDecorator } from './decorators/params.js';
 export * from './decorators/dependencies.js';
 export * from './decorators/middleware.js';
 export * from './decorators/docs.js';
@@ -29,7 +29,7 @@ export { ValidationException } from './validation/exceptions.js';
 
 // Dependency Injection exports
 export { DIContainer } from './dependencies/container.js';
-export { registerDrizzle, InjectDB, DB_TOKEN } from './dependencies/drizzle.js';
+export { registerDrizzle, InjectDB, DB_TOKEN, type RegisterDrizzleOptions } from './dependencies/drizzle.js';
 export { registerPrisma, PRISMA_TOKEN } from './dependencies/prisma.js';
 export { registerTypeORM, TYPEORM_TOKEN } from './dependencies/typeorm.js';
 

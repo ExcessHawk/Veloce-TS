@@ -152,6 +152,33 @@ export const Patch = createMethodDecorator('PATCH');
 export const All = createMethodDecorator('ALL');
 
 /**
+ * Set the maximum request body size for one route, in bytes.
+ *
+ * Overrides the application-wide `bodyLimit` (1 MiB by default) in either
+ * direction: raise it for an upload endpoint, or tighten it for a route that
+ * only ever receives a few fields. `0` disables the check for the route.
+ *
+ * @example
+ * ```ts
+ * @Put('/upload')
+ * @BodyLimit(25 * 1024 * 1024)
+ * upload(@Ctx() c: Context) {}
+ * ```
+ */
+export function BodyLimit(bytes: number): MethodDecorator {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    throw new RangeError('@BodyLimit expects a non-negative number of bytes');
+  }
+  return (target: any, propertyKey: string | symbol) => {
+    const existing = MetadataRegistry.getRouteMetadata(target, propertyKey as string);
+    MetadataRegistry.defineRoute(target, propertyKey as string, {
+      ...existing,
+      bodyLimit: bytes,
+    });
+  };
+}
+
+/**
  * Override the HTTP status code returned by a route handler.
  *
  * By default every successful handler returns 200.  Use this decorator to

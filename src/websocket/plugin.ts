@@ -2,7 +2,10 @@
 import type { Plugin } from '../core/plugin.js';
 import type { VeloceTS } from '../core/application.js';
 import { WebSocketManager } from './manager.js';
-import type { WebSocketConnection, WebSocketLike } from './connection.js';
+import type { WebSocketConnection, WebSocketLike, WebSocketConnectionInit } from './connection.js';
+import type { Context } from '../types/index.js';
+import type { TokenPayload } from '../auth/jwt-provider.js';
+import { InProcessSocket } from './in-process-socket.js';
 import { getLogger } from '../logging/logger.js';
 import {
   getNodeWebSocketAdapter,
@@ -68,7 +71,101 @@ export interface WebSocketPluginConfig {
    * @default 1048576 (1 MiB)
    */
   maxMessageSizeBytes?: number;
+
+  /**
+   * How clients authenticate when a gateway asks for it
+   * (`@WebSocket(path, { auth: true })`). Omit it and only the
+   * `Authorization` header is considered and no extra route is registered.
+   */
+  auth?: WebSocketAuthConfig;
 }
+
+/** Where a WebSocket client's credentials may come from. */
+export type WebSocketAuthSource = 'header' | 'ticket' | 'query';
+
+/**
+ * Storage for one-time connection tickets. The default keeps them in memory,
+ * which is only correct for a single instance: with several, the instance that
+ * issues a ticket is not necessarily the one that receives the upgrade, so
+ * supply a shared implementation (Redis, a database table).
+ */
+export interface WebSocketTicketStore {
+  /** Store `payload` under a fresh unguessable ticket valid for `ttlMs`. */
+  issue(payload: TokenPayload, ttlMs: number): Promise<string>;
+  /** Return the payload and invalidate the ticket; `null` if unknown, used or expired. */
+  consume(ticket: string): Promise<TokenPayload | null>;
+}
+
+/** In-memory {@link WebSocketTicketStore}: per process, single use, expiring. */
+export class MemoryWebSocketTicketStore implements WebSocketTicketStore {
+  private tickets = new Map<string, { payload: TokenPayload; expiresAt: number }>();
+
+  async issue(payload: TokenPayload, ttlMs: number): Promise<string> {
+    const now = Date.now();
+    // Opportunistic cleanup: tickets are short-lived, so this stays small.
+    for (const [key, entry] of this.tickets) {
+      if (entry.expiresAt <= now) this.tickets.delete(key);
+    }
+
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const ticket = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    this.tickets.set(ticket, { payload, expiresAt: now + ttlMs });
+    return ticket;
+  }
+
+  async consume(ticket: string): Promise<TokenPayload | null> {
+    const entry = this.tickets.get(ticket);
+    if (!entry) return null;
+    this.tickets.delete(ticket); // single use, whatever happens next
+    return entry.expiresAt > Date.now() ? entry.payload : null;
+  }
+}
+
+/** How WebSocket clients authenticate. */
+export interface WebSocketAuthConfig {
+  /**
+   * Accepted credential sources, tried in order.
+   *
+   * - `header`: the `Authorization: Bearer` header. Works for server-to-server
+   *   and native clients; browsers cannot set it on a WebSocket.
+   * - `ticket`: a one-time ticket in the query string (`?ticket=…`). The
+   *   client first calls the ticket endpoint with its normal credentials, then
+   *   opens the socket with the ticket. The access token never appears in a
+   *   URL, so it does not end up in proxy or server access logs.
+   * - `query`: the access token itself in the query string (`?token=…`). Kept
+   *   for compatibility; prefer `ticket`.
+   *
+   * @default ['header', 'ticket']
+   */
+  sources?: WebSocketAuthSource[];
+  ticket?: {
+    /** Lifetime of a ticket in milliseconds. @default 30000 */
+    ttlMs?: number;
+    /** Path of the endpoint that issues tickets; `false` to not register one. @default '/ws/ticket' */
+    path?: string | false;
+    /** Query parameter the client sends the ticket in. @default 'ticket' */
+    param?: string;
+    /** Where tickets are kept. @default an in-memory store (single instance only) */
+    store?: WebSocketTicketStore;
+  };
+  /** Query parameter for the `query` source. @default 'token' */
+  queryParam?: string;
+  /**
+   * Verify an access token. Defaults to the `AuthPlugin`'s JWT provider, so the
+   * same secret, algorithm pinning and token blacklist apply.
+   */
+  verifyToken?: (token: string) => TokenPayload | Promise<TokenPayload>;
+}
+
+/** Header a TestClient uses to hand the plugin an in-process socket. Never honored without a pending test socket. */
+const TEST_SOCKET_HEADER = 'x-veloce-test-socket';
+/** Context key carrying the upgrade result to the Node (node-ws) handler factory. */
+const UPGRADE_INIT_KEY = 'veloce:ws.init';
+
+type UpgradeDecision =
+  | { ok: true; init: WebSocketConnectionInit }
+  | { ok: false; status: 401 | 403 };
 
 /**
  * WebSocketPlugin adds WebSocket support to Veloce-TS
@@ -83,13 +180,30 @@ export class WebSocketPlugin implements Plugin {
   /** Set only on Node, where upgrades go through @hono/node-ws. */
   private nodeWs?: NodeWebSocketAdapter;
 
+  private app?: VeloceTS;
+  private readonly authConfig?: WebSocketAuthConfig;
+  private readonly sources: WebSocketAuthSource[];
+  private readonly ticketStore: WebSocketTicketStore;
+  private readonly ticketTtlMs: number;
+
+  /** In-process sockets waiting to be attached by an upgrade request (tests). */
+  private pendingTestSockets = new Map<
+    string,
+    (opened: { connection: WebSocketConnection; metadata: any }) => void
+  >();
+
   constructor(config: WebSocketPluginConfig = {}) {
     this.manager = new WebSocketManager(config);
+    this.authConfig = config.auth;
+    // Without an `auth` section nothing new is exposed: only the Authorization
+    // header (already verified by the auth middleware) is considered.
+    this.sources = config.auth ? config.auth.sources ?? ['header', 'ticket'] : ['header'];
+    this.ticketStore = config.auth?.ticket?.store ?? new MemoryWebSocketTicketStore();
+    this.ticketTtlMs = config.auth?.ticket?.ttlMs ?? 30_000;
   }
 
   async install(app: VeloceTS): Promise<void> {
-    const metadata = app.getMetadata();
-    const websockets = metadata.getWebSockets();
+    this.app = app;
     const container = app.getContainer();
 
     // Let the manager resolve gateway instances through the same DI container
@@ -105,8 +219,23 @@ export class WebSocketPlugin implements Plugin {
       this.nodeWs = await getNodeWebSocketAdapter(app);
     }
 
-    for (const ws of websockets) {
+    this.registerTicketEndpoint(app);
+  }
+
+  /**
+   * Register the gateway routes.
+   *
+   * Done here rather than in install() so the routes sit BEHIND every global
+   * middleware — the auth middleware in particular, and the application's own
+   * `afterPlugins` middleware. Registered during install() they came first and
+   * `auth.user` was never set for an upgrade request.
+   */
+  async beforeCompile(app: VeloceTS): Promise<void> {
+    const container = app.getContainer();
+
+    for (const ws of app.getMetadata().getWebSockets()) {
       ws.instance = await container.resolve(ws.target);
+      this.assertCanAuthenticate(ws);
       this.registerWebSocket(app, ws);
     }
   }
@@ -134,6 +263,239 @@ export class WebSocketPlugin implements Plugin {
     injectNodeWebSocket(app, raw);
   }
 
+  // ==========================================================================
+  // Authentication
+  // ==========================================================================
+
+  /** `POST /ws/ticket`: trade normal credentials for a one-time connection ticket. */
+  private registerTicketEndpoint(app: VeloceTS): void {
+    if (!this.sources.includes('ticket')) return;
+    const path = this.authConfig?.ticket?.path ?? '/ws/ticket';
+    if (path === false) return;
+
+    app.post(path, {
+      // Authenticated by the check below (it needs the user anyway); marked
+      // public so `requireAuthByDefault` does not add a second, identical gate.
+      public: true,
+      handler: async (c: Context) => {
+        const user = c.get('auth.user');
+        if (!user) {
+          return c.json({ error: 'Authentication required', statusCode: 401 }, 401);
+        }
+
+        // A ticket never outlives the token it was issued from.
+        let ttlMs = this.ticketTtlMs;
+        const exp = (user as { exp?: unknown }).exp;
+        if (typeof exp === 'number') {
+          ttlMs = Math.min(ttlMs, exp * 1000 - Date.now());
+        }
+        if (ttlMs <= 0) {
+          return c.json({ error: 'Token expired', statusCode: 401 }, 401);
+        }
+
+        const ticket = await this.ticketStore.issue(user, ttlMs);
+        return { ticket, expiresInMs: ttlMs };
+      },
+      docs: {
+        summary: 'Issue a WebSocket connection ticket',
+        description:
+          'Returns a single-use, short-lived ticket. Open the WebSocket with `?ticket=<value>` ' +
+          'instead of putting the access token in the URL.',
+        tags: ['WebSocket']
+      }
+    });
+  }
+
+  /** A gateway that demands authentication needs something able to verify credentials. */
+  private assertCanAuthenticate(metadata: any): void {
+    const options = metadata.options;
+    const managed = options?.auth === true || (options?.roles?.length ?? 0) > 0;
+    if (!managed) return;
+
+    if (!this.authConfig?.verifyToken && !this.app?.getPluginManager().getPlugin('auth')) {
+      throw new Error(
+        `WebSocket gateway "${metadata.target?.name ?? metadata.path}" requires authentication, but there is ` +
+        'nothing to verify credentials with. Install AuthPlugin, or pass `auth.verifyToken` to WebSocketPlugin.'
+      );
+    }
+  }
+
+  private async verifyToken(token: string): Promise<TokenPayload | null> {
+    try {
+      if (this.authConfig?.verifyToken) {
+        return await this.authConfig.verifyToken(token);
+      }
+      const authPlugin = this.app?.getPluginManager().getPlugin('auth') as any;
+      const provider = authPlugin?.getAuthService?.().getJWTProvider?.();
+      if (!provider) return null;
+      return await provider.verifyAccessToken(token);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Identify the caller of an upgrade request from the configured sources. */
+  private async authenticate(c: Context): Promise<TokenPayload | null> {
+    for (const source of this.sources) {
+      if (source === 'header') {
+        // Usually already verified by the auth middleware…
+        const user = c.get('auth.user');
+        if (user) return user;
+        // …but verify it here when that middleware is not installed.
+        const header = c.req.header('authorization');
+        if (header?.toLowerCase().startsWith('bearer ')) {
+          const verified = await this.verifyToken(header.slice(7).trim());
+          if (verified) return verified;
+        }
+      } else if (source === 'ticket') {
+        const ticket = c.req.query(this.authConfig?.ticket?.param ?? 'ticket');
+        if (ticket) {
+          const payload = await this.ticketStore.consume(ticket);
+          if (payload) return payload;
+        }
+      } else if (source === 'query') {
+        const token = c.req.query(this.authConfig?.queryParam ?? 'token');
+        if (token) {
+          const verified = await this.verifyToken(token);
+          if (verified) return verified;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Decide whether an upgrade request may become a connection, and what the
+   * connection will know about its client.
+   *
+   * 1. Identify the caller (header, ticket or query token).
+   * 2. Enforce the gateway's declarative rules (`auth`, `roles`).
+   * 3. Run the gateway's own `authorizeUpgrade(c)`; an object it returns
+   *    becomes `connection.data`.
+   */
+  private async authorize(c: Context, metadata: any): Promise<UpgradeDecision> {
+    const options = metadata.options ?? {};
+    const roles: string[] = options.roles ?? [];
+    const needsAuth = options.auth === true || roles.length > 0;
+
+    const user = await this.authenticate(c);
+    if (user && !c.get('auth.user')) {
+      // Make the caller visible to authorizeUpgrade(), getCurrentUser(c), the
+      // RBAC guard and anything else that reads the context.
+      c.set('auth.user', user);
+      c.set('auth.authenticated', true);
+    }
+
+    if (needsAuth && !user) {
+      return { ok: false, status: 401 };
+    }
+
+    if (roles.length > 0 && user) {
+      const rbac = this.app?.getPluginManager().getPlugin('rbac') as any;
+      const guard = rbac?.getGuard?.();
+      try {
+        if (guard) {
+          // Same path as an HTTP route: resolveRoles + inheritance
+          await guard.resolveRequestRoles(c, user);
+          guard.checkRoles(c, { roles, requireAll: false, allowInherited: true });
+        } else if (!roles.some((role) => (user.roles ?? []).includes(role))) {
+          return { ok: false, status: 403 };
+        }
+      } catch {
+        return { ok: false, status: 403 };
+      }
+    }
+
+    let data: unknown;
+    const instance = metadata.instance;
+    if (instance && typeof instance.authorizeUpgrade === 'function') {
+      let result: unknown = false;
+      try {
+        result = await instance.authorizeUpgrade(c);
+      } catch {
+        result = false;
+      }
+      if (!result) {
+        return { ok: false, status: 401 };
+      }
+      if (typeof result === 'object') {
+        data = result;
+      }
+    }
+
+    return { ok: true, init: { user: user ?? undefined, data } };
+  }
+
+  /**
+   * Shared gate for every runtime: returns a Response when the request must not
+   * (or, in tests, need not) reach the runtime's upgrade, otherwise what the
+   * connection should be opened with.
+   */
+  private async gate(c: Context, metadata: any): Promise<Response | WebSocketConnectionInit> {
+    const decision = await this.authorize(c, metadata);
+    if (!decision.ok) {
+      return c.text(decision.status === 403 ? 'Forbidden' : 'Unauthorized', decision.status);
+    }
+
+    // In-process connection for tests: only when this exact plugin instance is
+    // waiting for the key the request carries.
+    const testKey = c.req.header(TEST_SOCKET_HEADER);
+    const attach = testKey ? this.pendingTestSockets.get(testKey) : undefined;
+    if (testKey && attach) {
+      this.pendingTestSockets.delete(testKey);
+      const socket = new InProcessSocket(c.req.url);
+      const connection = this.manager.openConnection(socket, metadata, decision.init);
+      socket.bind(connection);
+      attach({ connection, metadata });
+      return c.json({ ok: true });
+    }
+
+    return decision.init;
+  }
+
+  /**
+   * Open a connection to a gateway without a network socket (used by
+   * `TestClient.ws()`). The request goes through the real route — global
+   * middleware, authentication, `authorizeUpgrade` — and only the transport is
+   * replaced. Rejects with `{ status }` when the upgrade is refused.
+   */
+  async connectInProcess(
+    path: string,
+    headers: Record<string, string> = {}
+  ): Promise<{ connection: WebSocketConnection; metadata: any }> {
+    if (!this.app) {
+      throw new Error('WebSocketPlugin is not installed: call app.compile() first.');
+    }
+
+    const key = crypto.randomUUID();
+    let opened: { connection: WebSocketConnection; metadata: any } | undefined;
+    this.pendingTestSockets.set(key, (value) => {
+      opened = value;
+    });
+
+    let response: Response;
+    try {
+      response = await this.app.getHono().request(path, {
+        headers: { ...headers, Upgrade: 'websocket', Connection: 'Upgrade', [TEST_SOCKET_HEADER]: key },
+      });
+    } finally {
+      this.pendingTestSockets.delete(key);
+    }
+
+    if (!opened) {
+      const error = new Error(`WebSocket upgrade refused with status ${response.status}`) as Error & {
+        status: number;
+      };
+      error.status = response.status;
+      throw error;
+    }
+    return opened;
+  }
+
+  // ==========================================================================
+  // Route registration and upgrades
+  // ==========================================================================
+
   /**
    * Register a WebSocket route with the application
    */
@@ -154,68 +516,55 @@ export class WebSocketPlugin implements Plugin {
         return c.text('Expected WebSocket upgrade', 426);
       }
 
-      // Optional pre-upgrade authorization. If the gateway exposes an
-      // `authorizeUpgrade(c)` method, run it BEFORE switching protocols so an
-      // unauthenticated client is rejected at the handshake (HTTP 401) instead
-      // of completing the upgrade and being closed afterwards. Gateways that do
-      // not define the method keep the previous behavior (upgrade always).
-      const instance = metadata.instance;
-      if (instance && typeof instance.authorizeUpgrade === 'function') {
-        let authorized = false;
-        try {
-          authorized = await instance.authorizeUpgrade(c);
-        } catch {
-          authorized = false;
-        }
-        if (!authorized) {
-          return c.text('Unauthorized', 401);
-        }
+      // Authorization runs BEFORE switching protocols, so a client that may not
+      // connect is refused at the handshake (HTTP 401/403) instead of
+      // completing the upgrade and being closed afterwards.
+      const outcome = await this.gate(c, metadata);
+      if (outcome instanceof Response) {
+        return outcome;
       }
 
       // Handle WebSocket upgrade based on runtime
-      return this.handleUpgrade(c, metadata);
+      return this.handleUpgrade(c, metadata, outcome);
     });
   }
 
   /**
    * Register a gateway on Node through @hono/node-ws.
    *
-   * Unlike Bun and Deno — where the handler decides at request time whether to
-   * upgrade — node-ws supplies a middleware that owns the route, so the
-   * `authorizeUpgrade` check has to run inside its handler factory. Returning
-   * no event handlers is how a rejected connection is expressed there.
+   * node-ws supplies a middleware that owns the route. It runs the application
+   * for the upgrade request and only switches protocols if the response is its
+   * own; any other response is written back to the socket as a plain HTTP
+   * reply. So the gate runs as a middleware in front of it, and an unauthorized
+   * client gets a 401/403 before the handshake, exactly as on Bun and Deno.
    */
   private registerNodeWebSocket(hono: any, metadata: any): void {
     const manager = this.manager;
 
     hono.get(
       metadata.path,
+      async (c: Context, next: () => Promise<void>) => {
+        if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
+          return next();
+        }
+        const outcome = await this.gate(c, metadata);
+        if (outcome instanceof Response) {
+          return outcome;
+        }
+        (c as any).set(UPGRADE_INIT_KEY, outcome);
+        return next();
+      },
       this.nodeWs!.upgradeWebSocket((c: any) => {
         let connection: WebSocketConnection | undefined;
-        let authorized = true;
+        const init: WebSocketConnectionInit | undefined = c.get(UPGRADE_INIT_KEY);
 
         return {
           async onOpen(_evt: unknown, ws: WebSocketLike) {
-            const instance = metadata.instance;
-            if (instance && typeof instance.authorizeUpgrade === 'function') {
-              try {
-                authorized = Boolean(await instance.authorizeUpgrade(c));
-              } catch {
-                authorized = false;
-              }
-              if (!authorized) {
-                // 1008 = Policy Violation. The handshake already completed by
-                // the time node-ws hands us the socket, so an unauthorized
-                // client is closed here rather than refused with a 401.
-                ws.close(1008, 'Unauthorized');
-                return;
-              }
-            }
-            connection = manager.openConnection(ws, metadata);
+            connection = manager.openConnection(ws, metadata, init);
           },
 
           async onMessage(evt: { data: unknown }, _ws: WebSocketLike) {
-            if (!authorized || !connection) return;
+            if (!connection) return;
             await manager.handleMessage(evt as MessageEvent, connection, metadata);
           },
 
@@ -241,12 +590,12 @@ export class WebSocketPlugin implements Plugin {
   /**
    * Handle WebSocket upgrade for different runtimes
    */
-  private handleUpgrade(c: any, metadata: any): Response {
+  private handleUpgrade(c: any, metadata: any, init: WebSocketConnectionInit): Response {
     // Detect runtime and handle accordingly
     if (typeof Bun !== 'undefined') {
-      return this.handleBunUpgrade(c, metadata);
+      return this.handleBunUpgrade(c, metadata, init);
     } else if (typeof (globalThis as any).Deno !== 'undefined') {
-      return this.handleDenoUpgrade(c, metadata);
+      return this.handleDenoUpgrade(c, metadata, init);
     } else {
       // Unreachable on Node: registerNodeWebSocket() owns those routes, so this
       // branch is only for a runtime that is none of the three.
@@ -262,7 +611,7 @@ export class WebSocketPlugin implements Plugin {
    * Hono on top of Bun, we pass the manager callbacks via the upgrade `data`
    * object so they can be invoked from the Bun serve websocket handler.
    */
-  private handleBunUpgrade(c: any, metadata: any): Response {
+  private handleBunUpgrade(c: any, metadata: any, init: WebSocketConnectionInit): Response {
     const bunEnv = c.env as any;
 
     if (!bunEnv?.upgrade) {
@@ -270,7 +619,7 @@ export class WebSocketPlugin implements Plugin {
     }
 
     const success = bunEnv.upgrade(c.req.raw, {
-      data: { manager: this.manager, metadata, requestUrl: c.req.url }
+      data: { manager: this.manager, metadata, requestUrl: c.req.url, init }
     });
 
     if (!success) {
@@ -291,14 +640,14 @@ export class WebSocketPlugin implements Plugin {
    * Note: Deno's upgraded sockets expose no `ping()`, so the heartbeat
    * falls back to application-level `{"type":"ping"}` frames only.
    */
-  private handleDenoUpgrade(c: any, metadata: any): Response {
+  private handleDenoUpgrade(c: any, metadata: any, init: WebSocketConnectionInit): Response {
     const Deno = (globalThis as any).Deno;
     const { socket, response } = Deno.upgradeWebSocket(c.req.raw);
 
     let connection: import('./connection.js').WebSocketConnection | undefined;
 
     socket.onopen = () => {
-      connection = this.manager.openConnection(socket as any, metadata);
+      connection = this.manager.openConnection(socket as any, metadata, init);
     };
 
     socket.onmessage = async (event: MessageEvent) => {

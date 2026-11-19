@@ -13,6 +13,7 @@ export {
   MemoryRateLimitStore,
   RedisRateLimitStore,
 } from './rate-limit.js';
+export { clientIp, peerAddress, type ClientIpOptions } from './client-ip.js';
 export { createCompressionMiddleware } from './compression.js';
 export { createTimeoutMiddleware } from './timeout.js';
 export { 

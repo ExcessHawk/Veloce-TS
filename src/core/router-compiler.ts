@@ -113,6 +113,21 @@ function streamResponse(gen: AsyncGenerator, contentType: string, onError: (erro
 }
 
 /**
+ * Normalize a route path to Hono's conventions: leading slash, FastAPI-style
+ * `{param}` converted to `:param`, no trailing slash (except the root).
+ */
+export function toHonoPath(path: string): string {
+  if (!path.startsWith('/')) {
+    path = '/' + path;
+  }
+  path = path.replace(/\{([^}]+)\}/g, ':$1');
+  if (path.length > 1 && path.endsWith('/')) {
+    path = path.slice(0, -1);
+  }
+  return path;
+}
+
+/**
  * RouterCompiler converts metadata from decorators and functional API
  * into actual Hono routes with full validation and dependency injection
  */
@@ -140,6 +155,7 @@ export class RouterCompiler {
     // ErrorHandler, so an AuthorizationException from a guard maps to 403, etc.
     this.app.onError(async (err, c) => {
       const error = err instanceof Error ? err : new Error(String(err));
+      c.set('veloce:error', error);
       // Exception filters must also see errors thrown by route middleware/guards.
       if (this.filterManager) {
         const filtered = await this.filterManager.handle(error, c);
@@ -174,20 +190,7 @@ export class RouterCompiler {
    * Converts FastAPI-style path parameters to Hono format
    */
   private normalizePath(path: string): string {
-    // Ensure path starts with /
-    if (!path.startsWith('/')) {
-      path = '/' + path;
-    }
-
-    // Convert FastAPI-style {param} to Hono-style :param
-    path = path.replace(/\{([^}]+)\}/g, ':$1');
-
-    // Remove trailing slash unless it's the root path
-    if (path.length > 1 && path.endsWith('/')) {
-      path = path.slice(0, -1);
-    }
-
-    return path;
+    return toHonoPath(path);
   }
 
   /**
@@ -429,6 +432,9 @@ export class RouterCompiler {
    */
   private async handleError(c: Context, error: any): Promise<any> {
     const err = error instanceof Error ? error : new Error(String(error));
+    // Recorded for outer middleware: once this returns a response, nothing is
+    // thrown any more, so "the request failed" has to be visible another way.
+    c.set('veloce:error', err);
 
     if (this.filterManager) {
       const filtered = await this.filterManager.handle(err, c);
@@ -582,6 +588,11 @@ export class RouterCompiler {
         case 'abort-signal':
           // Extract AbortSignal from context
           value = getAbortSignal(c);
+          break;
+
+        case 'custom':
+          // Application-defined parameter (createParamDecorator)
+          value = param.resolve ? await param.resolve(c, param.data) : undefined;
           break;
 
         default:

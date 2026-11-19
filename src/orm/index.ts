@@ -34,6 +34,16 @@ export {
 } from './decorators.js';
 
 export * from './transaction-interceptor.js';
+export {
+  runInTransaction,
+  createTransactionalDb,
+  isTransactionalDb,
+  getActiveTransaction,
+  isInTransaction,
+  type RunInTransactionOptions,
+  type OnBeginTransaction,
+  type TransactionCapable,
+} from './transaction-context.js';
 export * from './transaction-propagation.js';
 export * from './transaction-events.js';
 export * from './transaction-plugin.js';

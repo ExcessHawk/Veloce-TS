@@ -2,10 +2,14 @@
 import 'reflect-metadata';
 import type { ZodSchema } from 'zod';
 import { MetadataRegistry } from '../core/metadata.js';
+import type { WebSocketGatewayOptions } from '../types/index.js';
 
 /**
  * @WebSocket decorator - Marks a class as a WebSocket handler
  * @param path - WebSocket endpoint path
+ * @param options - Optional access rules and limits. `{ auth: true }` refuses
+ *   the upgrade with 401 unless the client is authenticated, and exposes the
+ *   user as `connection.user`; see {@link WebSocketGatewayOptions}.
  * 
  * @example
  * ```typescript
@@ -18,9 +22,9 @@ import { MetadataRegistry } from '../core/metadata.js';
  * }
  * ```
  */
-export function WebSocket(path: string): ClassDecorator {
+export function WebSocket(path: string, options?: WebSocketGatewayOptions): ClassDecorator {
   return (target: any) => {
-    MetadataRegistry.defineWebSocket(target, { path });
+    MetadataRegistry.defineWebSocket(target, options ? { path, options } : { path });
   };
 }
 

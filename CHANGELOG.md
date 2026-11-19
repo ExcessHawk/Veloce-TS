@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Second batch from the same audit: the pieces a multi-tenant application had to
+build by hand around the framework.
+
+### Added
+
+- **Middleware phases and paths.** `app.use(path, mw)` scopes a global
+  middleware to a path, and `app.use(mw, { phase: 'afterPlugins' })` attaches it
+  after the middleware plugins install — so it runs after authentication and can
+  read `auth.user`. Until now an application middleware always ran first and
+  never saw the user.
+- **`@BodyLimit(bytes)`** and `bodyLimit` in the functional API: a per-route
+  request body limit that overrides the application-wide one in either
+  direction (an upload route that needs 25 MiB no longer forces the global
+  limit up, or off).
+- **`createParamDecorator(resolve, { schema? })`** — define your own parameter
+  decorators from the request context: `@Tenant() tenant`, `@ClientIp() ip`.
+  The resolver may be async, receives the decorator's argument, and its result
+  can be validated with Zod.
+- **Provider factories receive the resolution context**:
+  `factory: ({ c, container }) => …`. A request-scoped provider can now be built
+  from the request, once per request, and injected with `@Depends()`.
+- **Rate limiter: `keyBy`, `trustedProxyHops`, `skip`.** `keyBy: 'user'` and
+  `'user-or-ip'` key the limiter on the authenticated user (the limiter is then
+  attached in the `afterPlugins` phase automatically). `trustedProxyHops` reads
+  the client address from the position of `X-Forwarded-For` written by a proxy
+  you run, counted from the right. `skip` exempts requests.
+- **`clientIp(c, { trustedProxyHops })`** and `peerAddress(c)`, exported for use
+  outside the limiter (audit logs, geo rules).
+- **WebSocket authentication.** `@WebSocket(path, { auth, roles,
+  closeOnTokenExpiry, rateLimit })`: the upgrade is refused with 401/403 before
+  the handshake, the verified user is available as `connection.user`, and an
+  object returned by `authorizeUpgrade(c)` becomes `connection.data`. `roles`
+  goes through the RBAC plugin when installed (inheritance and `resolveRoles`).
+- **WebSocket connection tickets.** `new WebSocketPlugin({ auth: {} })`
+  registers `POST /ws/ticket`, which trades normal credentials for a
+  single-use, short-lived ticket; the client connects with `?ticket=…`. The
+  access token never appears in a URL. `auth.sources` selects among `header`,
+  `ticket` and `query` (the token in the query string, off by default), and
+  `auth.ticket.store` accepts a shared store for multi-instance deployments.
+- **`manager.disconnectUser(userId)`** closes every connection of a user (logout,
+  suspension, membership removed); connections of `auth` gateways also close
+  with code 4401 when the token they were opened with expires.
+- **`TestClient.ws(path)`** — connect to a gateway in-process. The upgrade goes
+  through the real route (global middleware, authentication,
+  `authorizeUpgrade`); only the transport is replaced. Returns a `TestWebSocket`
+  with `send()`, `nextMessage()`, `messages`, `close()`, `closeCode`.
+- **Ambient transactions.** `registerDrizzle()` now injects a
+  transaction-aware handle: inside `runInTransaction(db, fn)` — or a method
+  decorated with `@Transactional()` — every query made through the injected
+  handle, by that code or by services it awaits, runs in the transaction.
+  Nothing has to be passed around, and a singleton that stored `this.db` in its
+  constructor needs no change. `{ nested: true }` opens a savepoint.
+- **`registerDrizzle(app, db, { transactionPerRequest, onBegin })`.**
+  `transactionPerRequest` (off by default; `true` or a predicate) wraps a
+  request in one transaction, committed on success and rolled back when the
+  request fails. `onBegin(tx, c)` runs at the start of every outermost
+  transaction, inside it — the place to set per-transaction session state such
+  as the tenant read by PostgreSQL row-level security policies.
+
+### Changed
+
+- **WebSocket routes are registered after global middleware** (in
+  `beforeCompile` rather than `install`), so the auth middleware and
+  `afterPlugins` middleware now run for upgrade requests. An application with a
+  global middleware that rejects requests without credentials will now reject
+  such upgrades too.
+- **On Node an unauthorized WebSocket upgrade gets an HTTP 401** before the
+  handshake, as on Bun and Deno, instead of an accepted connection closed with
+  code 1008.
+- **`@Transactional()` now actually covers `this.db`** when the class holds a
+  handle from `registerDrizzle()`. Before, it opened a transaction and the
+  method's queries kept running outside it; methods that relied on that will now
+  see their writes rolled back when they throw.
+- **`registerDrizzle()` injects a proxy of the database**, not the object
+  itself: it behaves identically, but `injected === db` is no longer true.
+- **A singleton that injects a request-scoped provider in its constructor logs
+  a "Captive dependency" warning** (once per pair). It keeps the first
+  request's instance for its whole lifetime; this becomes an error in the next
+  major version.
+- **`trustProxy: true` on the rate limiter is deprecated** and logs a warning:
+  it reads the leftmost `X-Forwarded-For` entry, which the client controls.
+  The default rate-limit key is now prefixed (`ip:<address>`); counters in a
+  shared store restart once on upgrade.
+
 ## [3.6.0] - 2026-11-19
 
 Changes that came out of auditing a real multi-tenant application built on the

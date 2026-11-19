@@ -72,11 +72,35 @@ declare module 'hono' {
     'routeMetadata': import('../core/compiled-metadata.js').CompiledRouteMetadata | null;
     /** CORS headers captured for the current request. */
     'veloce:corsHeaders': Record<string, string>;
+    /**
+     * The error the request failed with, once the framework has turned it into
+     * a response. Lets outer middleware (e.g. the per-request transaction) tell
+     * a failed request from a successful one after `next()` returns.
+     */
+    'veloce:error': Error | undefined;
   }
 }
 
 // Middleware type
 export type Middleware = MiddlewareHandler;
+
+/**
+ * When a global middleware is attached to the request pipeline.
+ *
+ * - `early` (default): registered the moment `app.use()` is called, so it runs
+ *   before anything a plugin installs. It sees the raw request only.
+ * - `afterPlugins`: registered during `compile()`, once every plugin has
+ *   installed its own middleware. It runs after authentication, RBAC, sessions,
+ *   etc. and can read what they put in the context (`auth.user`, ...).
+ *
+ * Either way it runs before route guards, controller/route middleware and the handler.
+ */
+export type MiddlewarePhase = 'early' | 'afterPlugins';
+
+export interface UseMiddlewareOptions {
+  /** @default 'early' */
+  phase?: MiddlewarePhase;
+}
 
 // Route metadata
 export interface RouteMetadata {
@@ -103,6 +127,12 @@ export interface RouteMetadata {
   csrf?: CSRFMetadata;
   cache?: CacheMetadata;
   cacheInvalidate?: string[];
+  /**
+   * Maximum request body size for this route, in bytes (`@BodyLimit()` or
+   * `bodyLimit` in the functional API). Overrides the application-wide
+   * `bodyLimit`, in either direction.
+   */
+  bodyLimit?: number;
   /**
    * Explicitly public route (`@Public()` or `public: true` in the functional
    * API). Opts the route out of class-level `@Auth`/`@Roles` and out of
@@ -132,10 +162,14 @@ export interface CacheMetadata {
 // Parameter metadata
 export interface ParameterMetadata {
   index: number;
-  type: 'body' | 'query' | 'param' | 'header' | 'cookie' | 'request' | 'response' | 'context' | 'current-user' | 'token' | 'oauth-user' | 'oauth-token' | 'filtered-resource' | 'filtered-attributes' | 'current-session' | 'session-data' | 'csrf-token' | 'request-id' | 'abort-signal';
+  type: 'body' | 'query' | 'param' | 'header' | 'cookie' | 'request' | 'response' | 'context' | 'current-user' | 'token' | 'oauth-user' | 'oauth-token' | 'filtered-resource' | 'filtered-attributes' | 'current-session' | 'session-data' | 'csrf-token' | 'request-id' | 'abort-signal' | 'custom';
   schema?: ZodSchema;
   name?: string;
   required: boolean;
+  /** `custom` parameters only: computes the value from the request (see `createParamDecorator`). */
+  resolve?: (c: Context, data: any) => unknown | Promise<unknown>;
+  /** `custom` parameters only: the argument the decorator was called with. */
+  data?: unknown;
   /** Extra per-parameter-type data: `action` for `@CanAccess`-style checks, `key` for `@SessionData`. */
   metadata?: { action?: string; key?: string };
 }
@@ -256,9 +290,36 @@ export interface RateLimitOptions {
   /** Counter backend. Defaults to an in-memory, per-process store. */
   store?: RateLimitStore;
   /**
-   * Trust X-Forwarded-For / X-Real-IP headers for client identification.
-   * Leave false (default) unless the app runs behind a trusted reverse proxy —
-   * these headers are client-supplied and trivially spoofable otherwise.
+   * What identifies a caller, when no `keyGenerator` is given.
+   *
+   * - `ip` (default): the client address — see `trustedProxyHops`.
+   * - `user`: the authenticated user (`auth.user.sub`). Anonymous requests are
+   *   not limited by this limiter; pair it with an `ip` limiter on public routes.
+   * - `user-or-ip`: the user when authenticated, the client address otherwise.
+   *
+   * `user` and `user-or-ip` need the auth middleware to have run, so
+   * `app.useRateLimit()` attaches the limiter in the `afterPlugins` phase for them.
+   */
+  keyBy?: 'ip' | 'user' | 'user-or-ip';
+  /**
+   * Number of reverse proxies you control in front of the app. The client
+   * address is then read from that position of `X-Forwarded-For`, counted from
+   * the right — the entry your outermost proxy wrote — which a client cannot
+   * forge. `0` (default) ignores the header and uses the socket peer.
+   */
+  trustedProxyHops?: number;
+  /** Return true to exempt a request (health checks, webhooks with their own auth). */
+  skip?: (c: Context) => boolean | Promise<boolean>;
+  /**
+   * Pipeline phase for `app.useRateLimit()`. Defaults to `afterPlugins` when
+   * `keyBy` involves the user and to `early` otherwise. Set it explicitly when a
+   * custom `keyGenerator` reads something a plugin puts in the context.
+   */
+  phase?: MiddlewarePhase;
+  /**
+   * @deprecated Takes the LEFTMOST `X-Forwarded-For` entry, which is the one the
+   * client controls: behind a proxy that appends rather than overwrites the
+   * header, any client can pick its own rate-limit key. Use `trustedProxyHops`.
    * @default false
    */
   trustProxy?: boolean;
@@ -311,6 +372,11 @@ export interface RouteConfig<S extends RouteSchemas = RouteSchemas> {
   cache?: CacheMetadata;
   timeout?: number;
   /**
+   * Maximum request body size for this route, in bytes. Overrides the
+   * application-wide `bodyLimit` (e.g. to accept a larger upload on one route).
+   */
+  bodyLimit?: number;
+  /**
    * Mark the route as intentionally public. Only matters when `AuthPlugin` runs
    * with `requireAuthByDefault: true`, where every other route needs a valid token.
    */
@@ -320,7 +386,28 @@ export interface RouteConfig<S extends RouteSchemas = RouteSchemas> {
 // Provider config
 export interface ProviderConfig {
   scope?: Scope;
-  factory?: () => any;
+  /**
+   * Builds the instance. Receives the resolution context, so a request-scoped
+   * provider can derive itself from the request:
+   *
+   * ```ts
+   * container.register(TenantContext, {
+   *   scope: 'request',
+   *   factory: ({ c }) => resolveTenant(c!),
+   * });
+   * ```
+   *
+   * `c` is the request context when the resolution happens inside a request
+   * and `undefined` otherwise (e.g. a singleton built at startup).
+   */
+  factory?: (ctx: ProviderFactoryContext) => any;
+}
+
+export interface ProviderFactoryContext {
+  /** The current request context, when there is one. */
+  c?: Context;
+  /** The container doing the resolution, to resolve further dependencies. */
+  container: import('../dependencies/container.js').DIContainer;
 }
 
 // OpenAPI types
@@ -359,9 +446,38 @@ export interface OpenAPISpec {
 }
 
 // WebSocket types
+/** Options of the `@WebSocket(path, options)` decorator. */
+export interface WebSocketGatewayOptions {
+  /**
+   * Require an authenticated user before the connection is accepted. Without
+   * one the upgrade is refused with 401. The user is then available as
+   * `connection.user`.
+   */
+  auth?: boolean;
+  /**
+   * Require any of these roles (implies `auth`). Uses the RBAC plugin when it
+   * is installed — including role inheritance and `resolveRoles` — and the
+   * token's `roles` claim otherwise. A missing role is refused with 403.
+   */
+  roles?: string[];
+  /**
+   * Close the connection (code 4401) when the access token it was opened with
+   * expires. Only applies to gateways with `auth` or `roles`.
+   * @default true
+   */
+  closeOnTokenExpiry?: boolean;
+  /**
+   * Maximum inbound messages per connection per window. Messages over the
+   * limit are dropped and answered with `{ error: 'Rate limit exceeded' }`.
+   */
+  rateLimit?: { max: number; windowMs: number };
+}
+
 export interface WebSocketMetadata {
   target: Class;
   path: string;
+  /** Options passed to `@WebSocket(path, options)`. */
+  options?: WebSocketGatewayOptions;
   onConnect?: string;
   onMessage?: string;
   onDisconnect?: string;

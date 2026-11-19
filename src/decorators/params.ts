@@ -1,7 +1,7 @@
 // Parameter decorators
 import type { ZodSchema } from 'zod';
 import { MetadataRegistry } from '../core/metadata.js';
-import type { ParameterMetadata } from '../types/index.js';
+import type { ParameterMetadata, Context } from '../types/index.js';
 
 /**
  * Body decorator - extracts and validates request body
@@ -232,6 +232,63 @@ export function RequestId(): ParameterDecorator {
     };
 
     MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);
+  };
+}
+
+/**
+ * Define your own parameter decorator: a function of the request context whose
+ * result is injected into the handler.
+ *
+ * This is how request-derived values (the current tenant, the client IP, a
+ * feature-flag set, ...) reach a handler without every handler taking `@Ctx()`
+ * and calling a helper by hand.
+ *
+ * @param resolve - Computes the value. May be async. Receives the context and
+ *   whatever argument the decorator was called with.
+ * @param options.schema - Optional Zod schema the resolved value must satisfy
+ *   (a failure is a 422, like any other validated parameter).
+ *
+ * @example
+ * ```ts
+ * export const Tenant = createParamDecorator<TenantContext>((c) => c.get('tenant'));
+ *
+ * export const ClientIp = createParamDecorator<string, { hops?: number }>(
+ *   (c, opts) => clientIp(c, { trustedProxyHops: opts?.hops ?? 0 })
+ * );
+ *
+ * @Get('/')
+ * list(@Tenant() tenant: TenantContext, @ClientIp({ hops: 1 }) ip: string) {}
+ * ```
+ */
+export function createParamDecorator<T = unknown, D = void>(
+  resolve: (c: Context, data: D) => T | Promise<T>,
+  options?: { schema?: ZodSchema }
+): (data?: D) => ParameterDecorator {
+  if (typeof resolve !== 'function') {
+    throw new TypeError('createParamDecorator expects a resolver function');
+  }
+
+  return (data?: D): ParameterDecorator => {
+    return (target: any, propertyKey: string | symbol | undefined, parameterIndex: number) => {
+      // Handler parameters only: a constructor has no request to resolve from.
+      if (!propertyKey) {
+        throw new Error(
+          'A parameter decorator created with createParamDecorator can only be used on route handler parameters, ' +
+          'not on constructor parameters.'
+        );
+      }
+
+      const metadata: ParameterMetadata = {
+        index: parameterIndex,
+        type: 'custom',
+        required: false,
+        resolve: resolve as ParameterMetadata['resolve'],
+        data,
+        ...(options?.schema ? { schema: options.schema } : {})
+      };
+
+      MetadataRegistry.defineParameter(target, propertyKey as string, parameterIndex, metadata);
+    };
   };
 }
 

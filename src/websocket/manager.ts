@@ -2,7 +2,7 @@
 import type { WebSocketMetadata } from '../types/index.js';
 import type { DIContainer } from '../dependencies/container.js';
 import type { WebSocketPluginConfig } from './plugin.js';
-import { WebSocketConnection, type WebSocketLike } from './connection.js';
+import { WebSocketConnection, type WebSocketLike, type WebSocketConnectionInit } from './connection.js';
 import { getLogger } from '../logging/logger.js';
 
 /** Default heartbeat ping interval (30 seconds). */
@@ -13,6 +13,14 @@ const DEFAULT_MAX_MESSAGE_SIZE_BYTES = 1_048_576;
 const CLOSE_MESSAGE_TOO_BIG = 1009;
 /** WebSocket close code: Going Away — used for heartbeat/idle terminations. */
 const CLOSE_GOING_AWAY = 1001;
+/**
+ * Application close code for "your credentials are no longer valid": the token
+ * the connection was opened with expired, or the session was ended server-side.
+ * 4000-4999 is the range RFC 6455 reserves for applications; 4401 mirrors HTTP 401.
+ */
+export const CLOSE_UNAUTHENTICATED = 4401;
+/** Largest delay setTimeout accepts before it overflows and fires immediately. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 /**
  * Per-connection runtime state used by the heartbeat and idle-timeout
@@ -26,6 +34,14 @@ interface ConnectionState {
   idleTimer?: ReturnType<typeof setTimeout>;
   /** Heartbeat interval timer (ping + liveness check). */
   heartbeatTimer?: ReturnType<typeof setInterval>;
+  /** Fires when the access token the connection was opened with expires. */
+  expiryTimer?: ReturnType<typeof setTimeout>;
+  /** Inbound message counter for the per-connection rate limit. */
+  rate?: { count: number; windowStart: number };
+  /** Route metadata, kept so the connection can be closed from outside its handlers. */
+  metadata: WebSocketMetadata;
+  /** `sub` of the authenticated user, when there is one. */
+  userId?: string;
 }
 
 /**
@@ -45,6 +61,8 @@ export class WebSocketManager {
   private rooms: Map<string, Set<string>> = new Map();
   private connectionsByRoom: Map<string, Set<WebSocketConnection>> = new Map();
   private states: Map<string, ConnectionState> = new Map();
+  /** Connection ids per authenticated user (`sub`), for disconnectUser(). */
+  private connectionsByUser: Map<string, Set<string>> = new Map();
 
   /** DI container used to resolve gateway instances (set by the plugin). */
   private container?: DIContainer;
@@ -107,14 +125,30 @@ export class WebSocketManager {
    * websocket handlers, Deno's `socket.onmessage`/`onclose` assignments).
    * Starts heartbeat/idle timers and runs the onConnect handler.
    */
-  openConnection(ws: WebSocketLike, metadata: WebSocketMetadata): WebSocketConnection {
-    const connection = new WebSocketConnection(ws, this);
+  openConnection(
+    ws: WebSocketLike,
+    metadata: WebSocketMetadata,
+    init?: WebSocketConnectionInit
+  ): WebSocketConnection {
+    const connection = new WebSocketConnection(ws, this, undefined, init);
     this.connections.set(connection.id, connection);
 
-    const state: ConnectionState = { lastSeen: Date.now() };
+    const state: ConnectionState = { lastSeen: Date.now(), metadata };
     this.states.set(connection.id, state);
     this.armIdleTimer(connection, metadata, state);
     this.armHeartbeat(connection, metadata, state);
+
+    const sub = init?.user?.sub;
+    if (sub !== undefined && sub !== null && sub !== '') {
+      state.userId = String(sub);
+      let ids = this.connectionsByUser.get(state.userId);
+      if (!ids) {
+        ids = new Set();
+        this.connectionsByUser.set(state.userId, ids);
+      }
+      ids.add(connection.id);
+    }
+    this.armTokenExpiry(connection, metadata, state);
 
     // Execute onConnect handler if defined
     if (metadata.onConnect) {
@@ -129,7 +163,41 @@ export class WebSocketManager {
    * Called from the Bun websocket.open handler in HonoAdapter.
    */
   handleConnectionBun(ws: any, metadata: WebSocketMetadata): WebSocketConnection {
-    return this.openConnection(ws, metadata);
+    // The plugin carries what the upgrade step established through Bun's
+    // per-socket `data` object.
+    return this.openConnection(ws, metadata, ws?.data?.init);
+  }
+
+  /**
+   * Close every connection opened by a user — on logout, when an account is
+   * suspended, or when a member is removed from the resource the socket serves.
+   *
+   * @param userId - The `sub` of the user, as carried by the access token
+   * @returns How many connections were closed
+   */
+  disconnectUser(userId: string, code: number = CLOSE_UNAUTHENTICATED, reason: string = 'Session terminated'): number {
+    const ids = this.connectionsByUser.get(String(userId));
+    if (!ids || ids.size === 0) return 0;
+
+    let closed = 0;
+    for (const id of Array.from(ids)) {
+      const connection = this.connections.get(id);
+      const state = this.states.get(id);
+      if (connection && state) {
+        this.terminate(connection, state.metadata, code, reason);
+        closed++;
+      }
+    }
+    return closed;
+  }
+
+  /** Connections currently open for a user (`sub`). */
+  getUserConnections(userId: string): WebSocketConnection[] {
+    const ids = this.connectionsByUser.get(String(userId));
+    if (!ids) return [];
+    return Array.from(ids)
+      .map((id) => this.connections.get(id))
+      .filter((connection): connection is WebSocketConnection => Boolean(connection));
   }
 
   /**
@@ -209,6 +277,26 @@ export class WebSocketManager {
       }
     }
 
+    // 4. Per-connection rate limit (after control frames, which stay free)
+    const limit = metadata.options?.rateLimit;
+    if (limit && limit.max > 0 && limit.windowMs > 0) {
+      const state = this.states.get(connection.id);
+      if (state) {
+        const now = Date.now();
+        if (!state.rate || now - state.rate.windowStart >= limit.windowMs) {
+          state.rate = { count: 0, windowStart: now };
+        }
+        state.rate.count++;
+        if (state.rate.count > limit.max) {
+          connection.send({
+            error: 'Rate limit exceeded',
+            retryAfterMs: Math.max(0, limit.windowMs - (now - state.rate.windowStart))
+          });
+          return;
+        }
+      }
+    }
+
     if (!metadata.onMessage) {
       return;
     }
@@ -265,6 +353,14 @@ export class WebSocketManager {
     if (state) {
       if (state.idleTimer) clearTimeout(state.idleTimer);
       if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+      if (state.expiryTimer) clearTimeout(state.expiryTimer);
+      if (state.userId) {
+        const ids = this.connectionsByUser.get(state.userId);
+        if (ids) {
+          ids.delete(connection.id);
+          if (ids.size === 0) this.connectionsByUser.delete(state.userId);
+        }
+      }
       this.states.delete(connection.id);
     }
 
@@ -347,6 +443,43 @@ export class WebSocketManager {
     }, this.idleTimeoutMs);
     // Don't keep the process alive just for idle timers (Bun/Node timers).
     (state.idleTimer as any).unref?.();
+  }
+
+  /**
+   * Close the connection when the access token it was opened with expires.
+   * Only for gateways whose access is managed by the framework (`auth` /
+   * `roles`), and unless `closeOnTokenExpiry` is false: a connection must not
+   * outlive the credentials that authorized it.
+   */
+  private armTokenExpiry(
+    connection: WebSocketConnection,
+    metadata: WebSocketMetadata,
+    state: ConnectionState
+  ): void {
+    const options = metadata.options;
+    const managed = options?.auth === true || (options?.roles?.length ?? 0) > 0;
+    if (!managed || options?.closeOnTokenExpiry === false) return;
+
+    const exp = (connection.user as { exp?: unknown } | undefined)?.exp;
+    if (typeof exp !== 'number' || !Number.isFinite(exp)) return;
+
+    const delay = exp * 1000 - Date.now();
+    const close = () => this.terminate(connection, metadata, CLOSE_UNAUTHENTICATED, 'Token expired');
+
+    if (delay <= 0) {
+      close();
+      return;
+    }
+
+    const arm = (remaining: number) => {
+      state.expiryTimer = setTimeout(() => {
+        const left = remaining - MAX_TIMEOUT_MS;
+        if (left > 0) arm(left);
+        else close();
+      }, Math.min(remaining, MAX_TIMEOUT_MS));
+      (state.expiryTimer as any).unref?.();
+    };
+    arm(delay);
   }
 
   /**

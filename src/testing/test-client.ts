@@ -3,6 +3,9 @@
  * @description Test HTTP client over `app.getHono().request()` with chainable assertions (`expectStatus`, `expectJson`, ...).*/
 import type { VeloceTS } from '../core/application.js';
 import type { Hono } from 'hono';
+import type { WebSocketPlugin } from '../websocket/plugin.js';
+import type { InProcessSocket } from '../websocket/in-process-socket.js';
+import { TestWebSocket } from './test-websocket.js';
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -187,9 +190,11 @@ export class TestResponse {
  */
 export class TestClient {
   private hono: Hono;
+  private app: VeloceTS;
   private defaultHeaders: Record<string, string> = {};
 
   constructor(app: VeloceTS) {
+    this.app = app;
     this.hono = app.getHono();
   }
 
@@ -328,6 +333,45 @@ export class TestClient {
   }
 
   // -------------------------------------------------------------------------
+  // WebSocket
+  // -------------------------------------------------------------------------
+
+  /**
+   * Connect to a `@WebSocket` gateway in-process.
+   *
+   * The upgrade request goes through the real route — global middleware,
+   * authentication, the gateway's `authorizeUpgrade` — with this client's
+   * headers (so `withToken()` applies). Only the transport is replaced.
+   *
+   * Rejects with an error carrying `status` when the upgrade is refused.
+   *
+   * @example
+   * ```ts
+   * const ws = await client.withToken(token).ws('/ws/chat?room=general');
+   * await ws.send({ type: 'hello' });
+   * expect(await ws.nextMessage()).toEqual({ type: 'welcome' });
+   * await ws.close();
+   *
+   * await expect(client.ws('/ws/chat')).rejects.toMatchObject({ status: 401 });
+   * ```
+   */
+  async ws(path: string, options?: { headers?: Record<string, string>; query?: Record<string, string> }): Promise<TestWebSocket> {
+    const plugin = this.app.getPluginManager().getPlugin('websocket') as WebSocketPlugin | undefined;
+    if (!plugin || typeof plugin.connectInProcess !== 'function') {
+      throw new Error('TestClient.ws() needs the WebSocketPlugin: call app.usePlugin(new WebSocketPlugin()) first.');
+    }
+
+    const url = this._buildUrl(path, options?.query);
+    const { connection, metadata } = await plugin.connectInProcess(url, {
+      ...this.defaultHeaders,
+      ...options?.headers,
+    });
+
+    const socket = connection.native as InProcessSocket;
+    return new TestWebSocket(socket, plugin.getManager(), metadata, connection);
+  }
+
+  // -------------------------------------------------------------------------
   // Core request method
   // -------------------------------------------------------------------------
 
@@ -391,6 +435,7 @@ export class TestClient {
   private _clone(): TestClient {
     const clone = Object.create(TestClient.prototype) as TestClient;
     clone.hono = this.hono;
+    clone.app = this.app;
     clone.defaultHeaders = { ...this.defaultHeaders };
     return clone;
   }

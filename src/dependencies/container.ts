@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Provider, Scope, Context, ProviderConfig, Class } from '../types/index.js';
 import { MetadataRegistry } from '../core/metadata.js';
+import { getLogger } from '../logging/logger.js';
 
 /**
  * Dependency Injection Container
@@ -46,6 +47,13 @@ export class DIContainer {
 
   // Provider configurations
   private providers: Map<Provider, ProviderConfig> = new Map();
+
+  // Singletons currently being constructed, to spot a request-scoped
+  // dependency being captured by one of them.
+  private singletonsUnderConstruction: Set<Provider> = new Set();
+
+  // Captive-dependency pairs already reported (warn once per pair)
+  private captiveWarnings: Set<string> = new Set();
 
   // Cache provider names for error messages (only for object providers)
   private providerNameCache: WeakMap<object, string> = new WeakMap();
@@ -123,6 +131,7 @@ export class DIContainer {
       }
 
       this.stats.singletonMisses++;
+      this.singletonsUnderConstruction.add(provider);
       const creation = this.createInPath(provider, config, options?.context, path)
         .then(instance => {
           this.singletons.set(provider, instance);
@@ -130,6 +139,7 @@ export class DIContainer {
         })
         .finally(() => {
           this.singletonInFlight.delete(provider);
+          this.singletonsUnderConstruction.delete(provider);
         });
       this.singletonInFlight.set(provider, creation);
       return creation;
@@ -137,6 +147,7 @@ export class DIContainer {
 
     // ── Request ────────────────────────────────────────────────────────────
     if (scope === 'request') {
+      this.warnIfCaptured(provider, path);
       const context = options?.context;
       if (!context) {
         throw new Error(
@@ -206,6 +217,35 @@ export class DIContainer {
   }
 
   /**
+   * A singleton that takes a request-scoped dependency in its constructor keeps
+   * the instance built for whichever request created it — and serves it to
+   * every later request. With a factory that reads the request (the tenant,
+   * the current user) that is data leaking between users. Report it once per
+   * pair; it becomes an error in the next major version.
+   */
+  private warnIfCaptured(requestScoped: Provider, path: Set<Provider>): void {
+    for (const owner of path) {
+      if (!this.singletonsUnderConstruction.has(owner)) continue;
+
+      const ownerName = this.getProviderName(owner);
+      const depName = this.getProviderName(requestScoped);
+      const key = `${ownerName}<-${depName}`;
+      if (this.captiveWarnings.has(key)) continue;
+      this.captiveWarnings.add(key);
+
+      const message =
+        `Captive dependency: singleton "${ownerName}" injects request-scoped "${depName}" in its constructor, ` +
+        'so it keeps the instance of the first request for its whole lifetime. ' +
+        `Inject "${depName}" as a handler parameter instead, or give "${ownerName}" the 'request' scope.`;
+      try {
+        getLogger().warn(message);
+      } catch {
+        console.warn(message);
+      }
+    }
+  }
+
+  /**
    * Build a detailed circular dependency error message from the current path
    */
   private buildCircularDependencyMessage(path: Set<Provider>, provider: Provider): string {
@@ -230,7 +270,7 @@ export class DIContainer {
   ): Promise<T> {
     // Use custom factory if provided
     if (config.factory) {
-      return config.factory();
+      return config.factory({ c: context, container: this });
     }
 
     if (typeof provider === 'function') {

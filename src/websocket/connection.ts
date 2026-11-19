@@ -24,21 +24,60 @@ export interface WebSocketLike {
   [key: string]: any;
 }
 
+/** What the upgrade step established about a connection before it opened. */
+export interface WebSocketConnectionInit<TData = any> {
+  user?: import('../auth/jwt-provider.js').TokenPayload;
+  data?: TData;
+}
+
+/**
+ * Optional contract for a gateway class. Implementing it is not required —
+ * `authorizeUpgrade` is looked up by name — but it types the method and the
+ * shape of `connection.data`.
+ */
+export interface WebSocketGateway<TData = any> {
+  /**
+   * Runs before the connection is accepted, after the framework's own `auth` /
+   * `roles` checks. Return `false` (or throw) to refuse the upgrade with 401,
+   * `true` to accept it, or an object to accept it and make that object
+   * available as `connection.data`.
+   */
+  authorizeUpgrade?(c: import('../types/index.js').Context): boolean | TData | Promise<boolean | TData>;
+}
+
 /**
  * WebSocketConnection wraps a native WebSocket with helper methods
  * for sending messages, broadcasting, and managing rooms
  */
-export class WebSocketConnection {
+export class WebSocketConnection<TData = any> {
   public readonly id: string;
   private _ws: WebSocketLike | null;
+
+  /**
+   * The authenticated user this connection was opened by — the verified token
+   * payload. Present when the client authenticated during the upgrade
+   * (`@WebSocket(path, { auth: true })`, or any gateway reached with
+   * credentials); `undefined` for anonymous connections.
+   */
+  public readonly user?: import('../auth/jwt-provider.js').TokenPayload;
+
+  /**
+   * Whatever the gateway's `authorizeUpgrade(c)` returned (when it returned an
+   * object): the place for per-connection facts established at the handshake,
+   * such as the member or tenant the socket belongs to. An empty object otherwise.
+   */
+  public readonly data: TData;
 
   constructor(
     ws: WebSocketLike,
     private manager: WebSocketManager,
-    id?: string
+    id?: string,
+    init?: WebSocketConnectionInit<TData>
   ) {
     this._ws = ws;
     this.id = id || crypto.randomUUID();
+    this.user = init?.user;
+    this.data = (init?.data ?? {}) as TData;
   }
 
   /**

@@ -4,6 +4,7 @@
  */
 export { TestClient, TestResponse } from './test-client.js';
 export type { TestRequestOptions } from './test-client.js';
+export { TestWebSocket } from './test-websocket.js';
 export {
   createTestApp,
   createTestClient,

@@ -1,4 +1,18 @@
 import type { Context, Middleware, RateLimitOptions, RateLimitStore, RateLimitHit } from '../types/index.js';
+import { clientIp } from './client-ip.js';
+import { getLogger } from '../logging/logger.js';
+
+/** Warn once per process per message (misconfiguration notices, not per-request noise). */
+const warned = new Set<string>();
+function warnOnce(message: string): void {
+  if (warned.has(message)) return;
+  warned.add(message);
+  try {
+    getLogger().warn(message);
+  } catch {
+    console.warn(message);
+  }
+}
 
 /**
  * In-memory rate-limit store. Suitable for a single instance; for a fleet,
@@ -89,37 +103,75 @@ export class RedisRateLimitStore implements RateLimitStore {
  * Tracks requests per IP/key and returns 429 when the limit is exceeded.
  */
 export function createRateLimitMiddleware(options: RateLimitOptions): Middleware {
-  const trustProxy = options.trustProxy === true;
+  // Legacy behavior, kept only when explicitly requested and not superseded.
+  const legacyTrustProxy = options.trustProxy === true && options.trustedProxyHops === undefined;
+  const keyBy = options.keyBy ?? 'ip';
+
+  if (legacyTrustProxy) {
+    warnOnce(
+      'Rate limit: `trustProxy: true` reads the leftmost X-Forwarded-For entry, which the client controls. ' +
+      'Use `trustedProxyHops` (the number of proxies you run in front of the app) instead.'
+    );
+  }
+
+  const ipKey = (c: Context): string => {
+    if (legacyTrustProxy) {
+      const forwarded = c.req.header('x-forwarded-for');
+      if (forwarded) {
+        return forwarded.split(',')[0].trim();
+      }
+      const realIp = c.req.header('x-real-ip');
+      if (realIp) {
+        return realIp;
+      }
+    }
+
+    const address = clientIp(c, { trustedProxyHops: options.trustedProxyHops });
+    if (address) return address;
+
+    // No peer address: every such request would share one counter.
+    warnOnce(
+      'Rate limit: the client address could not be determined, so all requests share the key "unknown". ' +
+      'Set `trustedProxyHops` if the app is behind a proxy, or provide `keyGenerator` / `keyBy`.'
+    );
+    return 'unknown';
+  };
+
+  /** Default key; `null` means "this limiter does not apply to the request". */
+  const defaultKey = (c: Context): string | null => {
+    if (keyBy === 'ip') return `ip:${ipKey(c)}`;
+
+    const sub = (c.get('auth.user') as { sub?: unknown } | null | undefined)?.sub;
+    if (sub !== undefined && sub !== null && sub !== '') return `user:${String(sub)}`;
+
+    return keyBy === 'user' ? null : `ip:${ipKey(c)}`;
+  };
 
   const {
     windowMs = 60000, // 1 minute default
     max = 100, // 100 requests per window default
     store = new MemoryRateLimitStore(windowMs),
-    keyGenerator = (c: Context) => {
-      if (trustProxy) {
-        // Behind a trusted reverse proxy the forwarded headers are reliable.
-        // x-forwarded-for can be a comma-separated list; take the first (leftmost) IP
-        const forwarded = c.req.header('x-forwarded-for');
-        if (forwarded) {
-          return forwarded.split(',')[0].trim();
-        }
-        const realIp = c.req.header('x-real-ip');
-        if (realIp) {
-          return realIp;
-        }
-      }
-      // Direct peer IP — not client-spoofable. Available under Bun via the
-      // server instance the adapter passes through as env.
-      const peer = (c.env as any)?.server?.requestIP?.(c.req.raw);
-      if (peer?.address) {
-        return peer.address;
-      }
-      return 'unknown';
-    }
+    keyGenerator,
+    skip
   } = options;
 
+  if (!options.store && typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') {
+    warnOnce(
+      'Rate limit: using the in-memory store in production. Counters are per process, so with N instances ' +
+      'the effective limit is N times `max`. Pass a shared store (RedisRateLimitStore) to enforce it globally.'
+    );
+  }
+
   return async (c: Context, next) => {
-    const key = keyGenerator(c);
+    if (skip && (await skip(c))) {
+      return next();
+    }
+
+    const key = keyGenerator ? keyGenerator(c) : defaultKey(c);
+    if (key === null) {
+      return next();
+    }
+
     const { count, resetTime } = await store.hit(key, windowMs);
 
     c.header('X-RateLimit-Limit', max.toString());

@@ -2,6 +2,7 @@ import { MetadataRegistry } from '../core/metadata.js';
 import { RBACManager, PermissionMatcher } from './rbac.js';
 import { Context } from 'hono';
 import { getCurrentUser } from './decorators.js';
+import type { TokenPayload } from './jwt-provider.js';
 import { AuthorizationException } from './exceptions.js';
 import type { RolesConfig, PermissionsConfig, RoleMetadata, PermissionMetadata } from '../types/index.js';
 
@@ -115,7 +116,21 @@ export function createRBACMiddleware(rbac: RBACManager) {
  * RBAC Guard functions
  */
 export class RBACGuard {
-  constructor(private rbac: RBACManager) {}
+  constructor(
+    private rbac: RBACManager,
+    private resolveRoles?: (c: Context, user: TokenPayload) => string[] | Promise<string[]>
+  ) {}
+
+  /**
+   * Run the `resolveRoles` hook (when configured) and store its result in the
+   * context as `rbac.roles`, where every check below — and `getUserRoles(c)` —
+   * reads it. Call once per request, after authentication.
+   */
+  async resolveRequestRoles(c: Context, user: TokenPayload): Promise<void> {
+    if (!this.resolveRoles) return;
+    const resolved = await this.resolveRoles(c, user);
+    c.set('rbac.roles', Array.isArray(resolved) ? resolved : []);
+  }
 
   /**
    * Check if user has required roles

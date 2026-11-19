@@ -5,11 +5,12 @@
  */
 import { Hono } from 'hono';
 import { bodyLimit as honoBodyLimit } from 'hono/body-limit';
+import { matchedRoutes } from 'hono/route';
 import { MetadataRegistry, type ClassAccessMetadata } from './metadata.js';
 import { PayloadTooLargeException } from '../errors/exceptions.js';
 import type { ServerInstance } from '../adapters/base.js';
 import { DIContainer } from '../dependencies/container.js';
-import { RouterCompiler } from './router-compiler.js';
+import { RouterCompiler, toHonoPath } from './router-compiler.js';
 import { ValidationEngine } from '../validation/validator.js';
 import { ErrorHandler, type CustomErrorHandler } from '../errors/handler.js';
 import { PluginManager, type Plugin } from './plugin.js';
@@ -34,7 +35,8 @@ import type {
   CompressionOptions,
   HTTPMethod,
   Context,
-  RouteMetadata
+  RouteMetadata,
+  UseMiddlewareOptions
 } from '../types/index.js';
 
 /** Default maximum request body size: 1 MiB. Override with `bodyLimit`. */
@@ -90,6 +92,10 @@ export class VeloceTS {
   private config: VeloceTSConfig;
   private compiled: boolean = false;
   private globalMiddleware: Middleware[] = [];
+  /** `afterPlugins` middleware, held until every plugin has installed its own. */
+  private lateMiddleware: Array<{ path: string; middleware: Middleware }> = [];
+  /** Per-route body limits, keyed by `METHOD path` (Hono path syntax). */
+  private routeBodyLimits = new Map<string, number>();
   private groupPrefix: string = '';
   private filterManager = new FilterManager();
   private interceptorManager = new InterceptorManager();
@@ -121,17 +127,9 @@ export class VeloceTS {
 
     // Reject oversized request bodies before any handler reads them.
     // Without a limit, every @Body route will buffer whatever the client sends.
-    const bodyLimit = this.config.bodyLimit ?? DEFAULT_BODY_LIMIT_BYTES;
-    if (bodyLimit > 0) {
-      this.hono.use('*', honoBodyLimit({
-        maxSize: bodyLimit,
-        onError: () => {
-          throw new PayloadTooLargeException(
-            `Request body exceeds the ${bodyLimit} byte limit`
-          );
-        },
-      }));
-    }
+    // The limit is the route's own (`@BodyLimit` / `bodyLimit`) when it declares
+    // one, otherwise the application-wide value.
+    this.hono.use('*', this.createBodyLimitMiddleware());
 
     // Create MetadataRegistry and DIContainer instances
     this.metadata = new MetadataRegistry();
@@ -484,6 +482,7 @@ export class VeloceTS {
       docs: config.docs,
       cache: config.cache,
       public: config.public,
+      bodyLimit: config.bodyLimit,
       handler: config.handler
     };
 
@@ -542,11 +541,103 @@ export class VeloceTS {
   // ============================================================================
 
   /**
-   * Add global middleware to the application
+   * Add global middleware to the application.
+   *
+   * @example
+   * ```ts
+   * app.use(mw);                                 // every request, before plugins
+   * app.use('/api/admin/*', mw);                 // only under a path
+   * app.use(mw, { phase: 'afterPlugins' });      // after auth/RBAC/session middleware
+   * app.use('/api/*', mw, { phase: 'afterPlugins' });
+   * ```
+   *
+   * `afterPlugins` middleware is attached during `compile()`, once every plugin
+   * has installed its own, so it can read `auth.user` and friends. See
+   * {@link MiddlewarePhase}.
    */
-  use(middleware: Middleware): void {
+  use(middleware: Middleware, options?: UseMiddlewareOptions): void;
+  use(path: string, middleware: Middleware, options?: UseMiddlewareOptions): void;
+  use(
+    pathOrMiddleware: string | Middleware,
+    middlewareOrOptions?: Middleware | UseMiddlewareOptions,
+    maybeOptions?: UseMiddlewareOptions
+  ): void {
+    const hasPath = typeof pathOrMiddleware === 'string';
+    const path = hasPath ? pathOrMiddleware : '*';
+    const middleware = (hasPath ? middlewareOrOptions : pathOrMiddleware) as Middleware;
+    const options = (hasPath ? maybeOptions : middlewareOrOptions) as UseMiddlewareOptions | undefined;
+
+    if (typeof middleware !== 'function') {
+      throw new TypeError('app.use() expects a middleware function');
+    }
+
     this.globalMiddleware.push(middleware);
-    this.hono.use('*', middleware);
+
+    // Once compiled the plugin middleware is already in place, so a late
+    // registration is simply "now".
+    if (options?.phase === 'afterPlugins' && !this.compiled) {
+      this.lateMiddleware.push({ path, middleware });
+      return;
+    }
+
+    this.hono.use(path, middleware);
+  }
+
+  /**
+   * Body-size guard mounted first in the pipeline. Picks the limit of the route
+   * that will handle the request when it declares one, the application-wide
+   * limit otherwise. A limit of 0 disables the check.
+   */
+  private createBodyLimitMiddleware(): Middleware {
+    const globalLimit = this.config.bodyLimit ?? DEFAULT_BODY_LIMIT_BYTES;
+    const guards = new Map<number, Middleware>();
+
+    const guardFor = (maxSize: number): Middleware => {
+      let guard = guards.get(maxSize);
+      if (!guard) {
+        guard = honoBodyLimit({
+          maxSize,
+          onError: () => {
+            throw new PayloadTooLargeException(
+              `Request body exceeds the ${maxSize} byte limit`
+            );
+          },
+        });
+        guards.set(maxSize, guard);
+      }
+      return guard;
+    };
+
+    return async (c, next) => {
+      let limit = globalLimit;
+
+      if (this.routeBodyLimits.size > 0) {
+        // Hono resolves every handler that matches the request up front, so the
+        // route that will answer is already known here.
+        for (const matched of matchedRoutes(c)) {
+          const override = this.routeBodyLimits.get(`${matched.method} ${matched.path}`);
+          if (override !== undefined) {
+            limit = override;
+            break;
+          }
+        }
+      }
+
+      if (limit <= 0) {
+        return next();
+      }
+      return guardFor(limit)(c, next);
+    };
+  }
+
+  /** Index the per-route body limits so the guard can find them by matched route. */
+  private indexRouteBodyLimits(): void {
+    this.routeBodyLimits.clear();
+    for (const route of this.metadata.getRoutes()) {
+      if (typeof route.bodyLimit === 'number') {
+        this.routeBodyLimits.set(`${route.method} ${toHonoPath(route.path)}`, route.bodyLimit);
+      }
+    }
   }
 
   /**
@@ -564,7 +655,12 @@ export class VeloceTS {
    */
   useRateLimit(options: RateLimitOptions): void {
     const middleware = createRateLimitMiddleware(options);
-    this.use(middleware);
+    // A limiter keyed on the user has to run after the auth middleware, which
+    // plugins attach during compile(); an IP limiter runs as early as possible
+    // so it also shields the auth layer.
+    const needsUser = options.keyBy === 'user' || options.keyBy === 'user-or-ip';
+    const phase = options.phase ?? (needsUser && !options.keyGenerator ? 'afterPlugins' : 'early');
+    this.use(middleware, { phase });
   }
 
   /**
@@ -894,9 +990,18 @@ export class VeloceTS {
     // Install plugins before compiling routes
     await this.pluginManager.install(this);
 
+    // Plugins have attached their own global middleware (auth, RBAC, session…):
+    // attach the application's `afterPlugins` middleware behind it.
+    for (const { path, middleware } of this.lateMiddleware) {
+      this.hono.use(path, middleware);
+    }
+    this.lateMiddleware = [];
+
     // Every plugin is installed, so the route registry is complete: let plugins
     // inspect it (auth/RBAC inject their guards here).
     await this.pluginManager.beforeCompile(this);
+
+    this.indexRouteBodyLimits();
 
     // Subscribe @On listeners. After plugin install, so a listener can inject
     // anything a plugin registered in the container.
