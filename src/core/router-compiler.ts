@@ -18,6 +18,7 @@ import { getLogger } from '../logging/logger.js';
 import type { FilterManager } from '../errors/exception-filter.js';
 import { InterceptorManager, getInterceptors, type ExecutionContext } from './interceptor-manager.js';
 import { isSSE, getStreamContentType } from '../decorators/stream.js';
+import { getResponseHeaders, getRedirect } from '../decorators/extras.js';
 import { CacheManager } from '../cache/manager.js';
 import { parseTTL } from '../cache/types.js';
 import { AuthenticationException } from '../auth/exceptions.js';
@@ -214,6 +215,10 @@ export class RouterCompiler {
     const controllerScope = isFunctional
       ? undefined
       : MetadataRegistry.getControllerMetadata(route.target)?.scope || 'singleton';
+    const staticHeaders: [string, string][] = isFunctional
+      ? []
+      : Object.entries(getResponseHeaders(route.target, route.propertyKey));
+    const redirect = isFunctional ? undefined : getRedirect(route.target, route.propertyKey);
 
     // Caching a per-caller response under a caller-independent key serves one
     // user's data to the next. Warn once at compile time rather than silently
@@ -368,6 +373,18 @@ export class RouterCompiler {
             // 5d. Apply @HttpCode status before serialising
             if (statusCode) {
               c.status(statusCode as any);
+            }
+
+            // 5d'. @ResponseHeader — static headers; one the handler set itself wins
+            for (const [name, value] of staticHeaders) {
+              if (!c.res.headers.has(name)) {
+                c.header(name, value);
+              }
+            }
+
+            // 5d''. @Redirect — the handler ran; its result is discarded
+            if (redirect) {
+              return c.redirect(redirect.url, redirect.status);
             }
 
             // 5e. Serialize and return the response

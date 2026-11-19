@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-11-19
+
+The last 3.x minor before 4.0.0. It changes no behavior: it tells you, in your
+own console, which of the defaults that flip in 4.0.0 your application depends on.
+
+### Added — notices for what changes in 4.0.0
+
+Each notice is logged once per process, names the option that keeps the current
+behavior and the one that adopts the new one, and goes silent as soon as you
+choose. `VELOCE_NO_DEPRECATION=1` silences all of them; a comma-separated list
+of codes silences only those.
+
+| Code | You see it when | In 4.0.0 |
+|---|---|---|
+| `auth-public-by-default` | `AuthPlugin` has no `requireAuthByDefault` and some routes declare no access rule. The notice lists them | Those routes require a token |
+| `rbac-management-routes` | `RBACPlugin` has no `enableManagementRoutes` | The `/rbac/*` routes are not registered unless requested |
+| `rbac-default-roles` | `RBACPlugin` has `roles` but no `useDefaults` | The built-in roles are not created next to yours |
+| `error-detail-by-omission` | `NODE_ENV` is neither `production`, `development` nor `test` | Error responses carry message and stack only in `development` and `test` |
+| `throttle-decorator` | `@Throttle()` is used | Removed — it never had any effect |
+| `api-version-decorator` | `@ApiVersion()` is used | Removed — it never had any effect |
+
+Already announced in 3.7.0 and unchanged: the "Captive dependency" warning
+becomes an error, and the rate limiter's `trustProxy` option is removed.
+
+- **`deprecate(code, message)`** is exported for plugins that want to announce
+  their own changes the same way.
+
+### Fixed
+
+- **`@ResponseHeader(name, value)` sets the header.** It stored metadata nothing
+  read. It can be stacked; a header the handler sets itself wins.
+- **`@Redirect(url, status?)` redirects.** Same story. The handler still runs
+  first — guards, validation and side effects apply — and its return value is
+  discarded.
+- **`@Throttle()` and `@ApiVersion()` are deprecated** rather than implemented.
+  Neither ever did anything, which for `@Throttle` means routes that looked
+  rate limited were not. Use `@RateLimit({ max, windowMs })` and a versioned
+  controller prefix.
+
+### Documentation
+
+- **`@Auth({ roles })` and `@Roles([...])` do not mean the same thing**, and
+  that is now stated where both are documented: `@Auth({ roles: ['a', 'b'] })`
+  requires **all** the listed roles, `@Roles(['a', 'b'])` **any** of them. The
+  difference stays — loosening `@Auth` in an upgrade would open routes — so
+  prefer `@Roles`, which also understands role inheritance and `resolveRoles`.
+
 ## [3.8.0] - 2026-11-19
 
 ### Documentation

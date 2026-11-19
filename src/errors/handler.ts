@@ -52,6 +52,7 @@ export type ErrorHandlerOptions = {
 export class ErrorHandler {
   private customHandler?: CustomErrorHandler;
   private isDevelopment: boolean;
+  private detailByOmission = false;
   private format: ErrorResponseFormat;
 
   constructor(customHandler?: CustomErrorHandler, options?: ErrorHandlerOptions) {
@@ -61,6 +62,23 @@ export class ErrorHandler {
       options?.forceDevelopment !== undefined
         ? options.forceDevelopment
         : typeof process !== 'undefined' && process.env.NODE_ENV !== 'production';
+
+    // Detail is on only because NODE_ENV says nothing either way.
+    const env = typeof process !== 'undefined' ? process.env.NODE_ENV : undefined;
+    this.detailByOmission =
+      options?.forceDevelopment === undefined &&
+      this.isDevelopment &&
+      env !== 'development' &&
+      env !== 'test';
+  }
+
+  /**
+   * True when error responses include the message and stack only because
+   * `NODE_ENV` is not set to a known value — the case that stops exposing
+   * detail in v4.0.0.
+   */
+  exposesDetailByOmission(): boolean {
+    return this.detailByOmission;
   }
 
   setCustomHandler(handler: CustomErrorHandler): void {

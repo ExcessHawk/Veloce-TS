@@ -7,6 +7,7 @@ import { AuthenticationException } from './exceptions.js';
 import { Context } from 'hono';
 import type { Middleware } from '../types/index.js';
 import type { TokenPayload } from './jwt-provider.js';
+import { deprecate } from '../logging/deprecation.js';
 
 export interface RBACPluginConfig {
   rbac?: RBACManager;
@@ -76,6 +77,23 @@ export class RBACPlugin implements Plugin {
   }
 
   async install(app: VeloceTS): Promise<void> {
+    if (this.config.enableManagementRoutes === undefined) {
+      deprecate(
+        'rbac-management-routes',
+        'RBACPlugin registers its /rbac/* management routes by default, reachable by any authenticated user. ' +
+        'In v4.0.0 they are off unless requested. Pass `enableManagementRoutes: true` to keep them, ' +
+        'or `false` to drop them now.'
+      );
+    }
+    if (this.config.useDefaults === undefined && !this.config.rbac && (this.config.roles?.length ?? 0) > 0) {
+      deprecate(
+        'rbac-default-roles',
+        'RBACPlugin creates the built-in roles (guest, user, moderator, admin, super-admin) alongside the ones you define. ' +
+        'In v4.0.0 they are not created when you pass `roles`. Pass `useDefaults: true` to keep them, ' +
+        'or `false` to drop them now.'
+      );
+    }
+
     // Add RBAC middleware globally
     const rbacMiddleware = createRBACMiddleware(this.rbac);
     app.use(rbacMiddleware);

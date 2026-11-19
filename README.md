@@ -454,6 +454,10 @@ class OrdersController {
 }
 ```
 
+> `@Auth({ roles: ['a', 'b'] })` requires **all** the listed roles;
+> `@Roles(['a', 'b'])` requires **any** of them, and is the one that understands
+> role inheritance and `resolveRoles`. Prefer `@Roles` for role checks.
+
 | You write | You get |
 |---|---|
 | `@Auth()` / `@Roles([...])` on a **class** | The rule applies to every route in it |

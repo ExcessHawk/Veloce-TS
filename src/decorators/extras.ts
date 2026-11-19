@@ -1,3 +1,5 @@
+import { deprecate } from '../logging/deprecation.js';
+
 // ── @Throttle ───────────────────────────────────────────────────────────────
 const THROTTLE_KEY = 'veloce:throttle';
 
@@ -6,8 +8,18 @@ export interface ThrottleOptions {
   windowMs: number;
 }
 
+/**
+ * @deprecated Has never had any effect: nothing reads the metadata it stores,
+ * so a route carrying it is not throttled. Use `@RateLimit({ max, windowMs })`.
+ * Removed in v4.0.0.
+ */
 export function Throttle(limit: number, windowMs: number): MethodDecorator & ClassDecorator {
   return (target: any, propertyKey?: string | symbol) => {
+    deprecate(
+      'throttle-decorator',
+      '@Throttle() has never had any effect — routes carrying it are NOT rate limited. ' +
+      'Replace it with @RateLimit({ max, windowMs }). It is removed in v4.0.0.'
+    );
     const meta: ThrottleOptions = { limit, windowMs };
     if (propertyKey !== undefined) {
       Reflect.defineMetadata(THROTTLE_KEY, meta, target, propertyKey as string);
@@ -30,9 +42,17 @@ export function getThrottle(target: any, propertyKey?: string): ThrottleOptions 
 // ── @ApiVersion ─────────────────────────────────────────────────────────────
 const VERSION_KEY = 'veloce:version';
 
-/** Prefix routes in this controller/method with /v{version}. */
+/**
+ * @deprecated Has never had any effect: routes are not prefixed. Put the version
+ * in the controller prefix (`@Controller('/v2/users')`). Removed in v4.0.0.
+ */
 export function ApiVersion(version: string): MethodDecorator & ClassDecorator {
   return (target: any, propertyKey?: string | symbol) => {
+    deprecate(
+      'api-version-decorator',
+      "@ApiVersion() has never had any effect — routes are not prefixed with the version. " +
+      "Put it in the controller prefix (@Controller('/v2/users')). It is removed in v4.0.0."
+    );
     if (propertyKey !== undefined) {
       Reflect.defineMetadata(VERSION_KEY, version, target, propertyKey as string);
     } else {
@@ -49,7 +69,17 @@ export function getApiVersion(target: any, propertyKey?: string): string | undef
 // ── @ResponseHeader ─────────────────────────────────────────────────────────
 const RESPONSE_HEADERS_KEY = 'veloce:response_headers';
 
-/** Set a static response header on the decorated method. */
+/**
+ * Set a static response header on the decorated route. Stack it to set several.
+ * A header the handler sets itself on the context wins.
+ *
+ * @example
+ * ```ts
+ * @Get('/report')
+ * @ResponseHeader('Cache-Control', 'no-store')
+ * report() {}
+ * ```
+ */
 export function ResponseHeader(name: string, value: string): MethodDecorator {
   return (target: any, propertyKey: string | symbol) => {
     const existing: Record<string, string> =
@@ -75,7 +105,17 @@ export interface RedirectMeta {
   status: 301 | 302 | 307 | 308;
 }
 
-/** Redirect the route to a fixed URL. */
+/**
+ * Redirect the route to a fixed URL. The handler still runs first (for its side
+ * effects, guards and validation); its return value is discarded.
+ *
+ * @example
+ * ```ts
+ * @Get('/docs')
+ * @Redirect('/docs/latest', 301)
+ * docs() {}
+ * ```
+ */
 export function Redirect(url: string, status: 301 | 302 | 307 | 308 = 302): MethodDecorator {
   return (target: any, propertyKey: string | symbol) => {
     Reflect.defineMetadata(

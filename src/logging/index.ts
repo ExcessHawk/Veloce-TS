@@ -7,6 +7,7 @@
  */
 
 export * from './logger.js';
+export { deprecate } from './deprecation.js';
 export * from './middleware.js';
 export * from './types.js';
 
