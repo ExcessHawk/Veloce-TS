@@ -82,6 +82,17 @@ export interface GraphQLPluginOptions {
   context?: (request: any) => Promise<any> | any;
 
   /**
+   * Whether the GraphQL endpoint is reachable without a bearer token when
+   * `AuthPlugin` denies by default.
+   *
+   * Defaults to `true`: one HTTP route serves every operation, so a blanket
+   * guard cannot tell a login mutation from a private query — access belongs
+   * in the resolvers and the `context` factory. Set it to `false` when every
+   * operation requires an authenticated caller.
+   */
+  public?: boolean;
+
+  /**
    * Resolver classes decorated with @Resolver, @GQLQuery, @GQLMutation.
    * Pass all resolver classes here so the plugin can build the schema.
    *
@@ -155,6 +166,7 @@ export class GraphQLPlugin implements Plugin {
       playgroundPath: options?.playgroundPath || '/graphql/playground',
       playground: options?.playground !== false,
       context: options?.context || ((request: any) => ({ request })),
+      public: options?.public !== false,
       resolvers: options?.resolvers || []
     };
 
@@ -190,6 +202,7 @@ export class GraphQLPlugin implements Plugin {
 
     // Register GraphQL endpoint
     app.post(this.options.path, {
+      public: this.options.public,
       handler: async (c) => {
         return this.handleGraphQLRequest(c);
       },
@@ -202,6 +215,7 @@ export class GraphQLPlugin implements Plugin {
 
     // Also support GET for queries (useful for GraphQL Playground)
     app.get(this.options.path, {
+      public: this.options.public,
       handler: async (c) => {
         const query = c.req.query('query');
         const variables = c.req.query('variables');
@@ -235,6 +249,7 @@ export class GraphQLPlugin implements Plugin {
     // Register GraphQL Playground endpoint if enabled
     if (this.options.playground) {
       app.get(this.options.playgroundPath, {
+        public: true,
         handler: async (c) => {
           return c.html(this.renderPlayground());
         },

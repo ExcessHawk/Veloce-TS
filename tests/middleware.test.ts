@@ -55,20 +55,20 @@ describe('createRateLimitMiddleware', () => {
     expect(result?.status).toBe(429);
   });
 
-  it('x-forwarded-for: first IP in comma-separated list is used as key', async () => {
-    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustProxy: true });
+  it('x-forwarded-for: the entry written by the trusted proxy (rightmost) is the key', async () => {
+    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustedProxyHops: 1 });
     const c1 = makeFakeContext();
     const c2 = makeFakeContext();
 
-    // Simulate two IPs that would be treated as same if not split
+    // Same real client (appended by our proxy), different client-supplied prefix
     c1.req._setHeader('x-forwarded-for', '1.2.3.4, 5.6.7.8');
-    c2.req._setHeader('x-forwarded-for', '1.2.3.4, 9.10.11.12');
+    c2.req._setHeader('x-forwarded-for', '9.9.9.9, 5.6.7.8');
 
     let c1nexted = false;
     let c2nexted = false;
 
     await mw(c1 as any, async () => { c1nexted = true; });
-    // c2 has the same first IP — should be blocked
+    // c2 is the same client behind the proxy — the forged prefix buys nothing
     const r2 = await mw(c2 as any, async () => { c2nexted = true; });
 
     expect(c1nexted).toBe(true);
@@ -76,8 +76,12 @@ describe('createRateLimitMiddleware', () => {
     expect(r2?.status).toBe(429);
   });
 
+  it('the removed trustProxy option is refused loudly', () => {
+    expect(() => createRateLimitMiddleware({ max: 1, trustProxy: true } as any)).toThrow(/trustedProxyHops/);
+  });
+
   it('different IPs are tracked independently', async () => {
-    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustProxy: true });
+    const mw = createRateLimitMiddleware({ max: 1, windowMs: 10000, trustedProxyHops: 1 });
     const c1 = makeFakeContext();
     const c2 = makeFakeContext();
 

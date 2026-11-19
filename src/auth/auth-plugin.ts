@@ -6,7 +6,6 @@ import { JWTConfig } from './jwt-provider.js';
 import { createAuthMiddleware, getCurrentUser, getToken, isAuthenticated, getAuthError } from './decorators.js';
 import { AuthenticationException, AuthorizationException } from './exceptions.js';
 import { getLogger } from '../logging/logger.js';
-import { deprecate } from '../logging/deprecation.js';
 import type { AuthConfig, Middleware } from '../types/index.js';
 import { Context } from 'hono';
 import { z } from 'zod';
@@ -26,16 +25,15 @@ export interface AuthPluginConfig {
    * marked `@Public()` (or `public: true` in the functional API) or declares
    * `@Auth({ optional: true })`.
    *
-   * With the default (`false`) a route with no access decorator is public, so a
-   * forgotten decorator silently exposes the route. Turning this on makes the
-   * safe behavior the one you get by omission.
+   * On by default since v4.0.0: a forgotten decorator is a 401, not a public
+   * route. Set it to `false` to go back to routes being public unless decorated.
    *
    * Applies to every route in the registry, including those registered by other
    * plugins (GraphQL, OAuth, RBAC management, ...). The framework's own login,
    * refresh, register, health and documentation routes are marked public.
    * WebSocket upgrade routes are not in the registry and are not covered.
    *
-   * @default false
+   * @default true
    */
   requireAuthByDefault?: boolean;
 }
@@ -84,38 +82,7 @@ export class AuthPlugin implements Plugin {
    * inside the already-running compile(), so the wrapper would never fire.)
    */
   beforeCompile(app: VeloceTS): void {
-    this.warnAboutUndecidedRoutes(app);
     this.injectRouteGuards(app);
-  }
-
-  /**
-   * In v4.0.0 `requireAuthByDefault` defaults to true. An application that has
-   * not chosen yet, and has routes with no access declaration, is told which
-   * ones will start answering 401.
-   */
-  private warnAboutUndecidedRoutes(app: VeloceTS): void {
-    if (this.config.requireAuthByDefault !== undefined) return;
-
-    const undecided: string[] = [];
-    for (const route of app.getMetadata().getRoutes()) {
-      const authMetadata = route.target?.prototype
-        ? MetadataRegistry.getAuthMetadata(route.target.prototype, route.propertyKey)
-        : undefined;
-      const decided =
-        route.public || route.auth || authMetadata || route.roles || route.permissions || route.minimumRole;
-      if (!decided) undecided.push(`${route.method} ${route.path}`);
-    }
-    if (undecided.length === 0) return;
-
-    const sample = undecided.slice(0, 8).join(', ');
-    const more = undecided.length > 8 ? ` (+${undecided.length - 8} more)` : '';
-    deprecate(
-      'auth-public-by-default',
-      `${undecided.length} route(s) declare no access rule and are therefore public: ${sample}${more}. ` +
-      'In v4.0.0 AuthPlugin requires a token for such routes. Mark the intentionally open ones with @Public() ' +
-      '(or `public: true`) and set `requireAuthByDefault: true` to adopt the new behavior now, ' +
-      'or set `requireAuthByDefault: false` to keep routes public by default.'
-    );
   }
 
   /**
@@ -135,7 +102,7 @@ export class AuthPlugin implements Plugin {
       // public needs a token. `@Auth({ optional: true })` is a declaration and
       // is respected as-is.
       const requiredByDefault =
-        this.config.requireAuthByDefault === true && !route.public && !declared;
+        this.config.requireAuthByDefault !== false && !route.public && !declared;
 
       const authRequired = (!route.public && declared?.required) || requiredByDefault;
 

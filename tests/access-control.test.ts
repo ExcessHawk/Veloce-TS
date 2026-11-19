@@ -256,8 +256,14 @@ describe('AuthPlugin requireAuthByDefault', () => {
     optional() { return { ok: true }; }
   }
 
-  it('default (off): an undecorated route is public, as before', async () => {
+  it('is the default since v4.0.0: an undecorated route requires a token', async () => {
     const { call } = await build((app) => app.include(Mixed));
+    expect((await call('/dd/forgot', { anonymous: true })).status).toBe(401);
+    expect((await call('/dd/forgot')).status).toBe(200);
+  });
+
+  it('requireAuthByDefault: false restores public-unless-decorated', async () => {
+    const { call } = await build((app) => app.include(Mixed), { auth: { requireAuthByDefault: false } });
     expect((await call('/dd/forgot', { anonymous: true })).status).toBe(200);
   });
 

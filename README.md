@@ -273,7 +273,7 @@ whoami(@UserAgent() agent: string) {
 
 > Inject request-scoped providers as **handler parameters**. A singleton that
 > takes one in its constructor keeps the first request's instance forever; the
-> container logs a "Captive dependency" warning when it sees that.
+> container throws a "Captive dependency" error when it sees that.
 
 </details>
 
@@ -424,14 +424,11 @@ const app = new Veloce();
 app.usePlugin(new AuthPlugin({
   jwt: { secret: process.env.JWT_SECRET! },
   userProvider,
-  // Deny by default: a route with no access decorator needs a valid token.
-  // Without this, forgetting a decorator silently publishes the route.
-  requireAuthByDefault: true,
+  // Deny by default (since v4.0.0): a route with no access decorator needs a
+  // valid token. Open ones say so with @Public() or `public: true`.
 }));
 
 app.usePlugin(new RBACPlugin({
-  useDefaults: false,
-  enableManagementRoutes: false,
   roles: [
     { name: 'admin',  permissions: ['*'], level: 100, inherits: ['member'] },
     { name: 'member', permissions: ['orders:read'], level: 10 },
@@ -462,7 +459,7 @@ class OrdersController {
 |---|---|
 | `@Auth()` / `@Roles([...])` on a **class** | The rule applies to every route in it |
 | `@Public()` on a method or class | Open on purpose; overrides the class rule and `requireAuthByDefault` |
-| `requireAuthByDefault: true` | Undecorated routes need a token. Login, refresh, register, health and docs stay public |
+| `requireAuthByDefault` (on by default since v4.0.0) | Undecorated routes need a token. Login, refresh, register, health and docs stay public. `false` restores public-unless-decorated |
 | `@Param('id', schema)` / `@Param(schema)` | Path parameters validated (and coerced) with Zod |
 | `public: true` in `app.get(path, { … })` | `@Public()` for the functional API |
 
@@ -493,7 +490,7 @@ declare module 'hono' {
 }
 
 const app = new Veloce();
-app.usePlugin(new AuthPlugin({ jwt: { secret: process.env.JWT_SECRET! }, userProvider, requireAuthByDefault: true }));
+app.usePlugin(new AuthPlugin({ jwt: { secret: process.env.JWT_SECRET! }, userProvider }));
 
 // 1. Resolve the tenant once per request, after authentication. `afterPlugins`
 //    middleware runs in registration order, so this comes before everything
@@ -510,8 +507,6 @@ app.use(async (c, next) => {
 }, { phase: 'afterPlugins' });
 
 app.usePlugin(new RBACPlugin({
-  useDefaults: false,
-  enableManagementRoutes: false,
   roles: [
     { name: 'owner',  permissions: ['*'], level: 100, inherits: ['member'] },
     { name: 'member', permissions: [], level: 10 },
@@ -957,7 +952,7 @@ These are **known gaps today** so you can choose Veloce-TS with clear expectatio
 | **ORM integrations** | First-class **Drizzle** helpers exist for the DI container (`registerDrizzle`, `@InjectDB`) and, since **v3.7.0**, ambient transactions (`@Transactional`, `runInTransaction`, per-request transactions). **Prisma** and **TypeORM** are **not yet** at the same level of documented, built-in integration—use them directly in your services today. |
 | **Ambient transactions** | Need a driver whose `transaction()` callback is asynchronous. Verified against Drizzle's PostgreSQL dialect; other async drivers are untested. **Synchronous SQLite drivers** (`bun:sqlite`, `better-sqlite3`) are not supported: they commit before an `await` inside the callback resolves. |
 | **WebSocket credentials** | Authenticated gateways accept the `Authorization` header, a one-time ticket, or (opt-in) the token in the query string. Carrying the token in the **`Sec-WebSocket-Protocol`** header is not supported. `requireAuthByDefault` does not cover gateways — declare `@WebSocket(path, { auth: true })`. |
-| **Defaults kept for compatibility** | `RBACPlugin` still registers its `/rbac/*` management routes and a set of default roles unless you pass `enableManagementRoutes: false` and `useDefaults: false`; routes are public unless decorated, unless you turn on `requireAuthByDefault`; unexpected errors include their message and stack unless `NODE_ENV` is exactly `production`. These flip in the next major version. |
+| **Semantics kept for compatibility** | `@Auth({ roles: ['a', 'b'] })` requires **all** the listed roles while `@Roles(['a', 'b'])` requires **any**. Prefer `@Roles`. The defaults that used to be listed here (public-unless-decorated routes, RBAC management routes and built-in roles, error detail outside production) flipped in **v4.0.0** — see [MIGRATION.md](MIGRATION.md). |
 | **Test coverage** | Line coverage over `src/` is **~57%**, gated in CI at 55%. The thinnest areas are the cache and request-context middleware, the logging middleware and health plugin, and the OAuth/permission helpers. Treat those with more caution than the core routing and validation surface. |
 | **API stability** | Stable public API since v1.0.0 (semver). Check the [CHANGELOG](CHANGELOG.md) for what changed between releases. |
 
@@ -970,6 +965,8 @@ Directional priorities—not a release calendar. Items may ship in a different o
 3. **Raise the coverage floor** — The CI gate sits at 55% to block regressions; the goal is to lift it as the thin areas above get tested.
 
 **Completed in v3.6.0–v3.7.0:** request-scoped roles for multi-tenant apps (`resolveRoles`), class-level `@Auth`/`@Roles`, `@Public`, deny-by-default (`requireAuthByDefault`), `@Param` with a schema, middleware phases and paths, per-route `@BodyLimit`, `createParamDecorator`, context-aware provider factories, a rate limiter keyed by user or by real client address, authenticated WebSocket gateways with one-time tickets and an in-process `TestClient.ws()`, and ambient transactions for Drizzle. Driven by an audit of a real multi-tenant application; the suite grew from 647 to 880+ tests.
+
+**Completed in v3.9.0–v4.0.0:** `@ResponseHeader` and `@Redirect` do what they say; the no-op `@Throttle` and `@ApiVersion` are gone; and the safe choice is the default — routes require a token unless marked `@Public`, `RBACPlugin` registers no management routes and no roles you did not define, error detail is sent only in development and test, captive dependencies throw, and the spoofable `trustProxy` is removed.
 
 **Completed in v3.2.0–v3.5.0:** WebSocket upgrades on **Node** (via the optional `@hono/node-ws` peer), **GraphQL subscriptions** over `graphql-transport-ws` on Bun/Deno/Node with a built-in `PubSub`, the `@On('event')` decorator, CLI parity with Node (`--runtime auto|bun|node`, `--install`, `--git`, `generate gateway|listener`), and a published package cut from 1.5 MB to 0.39 MB.
 

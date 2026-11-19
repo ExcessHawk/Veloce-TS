@@ -173,7 +173,7 @@ describe('provider factories receive the request context', () => {
   });
 });
 
-describe('captive dependency warning', () => {
+describe('captive dependency', () => {
   async function captureWarnings(run: () => Promise<void>): Promise<string[]> {
     const warnings: string[] = [];
     const spy = spyOn(getLogger(), 'warn').mockImplementation(((msg: string) => {
@@ -187,7 +187,7 @@ describe('captive dependency warning', () => {
     return warnings;
   }
 
-  it('warns once when a singleton controller injects a request-scoped provider in its constructor', async () => {
+  it('refuses a singleton controller that injects a request-scoped provider in its constructor', async () => {
     class PerRequest {}
 
     @Controller('/captive')
@@ -200,21 +200,20 @@ describe('captive dependency warning', () => {
       }
     }
 
-    const warnings = await captureWarnings(async () => {
-      const { client } = await setupTestApp((app) => {
-        app.getContainer().register(PerRequest, { scope: 'request' });
-        app.include(C);
-      });
-      await client.get('/captive');
-      await client.get('/captive');
+    // An error since v4.0.0 (a warning in 3.7–3.9): the controller cannot be
+    // built, so the route fails instead of serving one request's instance to all.
+    const { app, client } = await setupTestApp((a) => {
+      a.getContainer().register(PerRequest, { scope: 'request' });
+      a.include(C);
     });
+    expect((await client.get('/captive')).status).toBe(500);
 
-    const captive = warnings.filter((w) => w.includes('Captive dependency'));
-    expect(captive).toHaveLength(1);
-    expect(captive[0]).toContain('PerRequest');
+    await expect(
+      app.getContainer().resolve(C, { scope: 'singleton', context: {} as any })
+    ).rejects.toThrow(/Captive dependency: singleton "C" injects request-scoped "PerRequest"/);
   });
 
-  it('does not warn when the request-scoped provider is a handler parameter', async () => {
+  it('a request-scoped provider as a handler parameter is fine', async () => {
     class PerRequest {}
 
     @Controller('/not-captive')

@@ -6,7 +6,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Provider, Scope, Context, ProviderConfig, Class } from '../types/index.js';
 import { MetadataRegistry } from '../core/metadata.js';
-import { getLogger } from '../logging/logger.js';
 
 /**
  * Dependency Injection Container
@@ -51,9 +50,6 @@ export class DIContainer {
   // Singletons currently being constructed, to spot a request-scoped
   // dependency being captured by one of them.
   private singletonsUnderConstruction: Set<Provider> = new Set();
-
-  // Captive-dependency pairs already reported (warn once per pair)
-  private captiveWarnings: Set<string> = new Set();
 
   // Cache provider names for error messages (only for object providers)
   private providerNameCache: WeakMap<object, string> = new WeakMap();
@@ -220,8 +216,7 @@ export class DIContainer {
    * A singleton that takes a request-scoped dependency in its constructor keeps
    * the instance built for whichever request created it — and serves it to
    * every later request. With a factory that reads the request (the tenant,
-   * the current user) that is data leaking between users. Report it once per
-   * pair; it becomes an error in the next major version.
+   * the current user) that is data leaking between users, so it is refused.
    */
   private warnIfCaptured(requestScoped: Provider, path: Set<Provider>): void {
     for (const owner of path) {
@@ -229,19 +224,11 @@ export class DIContainer {
 
       const ownerName = this.getProviderName(owner);
       const depName = this.getProviderName(requestScoped);
-      const key = `${ownerName}<-${depName}`;
-      if (this.captiveWarnings.has(key)) continue;
-      this.captiveWarnings.add(key);
-
-      const message =
+      throw new Error(
         `Captive dependency: singleton "${ownerName}" injects request-scoped "${depName}" in its constructor, ` +
-        'so it keeps the instance of the first request for its whole lifetime. ' +
-        `Inject "${depName}" as a handler parameter instead, or give "${ownerName}" the 'request' scope.`;
-      try {
-        getLogger().warn(message);
-      } catch {
-        console.warn(message);
-      }
+        'so it would keep the instance of the first request for its whole lifetime. ' +
+        `Inject "${depName}" as a handler parameter instead, or give "${ownerName}" the 'request' scope.`
+      );
     }
   }
 

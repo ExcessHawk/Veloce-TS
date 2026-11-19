@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-19
+
+The defaults announced in 3.7.0 and 3.9.0 flip. Nothing else changes: no API
+was redesigned, and every previous behavior is one option away. If 3.9.0 runs
+without deprecation notices in your console, 4.0.0 behaves the same for you.
+See [MIGRATION.md](MIGRATION.md) for the upgrade steps.
+
+### Changed — breaking
+
+- **Routes require a token unless they say otherwise.** With `AuthPlugin`
+  installed, a route with no access rule answers 401 to anonymous requests.
+  Open routes are declared with `@Public()` or `public: true`. The framework's
+  own login, refresh, register, logout, OAuth, session, health and
+  documentation routes are already marked. `requireAuthByDefault: false`
+  restores the old behavior. Applications without `AuthPlugin` are unaffected.
+- **`RBACPlugin` does not register its `/rbac/*` management routes** unless
+  `enableManagementRoutes: true`. They were reachable by any authenticated user.
+- **`RBACPlugin` does not create the built-in roles next to yours.** When you
+  pass `roles`, only those exist. With no `roles` the built-in set is still
+  created; `useDefaults: true` asks for both.
+- **Error responses carry message and stack only when `NODE_ENV` is
+  `development` or `test`.** Before, anything other than exactly `production`
+  — including an unset variable or `staging` — sent them to the client.
+  `forceDevelopment` still decides either way.
+- **A captive dependency is an error.** A singleton that injects a
+  request-scoped provider in its constructor throws `Captive dependency: …`
+  when it is resolved, instead of logging a warning and serving the first
+  request's instance to everyone. Inject it as a handler parameter, or give
+  the consumer the `request` scope.
+- **The rate limiter's `trustProxy` option is removed.** It trusted the
+  leftmost `X-Forwarded-For` entry, which the client writes. Passing it now
+  throws a `TypeError` naming the replacement, `trustedProxyHops`.
+
+### Removed
+
+- **`@Throttle()` and `@ApiVersion()`**. Neither ever had any effect. Use
+  `@RateLimit({ max, windowMs })` and a versioned controller prefix.
+- The six deprecation notices of 3.9.0, now that what they announced happened.
+  `deprecate()` stays exported.
+
+### Added
+
+- **`GraphQLPluginOptions.public`** (default `true`). One HTTP route serves
+  every GraphQL operation, so the deny-by-default guard cannot tell a login
+  mutation from a private query; access belongs in the resolvers and the
+  `context` factory. Set it to `false` when every operation needs a token.
+
+### Unchanged on purpose
+
+- `@Auth({ roles: ['a', 'b'] })` still requires **all** the listed roles and
+  `@Roles(['a', 'b'])` **any** of them. Loosening `@Auth` in an upgrade would
+  open routes silently.
+- `requireAuthByDefault` does not cover WebSocket gateways: declare
+  `@WebSocket(path, { auth: true })`.
+
 ## [3.9.0] - 2026-11-19
 
 The last 3.x minor before 4.0.0. It changes no behavior: it tells you, in your

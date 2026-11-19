@@ -173,6 +173,8 @@ export class SessionPlugin implements Plugin {
 
     // Create session
     app.post(routes.create || '/session/create', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { userId, data } = body;
@@ -201,6 +203,8 @@ export class SessionPlugin implements Plugin {
 
     // Destroy session
     app.post(routes.destroy || '/session/destroy', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         await this.guard.destroySession(c);
 
@@ -213,6 +217,8 @@ export class SessionPlugin implements Plugin {
 
     // Regenerate session ID
     app.post(routes.regenerate || '/session/regenerate', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const newSession = await this.guard.regenerateSession(c);
 
@@ -236,6 +242,8 @@ export class SessionPlugin implements Plugin {
 
     // Get/Update session data
     app.get(routes.data || '/session/data', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: (c: Context) => {
         const session = c.get('session');
 
@@ -251,6 +259,8 @@ export class SessionPlugin implements Plugin {
     });
 
     app.put(routes.data || '/session/data', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const body = await c.req.json();
         const { data } = body;
@@ -277,6 +287,8 @@ export class SessionPlugin implements Plugin {
     // Get CSRF token
     if (this.csrfProtection) {
       app.get(routes.csrf || '/session/csrf-token', {
+        // Authenticated by the session cookie (checked in the handler), not a bearer token
+        public: true,
         handler: (c: Context) => {
           const token = this.guard.generateCSRFToken(c);
 
@@ -294,6 +306,8 @@ export class SessionPlugin implements Plugin {
 
     // Get session info
     app.get('/session/info', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: (c: Context) => {
         const session = c.get('session');
 
@@ -323,6 +337,8 @@ export class SessionPlugin implements Plugin {
 
     // Get all sessions for current user
     app.get('/session/all', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const session = c.get('session');
 
@@ -349,6 +365,8 @@ export class SessionPlugin implements Plugin {
 
     // Destroy all sessions for current user
     app.post('/session/destroy-all', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const session = c.get('session');
 
@@ -367,6 +385,8 @@ export class SessionPlugin implements Plugin {
 
     // Session statistics (admin only — requires active session)
     app.get('/session/stats', {
+      // Authenticated by the session cookie (checked in the handler), not a bearer token
+      public: true,
       handler: async (c: Context) => {
         const session = c.get('session');
         if (!session) {

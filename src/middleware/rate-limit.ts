@@ -103,29 +103,18 @@ export class RedisRateLimitStore implements RateLimitStore {
  * Tracks requests per IP/key and returns 429 when the limit is exceeded.
  */
 export function createRateLimitMiddleware(options: RateLimitOptions): Middleware {
-  // Legacy behavior, kept only when explicitly requested and not superseded.
-  const legacyTrustProxy = options.trustProxy === true && options.trustedProxyHops === undefined;
-  const keyBy = options.keyBy ?? 'ip';
-
-  if (legacyTrustProxy) {
-    warnOnce(
-      'Rate limit: `trustProxy: true` reads the leftmost X-Forwarded-For entry, which the client controls. ' +
-      'Use `trustedProxyHops` (the number of proxies you run in front of the app) instead.'
+  // Removed in v4.0.0. Ignoring it silently would change which address a
+  // JavaScript caller is limited by, so say so.
+  if ((options as { trustProxy?: unknown }).trustProxy !== undefined) {
+    throw new TypeError(
+      'Rate limit: the `trustProxy` option was removed in v4.0.0 — it read the leftmost X-Forwarded-For entry, ' +
+      'which the client controls. Use `trustedProxyHops` (the number of proxies you run in front of the app).'
     );
   }
 
-  const ipKey = (c: Context): string => {
-    if (legacyTrustProxy) {
-      const forwarded = c.req.header('x-forwarded-for');
-      if (forwarded) {
-        return forwarded.split(',')[0].trim();
-      }
-      const realIp = c.req.header('x-real-ip');
-      if (realIp) {
-        return realIp;
-      }
-    }
+  const keyBy = options.keyBy ?? 'ip';
 
+  const ipKey = (c: Context): string => {
     const address = clientIp(c, { trustedProxyHops: options.trustedProxyHops });
     if (address) return address;
 

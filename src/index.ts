@@ -146,8 +146,6 @@ export type { EventListenerMetadata, OnOptions } from './decorators/events.js';
 
 // Extra decorator exports
 export {
-  Throttle, getThrottle, type ThrottleOptions,
-  ApiVersion, getApiVersion,
   ResponseHeader, getResponseHeaders,
   Redirect, getRedirect, type RedirectMeta,
 } from './decorators/extras.js';

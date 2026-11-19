@@ -1,5 +1,102 @@
 # Migration Guide
 
+## 3.x → 4.0.0
+
+4.0.0 flips defaults; it does not redesign anything. The shortest path is to
+upgrade to **3.9.0** first, start the application, and read the console: every
+`[veloce-ts deprecation …]` notice names one item below that applies to you.
+No notices means no changes.
+
+Each item lists the option that keeps the 3.x behavior, so you can upgrade
+first and adopt the new defaults one at a time.
+
+### 1. Undecorated routes require a token
+
+Applies when `AuthPlugin` is installed. A route with no `@Auth`, `@Roles`,
+`@Permissions`, `@MinimumRole` or `@Public` — on the method or the class —
+was public and now answers 401.
+
+```typescript
+@Get('/status')
+@Public()                      // open on purpose
+status() { return { ok: true }; }
+
+app.get('/webhooks/stripe', { handler, public: true });   // functional API
+```
+
+Routes registered by the framework (login, refresh, register, logout, OAuth,
+session, health, documentation) are already marked. Routes that authenticate
+by their own means — a webhook signature, an API key checked in the handler —
+need `public: true`, or the JWT guard rejects them before your check runs.
+
+To keep the old behavior: `new AuthPlugin({ …, requireAuthByDefault: false })`.
+
+WebSocket gateways are not covered; they declare `@WebSocket(path, { auth: true })`.
+
+### 2. GraphQL is not behind that guard
+
+The GraphQL endpoint stays reachable without a token (`public: true` by
+default), because a single route serves every operation. If all your operations
+require an authenticated caller: `new GraphQLPlugin({ public: false })`.
+
+### 3. `RBACPlugin`: no management routes, no built-in roles next to yours
+
+```typescript
+// 3.x behavior
+new RBACPlugin({ roles, enableManagementRoutes: true, useDefaults: true });
+```
+
+- The seven `/rbac/*` routes are registered only with `enableManagementRoutes: true`.
+- When you pass `roles`, the built-in `guest`, `user`, `moderator`, `admin` and
+  `super-admin` are not created. If a decorator names one of them — say
+  `@Roles(['admin'])` — define that role yourself or pass `useDefaults: true`.
+  With no `roles` at all, the built-in set is still created.
+
+### 4. Error detail needs `NODE_ENV=development` or `test`
+
+Unexpected errors used to include their message and stack unless `NODE_ENV` was
+exactly `production`. Now they include them only in `development` and `test`.
+If you develop with `NODE_ENV` unset and miss the detail in responses, set it
+to `development` or pass `forceDevelopment: true` to the error handler. The
+server log is unaffected.
+
+### 5. Captive dependencies throw
+
+A singleton whose constructor injects a request-scoped provider logged a
+warning since 3.7.0. It now throws when resolved:
+
+```typescript
+// Before: one request's instance, kept forever
+@Controller('/orders')
+class OrdersController {
+  constructor(private tenant: TenantContext) {}        // request-scoped
+}
+
+// After: per request
+@Get('/')
+list(@Inject(TenantContext) tenant: TenantContext) { … }
+```
+
+Or register the consumer with the `request` scope.
+
+### 6. Rate limiter: `trustProxy` → `trustedProxyHops`
+
+```typescript
+app.useRateLimit({ max: 100, trustProxy: true });       // throws TypeError
+app.useRateLimit({ max: 100, trustedProxyHops: 1 });    // one proxy you run
+```
+
+`trustedProxyHops` counts from the right of `X-Forwarded-For`, where your own
+proxies write, instead of trusting the leftmost entry, which the client writes.
+
+### 7. `@Throttle` and `@ApiVersion` are gone
+
+Neither did anything. Replace `@Throttle(...)` with
+`@RateLimit({ max, windowMs })` — note the route was **not** rate limited
+before — and `@ApiVersion('2')` with a versioned prefix, `@Controller('/v2/orders')`.
+
+---
+
 ## 3.5.x → 3.6.0 and 3.7.0
 
 Both releases are additive: nothing has to change for an application to keep
@@ -124,7 +221,7 @@ authenticated user, and creates default roles (`guest`, `user`, `moderator`,
 new RBACPlugin({ roles, useDefaults: false, enableManagementRoutes: false });
 ```
 
-Both defaults flip in 4.0.
+Both defaults flipped in 4.0.0.
 
 ---
 

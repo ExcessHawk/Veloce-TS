@@ -316,13 +316,6 @@ export interface RateLimitOptions {
    * custom `keyGenerator` reads something a plugin puts in the context.
    */
   phase?: MiddlewarePhase;
-  /**
-   * @deprecated Takes the LEFTMOST `X-Forwarded-For` entry, which is the one the
-   * client controls: behind a proxy that appends rather than overwrites the
-   * header, any client can pick its own rate-limit key. Use `trustedProxyHops`.
-   * @default false
-   */
-  trustProxy?: boolean;
 }
 
 export interface CompressionOptions {
@@ -377,8 +370,8 @@ export interface RouteConfig<S extends RouteSchemas = RouteSchemas> {
    */
   bodyLimit?: number;
   /**
-   * Mark the route as intentionally public. Only matters when `AuthPlugin` runs
-   * with `requireAuthByDefault: true`, where every other route needs a valid token.
+   * Mark the route as intentionally public. With `AuthPlugin` installed every
+   * other route needs a valid token (unless `requireAuthByDefault` is `false`).
    */
   public?: boolean;
 }
@@ -420,7 +413,7 @@ export interface OpenAPIOptions {
   docs?: boolean;
   /**
    * Whether the spec and Swagger UI routes are public. Only matters when
-   * `AuthPlugin` runs with `requireAuthByDefault: true`: set this to `false` to
+   * `AuthPlugin` denies by default (it does since v4.0.0): set this to `false` to
    * put the documentation behind authentication as well.
    * @default true
    */

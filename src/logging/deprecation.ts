@@ -1,6 +1,6 @@
 /**
  * @module veloce-ts/logging/deprecation
- * @description One-time notices about behavior that changes in the next major version.
+ * @description One-time notices about behavior that changes in a future major version.
  */
 import { getLogger } from './logger.js';
 

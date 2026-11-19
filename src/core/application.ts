@@ -21,7 +21,6 @@ import { createRateLimitMiddleware } from '../middleware/rate-limit.js';
 import { createCompressionMiddleware } from '../middleware/compression.js';
 import { createTimeoutMiddleware } from '../middleware/timeout.js';
 import { getLogger } from '../logging/index.js';
-import { deprecate } from '../logging/deprecation.js';
 import { hasResolverMetadata, getResolverMetadata, getFieldsMetadata as getGQLFieldsMetadata } from '../decorators/graphql.js';
 import { hasEventListeners, getEventListeners } from '../decorators/events.js';
 import { EventBus, globalEvents } from '../events/index.js';
@@ -1007,15 +1006,6 @@ export class VeloceTS {
     // Subscribe @On listeners. After plugin install, so a listener can inject
     // anything a plugin registered in the container.
     await this.subscribeEventListeners();
-
-    if (this.errorHandler.exposesDetailByOmission()) {
-      deprecate(
-        'error-detail-by-omission',
-        `Unexpected errors include their message and stack trace in the response because NODE_ENV is "${process.env.NODE_ENV ?? ''}" ` +
-        '(anything other than "production"). In v4.0.0 that detail is only sent when NODE_ENV is "development" or "test". ' +
-        'Set NODE_ENV explicitly.'
-      );
-    }
 
     // Use the RouterCompiler to process all routes
     this.compiler.compile();

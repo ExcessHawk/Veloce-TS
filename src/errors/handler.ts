@@ -52,33 +52,21 @@ export type ErrorHandlerOptions = {
 export class ErrorHandler {
   private customHandler?: CustomErrorHandler;
   private isDevelopment: boolean;
-  private detailByOmission = false;
   private format: ErrorResponseFormat;
 
   constructor(customHandler?: CustomErrorHandler, options?: ErrorHandlerOptions) {
     this.customHandler = customHandler;
     this.format = options?.errorResponseFormat ?? 'rfc9457';
+    // Fail closed: the message and stack of an unexpected error are sent only
+    // when the environment says this is a development or test run. An unset or
+    // unknown NODE_ENV (a staging box, a container that forgot the variable)
+    // gets the generic response. Before v4.0.0 it was the other way round —
+    // detail unless NODE_ENV was exactly "production".
+    const env = typeof process !== 'undefined' ? process.env.NODE_ENV : undefined;
     this.isDevelopment =
       options?.forceDevelopment !== undefined
         ? options.forceDevelopment
-        : typeof process !== 'undefined' && process.env.NODE_ENV !== 'production';
-
-    // Detail is on only because NODE_ENV says nothing either way.
-    const env = typeof process !== 'undefined' ? process.env.NODE_ENV : undefined;
-    this.detailByOmission =
-      options?.forceDevelopment === undefined &&
-      this.isDevelopment &&
-      env !== 'development' &&
-      env !== 'test';
-  }
-
-  /**
-   * True when error responses include the message and stack only because
-   * `NODE_ENV` is not set to a known value — the case that stops exposing
-   * detail in v4.0.0.
-   */
-  exposesDetailByOmission(): boolean {
-    return this.detailByOmission;
+        : env === 'development' || env === 'test';
   }
 
   setCustomHandler(handler: CustomErrorHandler): void {

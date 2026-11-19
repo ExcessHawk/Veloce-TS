@@ -34,7 +34,7 @@ export function Auth(config?: AuthConfig): MethodDecorator & ClassDecorator {
  * It matters in two situations:
  * - the controller carries a class-level `@Auth()` / `@Roles()` and this one
  *   route must stay open (a login or health endpoint);
- * - `AuthPlugin` runs with `requireAuthByDefault: true`, where a route with no
+ * - `AuthPlugin` denies by default (it does since v4.0.0), so a route with no
  *   access decorator needs a valid token.
  *
  * @example

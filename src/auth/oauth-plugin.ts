@@ -173,6 +173,8 @@ export class OAuthPlugin implements Plugin {
 
     // OAuth user info route (for testing)
     app.get('/auth/oauth/:provider/user', {
+      // Carries the OAuth provider's access token, which the handler validates itself
+      public: true,
       handler: async (c: Context) => {
         const provider = c.req.param('provider') as string;
         const authHeader = c.req.header('Authorization');

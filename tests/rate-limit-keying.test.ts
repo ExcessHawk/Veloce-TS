@@ -21,8 +21,9 @@ async function build(limit: RateLimitOptions) {
   const app = new VeloceTS({ docs: false });
   app.usePlugin(auth);
   app.useRateLimit({ windowMs: 60_000, ...limit });
-  app.get('/data', { handler: () => ({ ok: true }) });
-  app.get('/health', { handler: () => ({ ok: true }) });
+  // Open routes: this file is about who gets limited, not who gets in
+  app.get('/data', { handler: () => ({ ok: true }), public: true });
+  app.get('/health', { handler: () => ({ ok: true }), public: true });
   await app.compile();
 
   const tokenOf = async (name: string) =>
