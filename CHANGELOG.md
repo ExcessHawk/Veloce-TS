@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-19
+
 Second batch from the same audit: the pieces a multi-tenant application had to
 build by hand around the framework.
 
