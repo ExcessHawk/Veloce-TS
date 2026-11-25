@@ -1007,18 +1007,14 @@ For the latest shipped changes, see [CHANGELOG](CHANGELOG.md). Discussion and pr
 
 ## 👥 Core Team
 
-### ExcessHawk - Lead Developer & Framework Architect
-<img src="https://i.imgur.com/oogie-boogie-profile.png" alt="ExcessHawk" width="60" height="60" style="border-radius: 50%;">
+### Alfredo Mejia ([@ExcessHawk](https://github.com/ExcessHawk)) — Creator & Lead Maintainer
 
-**[@ExcessHawk](https://github.com/ExcessHawk)** - *"Building fast, type-safe web frameworks that developers love to use."*
+*"Building fast, type-safe web frameworks that developers love to use."*
 
 - 🏗️ Core framework architecture and design
-- ⚡ Performance optimizations and benchmarking  
+- ⚡ Performance optimizations and benchmarking
 - 🛠️ Developer experience and tooling
 - 🔌 Plugin system and extensibility
-
-### Alfredo Mejia - Project Founder
-**[@ExcessHawk](https://github.com/ExcessHawk)** - Project founder and maintainer
 
 ---
 
